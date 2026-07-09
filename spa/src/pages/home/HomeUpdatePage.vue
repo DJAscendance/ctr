@@ -52,12 +52,13 @@ export default Vue.extend({
       console.log("get home")
       try {
         const homeResponse = await this.$http.get("/home");
-        this.place_id = homeResponse.data.homeData.id;
         this.hasHome = !!homeResponse.data.homeData;
-        this.loaded = true;
+        this.place_id = this.hasHome ? homeResponse.data.homeData.id : null;
         this.getLinks();
       } catch(e) {
         console.error(e);
+      } finally {
+        this.loaded = true;
       }
     },
     getLinks() {

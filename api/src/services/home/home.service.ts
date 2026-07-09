@@ -41,6 +41,14 @@ export class HomeService {
   }
 
   /**
+   * Finds which of the given member ids own a home, in a single query.
+   * @param memberIds member ids to check
+   */
+  public async findMemberIdsWithHome(memberIds: number[]): Promise<Set<number>> {
+    return this.placeRepository.findMemberIdsWithHome(memberIds);
+  }
+
+  /**
    * Gets the raw home record (place_id, home_design_id, image) for a settled home.
    * @param homePlaceId id of the home's place record
    */
@@ -98,16 +106,19 @@ export class HomeService {
       map_icon_index: icon2d,
     });
 
+    const claimed = await this.mapLocationRespository.claimLocation(
+      blockId,
+      location,
+      placeId,
+    );
+    if (!claimed) {
+      throw new Error('Location already taken.');
+    }
+
     await this.homeRepository.create({
       place_id: placeId,
       home_design_id: homeDesignId,
     });
-
-    await this.mapLocationRespository.create({
-      ...mapLocation,
-      place_id: placeId,
-    });
-
   }
 
   public async moveHome(
@@ -129,18 +140,23 @@ export class HomeService {
     }
 
     const place = await this.placeRepository.findHomeByMemberId(memberId);
-
     const currentMapLocation = await this.mapLocationRespository.findPlaceIdMapLocation(place.id);
-    await this.mapLocationRespository.unsetPlaceId(
-      currentMapLocation.parent_place_id,
-      currentMapLocation.location,
+
+    const claimed = await this.mapLocationRespository.claimLocation(
+      blockId,
+      location,
+      place.id,
     );
+    if (!claimed) {
+      throw new Error('Location already taken.');
+    }
 
-    await this.mapLocationRespository.create({
-      ...mapLocation,
-      place_id: place.id,
-    });
-
+    if (currentMapLocation) {
+      await this.mapLocationRespository.unsetPlaceId(
+        currentMapLocation.parent_place_id,
+        currentMapLocation.location,
+      );
+    }
   }
 
   public async updateHome(
@@ -193,18 +209,25 @@ export class HomeService {
 
     const member = await this.memberRepository.findById(memberId);
 
-    // free the old lot and claim the new one, atomically with the rest of the reset
+    // claim the new lot first (guarding against a concurrent claim of the same lot),
+    // then free the old one - so a failed claim never leaves the home lot-less
     const currentMapLocation = await this.mapLocationRespository.findPlaceIdMapLocation(place.id);
+
+    const claimed = await this.mapLocationRespository.claimLocation(
+      blockId,
+      location,
+      place.id,
+    );
+    if (!claimed) {
+      throw new Error('Location already taken.');
+    }
+
     if (currentMapLocation) {
       await this.mapLocationRespository.unsetPlaceId(
         currentMapLocation.parent_place_id,
         currentMapLocation.location,
       );
     }
-    await this.mapLocationRespository.create({
-      ...mapLocation,
-      place_id: place.id,
-    });
 
     // delete any uploaded image
     await this.deleteExistingHomeImage(place.id, process.env.ASSETS_DIR + '/homes-uploads');

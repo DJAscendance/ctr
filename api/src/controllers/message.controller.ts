@@ -2,7 +2,7 @@ import { Request, Response} from 'express';
 import validator from 'validator';
 import { Container } from 'typedi';
 
-import { MemberService, MessageService } from '../services';
+import { MemberService, MessageService, HomeService } from '../services';
 
 const badwords = require('badwords-list');
 
@@ -17,6 +17,7 @@ class MessageController {
   constructor(
     private memberService: MemberService,
     private messageService: MessageService,
+    private homeService: HomeService,
   ) {}
 
   /** Handles storing a user message to the database */
@@ -43,13 +44,24 @@ class MessageController {
       });
       return;
     }
+
+    const placeId = Number.parseInt(request.params.placeId);
+    const chatAccess = await this.homeService.getChatAccessStatusByPlaceId(placeId);
+    if (chatAccess.restricted) {
+      const member = await this.memberService.find({ id: session.id });
+      if (!member || !chatAccess.allowedUsernames.includes(member.username)) {
+        response.status(403).json({
+          error: 'You don\'t have chat access at this home.',
+        });
+        return;
+      }
+    }
+
     const bannedwords = badwords.regex;
     if (bannedwords.test(request.body.body)) {
       try {
         const { id } = session;
         const { body } = request.body;
-        const placeId = Number.parseInt(request.params.placeId);
-
 
         const messageId = await this.messageService.create(
           id,
@@ -70,7 +82,6 @@ class MessageController {
       try {
         const { id } = session;
         const { body } = request.body;
-        const placeId = Number.parseInt(request.params.placeId);
         const messageId = await this.messageService.create(
           id,
           placeId,
@@ -168,4 +179,5 @@ public async removeAllMessages(request: Request, response: Response):  Promise<v
 }
 const memberService = Container.get(MemberService);
 const messageService = Container.get(MessageService);
-export const messageController = new MessageController(memberService, messageService);
+const homeService = Container.get(HomeService);
+export const messageController = new MessageController(memberService, messageService, homeService);

@@ -501,13 +501,16 @@ class MemberController {
       const limit = Number.parseInt(request.query.limit?.toString()) || 20;
       const offset = Number.parseInt(request.query.offset?.toString()) || 0;
       const { citizens, total } = await this.memberService.getDirectory(search, limit, offset);
+      const memberIdsWithHome = await this.homeService.findMemberIdsWithHome(
+        citizens.map((citizen) => citizen.id),
+      );
       for (const citizen of citizens) {
-        citizen.hasHome = await this.homeService.getHome(citizen.id) ? true : false;
+        citizen.hasHome = memberIdsWithHome.has(citizen.id);
       }
       response.status(200).json({ citizens, total });
     } catch (error) {
       console.error(error);
-      response.status(400).json({ error });
+      response.status(400).json({ error: error.message });
     }
   }
 

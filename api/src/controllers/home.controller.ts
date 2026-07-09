@@ -401,6 +401,10 @@ class HomeController {
     const { houseDescription } = request.body;
 
     try {
+      if (houseDescription && houseDescription.length > 1000) {
+        throw new Error('Description must be 1000 characters or fewer.');
+      }
+
       const bannedwords = badwords.regex;
       if (houseDescription && houseDescription.match(bannedwords)) {
         throw new Error('This language can not be used on CTR!');
