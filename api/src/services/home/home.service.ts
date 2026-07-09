@@ -112,6 +112,8 @@ export class HomeService {
       placeId,
     );
     if (!claimed) {
+      // roll back the place we just created so a lost race never leaves an orphaned home
+      await this.placeRepository.removePlace(placeId);
       throw new Error('Location already taken.');
     }
 

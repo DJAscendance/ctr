@@ -46,15 +46,23 @@ class MessageController {
     }
 
     const placeId = Number.parseInt(request.params.placeId);
-    const chatAccess = await this.homeService.getChatAccessStatusByPlaceId(placeId);
-    if (chatAccess.restricted) {
-      const member = await this.memberService.find({ id: session.id });
-      if (!member || !chatAccess.allowedUsernames.includes(member.username)) {
-        response.status(403).json({
-          error: 'You don\'t have chat access at this home.',
-        });
-        return;
+    try {
+      const chatAccess = await this.homeService.getChatAccessStatusByPlaceId(placeId);
+      if (chatAccess.restricted) {
+        const member = await this.memberService.find({ id: session.id });
+        if (!member || !chatAccess.allowedUsernames.includes(member.username)) {
+          response.status(403).json({
+            error: 'You don\'t have chat access at this home.',
+          });
+          return;
+        }
       }
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({
+        error: 'A problem occurred creating message.',
+      });
+      return;
     }
 
     const bannedwords = badwords.regex;
