@@ -63,11 +63,11 @@
             </div>
             <div class="flex justify-center">
               <div class="menu">
-                <router-link
+                <a href="#"
                   class="menuLink"
+                  @click.prevent="openHowDoIModal"
                   style="top: 58px"
-                  to="/howdoi"
-                ></router-link>
+                ></a>
                 <a href="#"
                   class="menuLink"
                   @click.prevent="openInfoModal"
@@ -79,12 +79,12 @@
                   v-if="$store.data.user.hasHome"
                   :to="'/home/'+$store.data.user.username"
                 ></router-link>
-                <router-link
+                <a href="#"
                   class="menuLink"
-                  style="top: 178px"
                   v-if="$store.data.place.id"
-                  :to="'/messageboard/'+$store.data.place.id"
-                ></router-link>
+                  @click.prevent="openWindow('#/messageboard/'+$store.data.place.id)"
+                  style="top: 178px"
+                ></a>
                 <router-link to="/citymap"
                   class="menuMapLink"
                 ></router-link>
@@ -153,6 +153,7 @@ import Vue from "vue";
 import WorldBrowserPage from "./pages/world-browser/WorldBrowserPage.vue";
 import ModalRoot from "./components/modals/ModalRoot.vue";
 import InfoModal from "./components/modals/InfoModal.vue";
+import HowDoIModal from "./components/modals/HowDoIModal.vue";
 import SecurityAlertModal from './components/modals/SecurityAlertModal.vue';
 import CitizenOnlineModal from './components/modals/CitizenOnlineModal.vue';
 import ModalService from "./components/modals/services/ModalService.vue";
@@ -358,6 +359,9 @@ export default Vue.extend({
     },
     openInfoModal(): void {
       ModalService.open(InfoModal);
+    },
+    openHowDoIModal(): void {
+      ModalService.open(HowDoIModal);
     },
     openCitizenOnlineModal(): void {
       ModalService.open(CitizenOnlineModal);

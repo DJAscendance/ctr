@@ -1,14 +1,24 @@
 <template>
   <div class="w-full h-full overflow-y-auto flex flex-col items-center px-8">
-    <h1 class="text-2xl font-semibold mt-4 mb-6">How Do I?</h1>
+    <div class="hero-banner w-full flex flex-row items-center mb-6">
+      <img
+        src="/assets/img/howdoi/mina-hero.webp"
+        alt="Mina, your Cybertown guide"
+        class="hero-img"
+      />
+      <div class="px-6">
+        <h1 class="text-2xl font-semibold">How Do I?</h1>
+        <p class="text-sm">Ask Mina &mdash; your guide to getting around Cybertown.</p>
+      </div>
+    </div>
 
     <div class="w-2/3 mb-8">
       <p class="mb-2">Jump to a topic:</p>
       <ul class="list-disc list-inside">
         <li><a href="#become-a-member">Become a Member</a></li>
         <li><a href="#get-into-3d">Get Into 3D</a></li>
-        <li><a href="#chat">Chat in 2D / 3D &amp; Voice Chat</a></li>
-        <li><a href="#mute-a-voice">Mute a Voice</a></li>
+        <li><a href="#chat">Chat in 2D &amp; 3D</a></li>
+        <li><a href="#ignore-a-citizen">Ignore a Citizen</a></li>
         <li><a href="#visit-a-home">Visit a Home</a></li>
         <li><a href="#furnish-my-home">Furnish My Home</a></li>
         <li><a href="#placing-objects">Placing Objects</a></li>
@@ -47,30 +57,23 @@
         <div class="flex flex-row flex-wrap mb-2">
           <span class="btn-ui-inline">Chat in 2D</span>
           <span class="btn-ui-inline">Chat in 3D</span>
-          <span class="btn-ui-inline">Voice Chat</span>
         </div>
-        <h2 class="text-xl font-semibold mb-2">Chat in 2D / 3D &amp; Voice Chat</h2>
-        <p class="mb-2">
-          2D chat is great if you just want to talk to someone quickly. 3D chat lets you move
-          your avatar around and interact with the world while you talk. You can choose your
-          default chat mode from your Personal Info page.
-        </p>
+        <h2 class="text-xl font-semibold mb-2">Chat in 2D &amp; 3D</h2>
         <p>
-          Voice chat lets you talk out loud to nearby citizens instead of typing &mdash; look for
-          the voice controls near the chat window once you're in 3D.
+          2D chat is great if you just want to talk to someone quickly. 3D chat lets you move
+          your avatar around and interact with the world while you talk &mdash; text-based, no
+          plugin or download required. You can choose your default chat mode from your Personal
+          Info page.
         </p>
       </section>
 
-      <section id="mute-a-voice" class="mb-8">
-        <div class="mb-2"><span class="btn-ui-inline">Mute Voice</span></div>
-        <h2 class="text-xl font-semibold mb-2">Mute a Voice</h2>
-        <p class="mb-2">
-          <b>Mute All Voices:</b> Right click on your nickname under the People tab, select
-          Voice, then Mute All. This also mutes your own voice.
-        </p>
+      <section id="ignore-a-citizen" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Ignore</span></div>
+        <h2 class="text-xl font-semibold mb-2">Ignore a Citizen</h2>
         <p>
-          You can also mute a single citizen individually the same way &mdash; right click their
-          nickname and select Mute instead of Mute All.
+          Right click a nickname in the People list and choose <b>Ignore</b> to block their chat
+          messages. Ignored citizens show a muted icon next to their name; right click and
+          choose Ignore again to unblock them.
         </p>
       </section>
 
@@ -103,7 +106,8 @@
         <h2 class="text-xl font-semibold mb-2">Placing Objects</h2>
         <p class="mb-2">
           Remember: you can only have a maximum of 32 objects in your home. Go to your 3D home
-          via My House on the Control Panel, then open your backpack to see what you own.
+          via My House on the Control Panel, then click the <b>Next</b> button above the chat
+          panel to cycle through to your Backpack and see what you own.
         </p>
         <p>
           Right-clicking an item in your backpack gives you options to Drop it into the room
@@ -174,27 +178,11 @@
       <section id="alert-security" class="mb-8">
         <div class="mb-2"><span class="btn-ui-inline">Alert Security</span></div>
         <h2 class="text-xl font-semibold mb-2">Alert Security</h2>
-        <p class="mb-2">
-          All messages to Security are taken seriously and answered as quickly as possible.
-          False reports may result in a fine.
+        <p>
+          Open <b>Citizens Online</b> and choose the option to leave Security a message &mdash;
+          it sends a message straight to the Jail inbox for security staff to review. All
+          reports are taken seriously; please only use this for real issues.
         </p>
-        <p class="mb-2">
-          To send an alert, open the Online Citizens / Instant Message Center and use the
-          Security Alert option. If no security personnel are currently online, you'll be given
-          the option to message them directly instead.
-        </p>
-        <div class="flex flex-row gap-4 mt-4">
-          <img
-            src="/assets/img/howdoi/secure1.webp"
-            alt="Security alert example"
-            class="max-w-xs"
-          />
-          <img
-            src="/assets/img/howdoi/secure2.webp"
-            alt="Security alert example"
-            class="max-w-xs"
-          />
-        </div>
       </section>
 
       <section id="privacy-policy" class="mb-8">
@@ -222,3 +210,18 @@ export default Vue.extend({
   name: "HowDoIPage",
 });
 </script>
+
+<style scoped>
+.hero-banner {
+  background: linear-gradient(90deg, #001829 0%, #04304f 60%, #0a4a73 100%);
+  border: 1px solid #8f9bb6;
+  border-radius: 5px;
+  color: #d0dbf7;
+  padding: 12px;
+}
+.hero-img {
+  height: 120px;
+  width: auto;
+  flex-shrink: 0;
+}
+</style>
