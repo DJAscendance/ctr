@@ -1,9 +1,6 @@
 <template>
   <div class="w-full h-full overflow-y-auto flex flex-col items-center px-8">
-    <div class="flex justify-center w-full mb-2">
-      <img src="/assets/img/howdoi/howdoi.webp" alt="How Do I?" />
-    </div>
-    <h1 class="text-2xl font-semibold mb-6">How Do I?</h1>
+    <h1 class="text-2xl font-semibold mt-4 mb-6">How Do I?</h1>
 
     <div class="w-2/3 mb-8">
       <p class="mb-2">Jump to a topic:</p>
@@ -26,9 +23,7 @@
 
     <div class="w-2/3 text-left">
       <section id="become-a-member" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/bam.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Become a Member</span></div>
         <h2 class="text-xl font-semibold mb-2">Become a Member</h2>
         <p>
           Cybertown is free to join. Once you're a member you can access 2D and 3D chat and
@@ -38,9 +33,7 @@
       </section>
 
       <section id="get-into-3d" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/gi3.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Get Into 3D</span></div>
         <h2 class="text-xl font-semibold mb-2">Get Into 3D</h2>
         <p>
           The Cybertown 3D VR environment lets you move through the 3D city and homes using an
@@ -51,10 +44,10 @@
       </section>
 
       <section id="chat" class="mb-8">
-        <div class="flex flex-row gap-1 mb-2">
-          <img src="/assets/img/howdoi/c2d.webp" alt="" class="h-8 pixelated" />
-          <img src="/assets/img/howdoi/c3d.webp" alt="" class="h-8 pixelated" />
-          <img src="/assets/img/howdoi/vtc.webp" alt="" class="h-8 pixelated" />
+        <div class="flex flex-row flex-wrap mb-2">
+          <span class="btn-ui-inline">Chat in 2D</span>
+          <span class="btn-ui-inline">Chat in 3D</span>
+          <span class="btn-ui-inline">Voice Chat</span>
         </div>
         <h2 class="text-xl font-semibold mb-2">Chat in 2D / 3D &amp; Voice Chat</h2>
         <p class="mb-2">
@@ -69,9 +62,7 @@
       </section>
 
       <section id="mute-a-voice" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/mv.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Mute Voice</span></div>
         <h2 class="text-xl font-semibold mb-2">Mute a Voice</h2>
         <p class="mb-2">
           <b>Mute All Voices:</b> Right click on your nickname under the People tab, select
@@ -84,9 +75,7 @@
       </section>
 
       <section id="visit-a-home" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/vah.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Visit a Home</span></div>
         <h2 class="text-xl font-semibold mb-2">Visit a Home</h2>
         <p>
           Find a citizen through the <router-link to="/directory">Citizen Directory</router-link>
@@ -95,9 +84,7 @@
       </section>
 
       <section id="furnish-my-home" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/fh.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Furnish My Home</span></div>
         <h2 class="text-xl font-semibold mb-2">Furnish My Home</h2>
         <p class="mb-2">
           Before you go shopping, check how much City Cash (CC) you have on your Personal Info
@@ -112,6 +99,7 @@
       </section>
 
       <section id="placing-objects" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Placing Objects</span></div>
         <h2 class="text-xl font-semibold mb-2">Placing Objects</h2>
         <p class="mb-2">
           Remember: you can only have a maximum of 32 objects in your home. Go to your 3D home
@@ -125,10 +113,10 @@
       </section>
 
       <section id="clubs" class="mb-8">
-        <div class="flex flex-row gap-1 mb-2">
-          <img src="/assets/img/howdoi/jac.webp" alt="" class="h-8 pixelated" />
-          <img src="/assets/img/howdoi/sac.webp" alt="" class="h-8 pixelated" />
-          <img src="/assets/img/howdoi/vac.webp" alt="" class="h-8 pixelated" />
+        <div class="flex flex-row flex-wrap mb-2">
+          <span class="btn-ui-inline">Join a Club</span>
+          <span class="btn-ui-inline">Start a Club</span>
+          <span class="btn-ui-inline">Visit a Club</span>
         </div>
         <h2 class="text-xl font-semibold mb-2">Join / Start / Visit a Club</h2>
         <p class="mb-2">
@@ -144,9 +132,7 @@
       </section>
 
       <section id="message-boards" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/umb.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Use Message Boards</span></div>
         <h2 class="text-xl font-semibold mb-2">Use the Message Boards</h2>
         <p class="mb-2">
           As you move through Cybertown, most locations have a message board associated with
@@ -160,9 +146,7 @@
       </section>
 
       <section id="give-feedback" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/fb.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Give Feedback</span></div>
         <h2 class="text-xl font-semibold mb-2">Give Feedback</h2>
         <p>
           Have a question, comment, or suggestion? Click Feedback on the Control Panel to open
@@ -173,9 +157,7 @@
       </section>
 
       <section id="get-a-job" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/gaj.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Get a Job</span></div>
         <h2 class="text-xl font-semibold mb-2">Get a Job</h2>
         <p class="mb-2">
           Want more City Cash? Check the Employment Office (reachable from the City Map) for
@@ -190,9 +172,7 @@
       </section>
 
       <section id="alert-security" class="mb-8">
-        <div class="mb-2">
-          <img src="/assets/img/howdoi/as.webp" alt="" class="h-8 pixelated" />
-        </div>
+        <div class="mb-2"><span class="btn-ui-inline">Alert Security</span></div>
         <h2 class="text-xl font-semibold mb-2">Alert Security</h2>
         <p class="mb-2">
           All messages to Security are taken seriously and answered as quickly as possible.
@@ -218,6 +198,7 @@
       </section>
 
       <section id="privacy-policy" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Privacy Policy</span></div>
         <h2 class="text-xl font-semibold mb-2">Privacy Policy</h2>
         <p class="mb-2">
           Cybertown Revival is a non-commercial, community-run revival of the original
@@ -241,9 +222,3 @@ export default Vue.extend({
   name: "HowDoIPage",
 });
 </script>
-
-<style scoped>
-.pixelated {
-  image-rendering: pixelated;
-}
-</style>
