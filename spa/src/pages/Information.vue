@@ -17,6 +17,11 @@
         </div>
       </div>
     </div>
+    <div
+      class="h-full w-full bg-black flex flex-col"
+      style="padding: 10px; white-space: pre-wrap;"
+      v-else-if="$route.params.type === 'home'"
+    >{{ homeDescription || 'This citizen has not added any information yet.' }}</div>
     <div class="h-full w-full bg-black flex flex-col" style="padding: 10px" v-else>
       <div>
         Leader<br/>
@@ -48,12 +53,18 @@ export default Vue.extend({
       owner: null,
       deputies: [],
       securityInfo: {},
+      homeDescription: null,
     };
   },
   methods: {
     async getData(): Promise<void> {
       let infopoint = null;
       switch (this.$route.params.type) {
+      case "home":
+        this.$http.get(`/home/information/${this.$route.params.id}`).then((response) => {
+          this.homeDescription = response.data.description;
+        });
+        return;
       case "block":
         infopoint = `/block/${
           this.$route.params.id

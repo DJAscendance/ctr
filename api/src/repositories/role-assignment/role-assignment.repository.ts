@@ -215,6 +215,21 @@ export class RoleAssignmentRepository {
       .del();
   }
 
+  public async getUsernamesByRoleAndPlace(placeId: number, roleId: number): Promise<any[]> {
+    return this.db.knex('role_assignment')
+      .select('member.username')
+      .where('role_assignment.place_id', placeId)
+      .where('role_assignment.role_id', roleId)
+      .innerJoin('member', 'role_assignment.member_id', 'member.id');
+  }
+
+  public async removeAllForPlaceAndRole(placeId: number, roleId: number): Promise<any> {
+    return this.db.knex('role_assignment')
+      .where('place_id', placeId)
+      .where('role_id', roleId)
+      .del();
+  }
+
   public async countByAssigned(id: number): Promise<any> {
     return this.db.knex('role_assignment')
       .count('id as count')

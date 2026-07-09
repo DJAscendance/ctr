@@ -70,21 +70,21 @@ export default Vue.extend({
         {
           img: '/assets/img/homes/updinfo.jpg',
           label: 'Information',
-          link: '',
+          link: '/home/update/information',
         },
         {
           img: '/assets/img/homes/updimage.jpg',
           label: 'Image',
-          link: '',
+          link: '/home/update/image',
         },
         {
           img: '/assets/img/homes/updinfo.jpg',
           label: 'Reset',
-          link: '',
+          link: '/home/update/reset',
         },{
           img: '/assets/img/homes/updright.jpg',
           label: 'Chat Access Rights',
-          link: '',
+          link: '/home/update/chat-access',
         },
         {
           img: '/assets/img/homes/updpet.jpg',
