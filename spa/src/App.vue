@@ -63,6 +63,11 @@
             </div>
             <div class="flex justify-center">
               <div class="menu">
+                <router-link
+                  class="menuLink"
+                  style="top: 58px"
+                  to="/howdoi"
+                ></router-link>
                 <a href="#"
                   class="menuLink"
                   @click.prevent="openInfoModal"
@@ -73,6 +78,12 @@
                   style="top: 98px"
                   v-if="$store.data.user.hasHome"
                   :to="'/home/'+$store.data.user.username"
+                ></router-link>
+                <router-link
+                  class="menuLink"
+                  style="top: 178px"
+                  v-if="$store.data.place.id"
+                  :to="'/messageboard/'+$store.data.place.id"
                 ></router-link>
                 <router-link to="/citymap"
                   class="menuMapLink"

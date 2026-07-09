@@ -94,6 +94,8 @@ import ClubMemberList from "./pages/club/Members.vue";
 import ClubDoor from "@/pages/club/ClubDoor.vue";
 import ClubUpdate from "@/pages/club/ClubUpdate.vue";
 
+import HowDoIPage from "@/pages/HowDoI.vue";
+
 import MayorElection from '@/pages/MayorElection.vue';
 
 export default [
@@ -824,6 +826,14 @@ export default [
       default: ClubDirPage,
     },
     name: "club-directory",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/howdoi",
+    components: {
+      default: HowDoIPage,
+    },
+    name: "how-do-i",
     meta: { wrapper: true },
   },
   {
