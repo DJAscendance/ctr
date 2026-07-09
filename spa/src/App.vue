@@ -63,6 +63,11 @@
             </div>
             <div class="flex justify-center">
               <div class="menu">
+                <router-link
+                  class="menuLink"
+                  style="top: 38px"
+                  to="/directory"
+                ></router-link>
                 <a href="#"
                   class="menuLink"
                   @click.prevent="openInfoModal"
