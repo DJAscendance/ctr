@@ -63,11 +63,11 @@
             </div>
             <div class="flex justify-center">
               <div class="menu">
-                <router-link
+                <a href="#"
                   class="menuLink"
+                  @click.prevent="openDirectoryModal"
                   style="top: 38px"
-                  to="/directory"
-                ></router-link>
+                ></a>
                 <a href="#"
                   class="menuLink"
                   @click.prevent="openInfoModal"
@@ -147,6 +147,7 @@ import Vue from "vue";
 import WorldBrowserPage from "./pages/world-browser/WorldBrowserPage.vue";
 import ModalRoot from "./components/modals/ModalRoot.vue";
 import InfoModal from "./components/modals/InfoModal.vue";
+import DirectoryModal from "./components/modals/DirectoryModal.vue";
 import SecurityAlertModal from './components/modals/SecurityAlertModal.vue';
 import CitizenOnlineModal from './components/modals/CitizenOnlineModal.vue';
 import ModalService from "./components/modals/services/ModalService.vue";
@@ -352,6 +353,9 @@ export default Vue.extend({
     },
     openInfoModal(): void {
       ModalService.open(InfoModal);
+    },
+    openDirectoryModal(): void {
+      ModalService.open(DirectoryModal);
     },
     openCitizenOnlineModal(): void {
       ModalService.open(CitizenOnlineModal);
