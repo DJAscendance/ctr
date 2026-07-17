@@ -28,6 +28,7 @@ import RestrictedAccess from "@/pages/RestrictedAccess.vue";
 import HomeTools from "@/pages/home/HomeTools.vue";
 import HomeUpdatePage from "@/pages/home/HomeUpdatePage.vue";
 import HomeUpdateHomePage from "@/pages/home/HomeUpdateHomePage.vue";
+import HomeUpdateImagePage from "@/pages/home/HomeUpdateImagePage.vue";
 import HomeVirtualPet from "./pages/home/HomeVirtualPet.vue";
 import HomeVirtualPetHelp from "./pages/home/HomeVirtualPetHelp.vue";
 
@@ -334,6 +335,15 @@ export default [
       tools: HomeTools,
     },
     name: "home-update-home",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/home/update/image",
+    components: {
+      default: HomeUpdateImagePage,
+      tools: HomeTools,
+    },
+    name: "home-update-image",
     meta: { wrapper: true },
   },
   {

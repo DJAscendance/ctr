@@ -4,10 +4,10 @@
     <h3><strong>Welcome to {{ $store.data.place.name }}</strong></h3>
 
     <div class="flex flex-row" >
-      <div class="flex flex-auto w-2/3">
-        <table class="w-full">
+      <div class="flex flex-auto">
+        <table>
           <tr>
-            <td class="w-130 font-bold text-left">
+            <td class="w-36 pr-4 font-bold text-left">
               Resident
             </td>
             <td class="text-left">
@@ -16,7 +16,7 @@
           </tr>
 
           <tr>
-            <td class="font-bold text-left">
+            <td class="w-36 pr-4 font-bold text-left">
               Name
             </td>
             <td class="text-left">
@@ -25,7 +25,7 @@
           </tr>
           <tr v-if="parseInt(this.$store.data.user.id) == parseInt(this.$store.data.place.member_id)
           || this.$store.data.user.admin">
-            <td class="font-bold text-left">
+            <td class="w-36 pr-4 font-bold text-left">
               Email
             </td>
             <td class="text-left">
@@ -34,7 +34,7 @@
           </tr>
 
           <tr>
-            <td class="font-bold text-left">
+            <td class="w-36 pr-4 font-bold text-left">
               Immigration
             </td>
             <td class="text-left">
@@ -44,7 +44,7 @@
           </tr>
           
           <tr v-if="canAdmin && this.$store.data.place.block">
-            <td class="font-bold text-left">
+            <td class="w-36 pr-4 font-bold text-left">
               Last Access
             </td>
             <td class="text-left">
@@ -54,7 +54,7 @@
           </tr>
 
           <tr>
-            <td class="font-bold text-left">
+            <td class="w-36 pr-4 font-bold text-left">
               Experience
             </td>
             <td class="text-left">
@@ -63,7 +63,7 @@
           </tr>
 
           <tr v-if="parseInt(this.$store.data.user.id) === parseInt(this.$store.data.place.member_id)">
-            <td class="font-bold text-left">
+            <td class="w-36 pr-4 font-bold text-left">
               Money
             </td>
             <td class="text-left">
@@ -73,7 +73,7 @@
 
           <!--
           <tr>
-            <td class="font-bold text-left">
+            <td class="w-36 pr-4 font-bold text-left">
               Home Page
             </td>
             <td class="text-left">
@@ -84,29 +84,16 @@
         </table>
 
       </div>
-      <div class="flex-auto w-1/3">
-        <!-- #ifdef variable="exists" -->
-        <!--<img src="property<$g_exe>?ac=print&ID=<$propid>&type=P&index=&media=i" border=0 alt="">-->
-        <!-- #endif variable="exists" -->
-
-        <!-- #ifdef variable="medialocked" -->
-        <!--
-        <img src="<$g_Images>/images/locked.gif" border=0
-              alt="Your image must be accepted by the block leader first!">
-        <br>
-        <font color="FFFF00"><small>Your image must be accepted by the block leader first!</small>
-        </font>
-        -->
-        <!-- #endif variable="medialocked" -->
-
-        <!-- #ifdef variable="upload" -->
-        <!--<small><i>Click Update to upload your personal image!</i></small> -->
-        <!-- #endif variable="upload" -->
-
-        <!-- #ifdef variable="noimage" -->
-        <small><i>No image uploaded yet!</i></small>
-        <!-- #endif variable="noimage" -->
-
+      <div
+        class="flex-none flex flex-col items-center justify-start text-center"
+        style="width: 200px;"
+      >
+        <img
+          v-if="homeImage"
+          :src="'/assets/homes-uploads/' + homeImage"
+          style="max-width: 200px; max-height: 200px;"
+        />
+        <small v-else><i>No image uploaded yet!</i></small>
       </div>
     </div>
     <storage :member_id="this.$store.data.place.member_id" v-if="showStorage"></storage>
@@ -123,10 +110,11 @@ export default Vue.extend({
   components: { Storage },
   data: () => {
     return {
-      memberInfo: {},
+      memberInfo: {} as any,
       canAdmin: false,
       loaded: false,
       showStorage: false,
+      homeImage: null,
     };
   },
 
@@ -139,6 +127,8 @@ export default Vue.extend({
         if(this.$store.data.place.member_id === this.$store.data.user.id){
           this.showStorage = true;
         }
+        const homeResponse = await this.$http.get(`/home/${this.memberInfo.username}`);
+        this.homeImage = homeResponse.data.homeRecord?.image || null;
       } catch (error) {
         console.log(error);
       }

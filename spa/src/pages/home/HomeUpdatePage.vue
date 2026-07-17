@@ -75,7 +75,7 @@ export default Vue.extend({
         {
           img: '/assets/img/homes/updimage.jpg',
           label: 'Image',
-          link: '',
+          link: '/home/update/image',
         },
         {
           img: '/assets/img/homes/updinfo.jpg',
