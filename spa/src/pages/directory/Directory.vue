@@ -1,7 +1,11 @@
 <template>
   <div class="w-full flex flex-col items-center">
     <div class="flex justify-center w-full mb-8">
-      <h1 class="text-2xl font-semibold">Citizen Directory</h1>
+      <img
+        src="/assets/img/citizen-directory.jpg"
+        alt="Citizen Directory"
+        class="max-w-full h-auto"
+      />
     </div>
     <div class="flex justify-center w-full mb-5">
       Search:
