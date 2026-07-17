@@ -32,6 +32,7 @@ import HomeChatAccessPage from "@/pages/home/HomeChatAccessPage.vue";
 import HomeUpdateInformationPage from "@/pages/home/HomeUpdateInformationPage.vue";
 import HomeUpdateImagePage from "@/pages/home/HomeUpdateImagePage.vue";
 import HomeResetPage from "@/pages/home/HomeResetPage.vue";
+import HomeImageCheckPage from "@/pages/home/HomeImageCheckPage.vue";
 import HomeVirtualPet from "./pages/home/HomeVirtualPet.vue";
 import HomeVirtualPetHelp from "./pages/home/HomeVirtualPetHelp.vue";
 
@@ -378,6 +379,14 @@ export default [
     },
     name: "home-update-reset",
     meta: { wrapper: true },
+  },
+  {
+    path: "/home/image-check",
+    components: {
+      default: HomeImageCheckPage,
+    },
+    name: "home-image-check",
+    meta: { wrapper: false },
   },
   {
     path: "/virtualpet/:place_id",

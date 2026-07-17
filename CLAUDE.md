@@ -58,7 +58,12 @@ Common commands:
   `docker exec ctr-ct-socket-1 bash -c "cd /usr/src/app && npm run build -- --mode development"`
 - **Run DB migrations:** `docker exec ctr-ct-api-1 bash -c "cd /usr/src/app && npm run db:migrate"`
 - The API auto-reloads on `.ts` changes (nodemon). Watch: `docker logs -f ctr-ct-api-1`.
-- Uploaded home images live in `spa/assets/homes-uploads/` (gitignored — runtime data).
+- Home images: only **approved** images live in `spa/assets/homes-uploads/` (nginx-served,
+  canonical `<placeId>.webp`). **Pending** (unchecked) images live in a private,
+  non-nginx-served directory — `api/private-uploads/homes-pending/` by default, set via
+  `PRIVATE_UPLOADS_DIR` — and are viewable only through the authenticated moderator preview
+  endpoint. Both dirs are gitignored runtime data; in deployment `PRIVATE_UPLOADS_DIR` must
+  point at **persistent** storage (pending images survive restarts).
 
 ## Gotchas
 
@@ -72,6 +77,24 @@ Common commands:
   payload: `{ id, username, avatar, admin }`. `memberService.decryptSession(req, res)`.
 - **Place hierarchy:** `place` has no `parent_id`. Home→block linkage is in `map_location`
   (`place_id` = home, `parent_place_id` = block). Use `homeService.getHomeBlock(placeId)`.
+- **Home image moderation concurrency.** Every upload gets an unguessable `home.image_revision`
+  token and its own private file `<placeId>-<revision>.webp`; the public file is always the
+  canonical `<placeId>.webp`. All image mutations (upload / approve / reject / remove / reset)
+  run inside a transaction that first takes a `SELECT … FOR UPDATE` row lock on the home, so
+  they are serialized **across processes**. Approval/rejection are **bound to the exact
+  revision the moderator reviewed** (sent from the queue): if the owner replaced the image
+  meanwhile, the current revision no longer matches and the API returns **409** — nothing is
+  published. Approval publishes the reviewed revision with an atomic temp-then-rename into the
+  public dir; the private copy is deleted only after commit. Net invariant: **the public file
+  only ever contains an approved revision's bytes**; an unchecked upload can never be promoted.
+  Do not reintroduce a shared pending filename or approve "whatever is currently pending".
+  **Post-commit cleanup rule:** the row lock only protects work while its transaction is open,
+  so any filesystem cleanup done *after* commit must be either (a) revision-specific (delete a
+  single captured immutable `<placeId>-<rev>.webp`, never a wildcard), or (b) routed through
+  `deletePublicImageIfState()`, which re-locks the row and only deletes the canonical public
+  file while the record still holds the exact state the caller committed. Never delete the
+  shared public path or wildcard-delete pending files unguarded after releasing the lock —
+  that lets an old request clobber a newer operation's files.
 
 ## Git / remotes
 
