@@ -88,6 +88,13 @@ Common commands:
   public dir; the private copy is deleted only after commit. Net invariant: **the public file
   only ever contains an approved revision's bytes**; an unchecked upload can never be promoted.
   Do not reintroduce a shared pending filename or approve "whatever is currently pending".
+  **Post-commit cleanup rule:** the row lock only protects work while its transaction is open,
+  so any filesystem cleanup done *after* commit must be either (a) revision-specific (delete a
+  single captured immutable `<placeId>-<rev>.webp`, never a wildcard), or (b) routed through
+  `deletePublicImageIfState()`, which re-locks the row and only deletes the canonical public
+  file while the record still holds the exact state the caller committed. Never delete the
+  shared public path or wildcard-delete pending files unguarded after releasing the lock —
+  that lets an old request clobber a newer operation's files.
 
 ## Git / remotes
 
