@@ -18,4 +18,8 @@ homeRoutes.post('/move',
   (request, response) => homeController.moveHome(request, response));
 homeRoutes.post('/update',
   (request, response) => homeController.updateHome(request, response));
+homeRoutes.post('/upload-image',
+  (request, response) => homeController.uploadImage(request, response));
+homeRoutes.post('/remove-image',
+  (request, response) => homeController.removeImage(request, response));
 export { homeRoutes };

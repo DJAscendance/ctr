@@ -8,6 +8,14 @@ import {
   HomeService,
 } from '../services';
 
+/**
+ * Maximum size, in bytes, of an uploaded home image before it's resized. The final stored
+ * file is always a small WebP thumbnail regardless of input size (see
+ * HomeService.uploadHomeImage), so this only guards against oversized uploads, not final
+ * disk usage - kept generous so normal smartphone photos aren't rejected.
+ */
+const IMAGE_FILESIZE_LIMIT = 5 * 1024 * 1024;
+
 class HomeController {
 
   /**
@@ -50,16 +58,19 @@ class HomeController {
       if(homeData) {
         const blockData = await this.homeService.getHomeBlock(homeData.id);
         const homeDesignData = await this.homeService.getPlaceHomeDesign(userId, homeData.id);
+        const homeRecord = await this.homeService.getHomeRecord(homeData.id);
         response.status(200).json({
           homeData: homeData,
           blockData: blockData,
           homeDesignData: homeDesignData,
+          homeRecord: homeRecord,
         });
       } else {
         response.status(200).json({
           homeData: null,
           blockData: null,
           homeDesignData: null,
+          homeRecord: null,
         });
       }
 
@@ -307,6 +318,58 @@ class HomeController {
 
       }
 
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async uploadImage(request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    if (
+      typeof request.files?.imageFile === 'undefined' ||
+      validator.isEmpty(request.files.imageFile.name)
+    ) {
+      response.status(400).json({
+        error: 'Image file is required.',
+      });
+      return;
+    }
+
+    const imageFile = request.files.imageFile;
+    if (!imageFile.mimetype.startsWith('image/')) {
+      response.status(400).json({
+        error: 'File must be an image.',
+      });
+      return;
+    }
+    if (imageFile.size > IMAGE_FILESIZE_LIMIT) {
+      response.status(400).json({
+        error: 'Image file must be less than 5MB',
+      });
+      return;
+    }
+
+    try {
+      // Converted to WebP and downscaled to a max of 200x200 server-side, regardless of
+      // the source format/dimensions - see HomeService.uploadHomeImage.
+      await this.homeService.uploadHomeImage(session.id, imageFile);
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async removeImage(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    try {
+      await this.homeService.removeHomeImage(session.id);
+      response.status(200).json({ 'status': 'success' });
     } catch (error) {
       console.error(error);
       response.status(400).json({ 'error': error.message });
