@@ -23,10 +23,8 @@
        :class="{'grid-cols-7': accessLevel.includes('admin')}">
     <div class="border-white border w-full pl-1">ID</div>
     <div class="col-span-2 border-white border w-full pl-1">Username</div>
-    <div
-      class="col-span-2 border-white border w-full pl-1"
-      v-show="accessLevel.includes('admin')">Email</div>
     <div class="col-span-2 border-white border w-full pl-1">Last Login</div>
+    <div class="border-white border w-full pl-1"></div>
   </div>
   <div
       class="grid grid-cols-5 w-4/6"
@@ -39,9 +37,6 @@
       {{ id.username }}
       </router-link>
     </div>
-    <div
-     class="col-span-2 border-white border w-full pl-1"
-     v-show="accessLevel.includes('admin')">{{ id.email }}</div>
     <div class="col-span-2 border-white border w-full pl-1">{{ new Date(id.last_daily_login_credit)
         .toLocaleString('en-US', {
           weekday: 'short',
@@ -52,6 +47,10 @@
           minute: 'numeric',
           timeZone: 'America/Detroit',
         }) }}</div>
+        <div class="border-white border w-full pl-1">
+          <button class="btn-ui" style="background-color: darkred; width: 60px;"
+        v-if="accessLevel.includes('admin')" @click="confirmRemoval(id.id, id.username)">Delete</button>
+        </div>
   </div>
       <div class="grid grid-cols-2 w-4/6 justify-items-center">
         <div class="p-1 text-right w-full">
@@ -136,6 +135,23 @@ export default Vue.extend({
       this.offset = this.offset - this.limit;
       await this.getUsers();
       this.showNext = true;
+    },
+    confirmRemoval(id, username) {
+      const confirmed = window.confirm(`Are you sure you want to permanently delete ${username}'s account? This action cannot be undone!`);
+      if (confirmed) {
+        this.deleteAccount(id);
+        return;
+      }
+     },
+    async deleteAccount(id): Promise <void> {
+      const removeAccount = await this.$http.post("/admin/remove-account", {
+        id: id,
+      });
+      if(removeAccount){
+        this.error = "Account successfully deleted.";
+      } else {
+        this.error = "Account removal failed."
+      }
     },
   },
   async created() {

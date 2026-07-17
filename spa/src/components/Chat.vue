@@ -672,6 +672,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
           (
             this.$store.data.place.slug === 'fleamarket' ||
             this.$store.data.place.slug === 'blackmarket' ||
+            this.canInteractWithObject ||
             this.$store.data.place.member_id === this.$store.data.user.id
           )){
             this.menuDrop = true;
@@ -689,22 +690,29 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
     },
     async canAdmin(){
       let admin = null;
+      let staff = null;
       if(this.$store.data.place.slug === 'mall' || this.$store.data.place.type === 'shop'){
-        admin = await this.$http.get("/mall/can_admin", {
+        staff = await this.$http.get("/mall/can_admin", {
           'id': this.$store.data.user.id
         });
       }
       if(this.$store.data.place.slug === 'fleamarket'){
-        admin = await this.$http.get("/fleamarket/can_admin", {
+        staff = await this.$http.get("/fleamarket/can_admin", {
           'id': this.$store.data.user.id
         });
       }
       if(this.$store.data.place.slug === 'blackmarket'){
-        admin = await this.$http.get("/blackmarket/can_admin", {
+        staff = await this.$http.get("/blackmarket/can_admin", {
           'id': this.$store.data.user.id
         });
       }
-      if(admin && admin.data.status === 'success'){
+      if(this.$store.data.place.type === 'public') {
+        admin = await this.$http.get(`/place/can_admin/${this.$store.data.place.slug}/${this.$store.data.user.id}`);
+      }
+      
+      if(staff && staff.data.status === 'success' ||
+        admin && admin.data.result === true
+      ){
         this.canModify = true;
         if(this.$store.data.view3d){
           this.canInteractWithObject = true;
@@ -1036,7 +1044,6 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
             this.messages.push({msg: response, username: data.msg.username, from: this.virtualPet.pet_name, whisper: true, new: true,})
             if(this.tts){
               this.textToSpeech({msg: response});
-              console.log(response);
             }
           }, 1500);
         } 
