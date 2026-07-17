@@ -581,6 +581,25 @@ export class MemberService {
     return users;
   }
 
+  public async getDirectory(search: string, limit: number, offset: number): Promise<any> {
+    const activeTime = new Date(Date.now() - 5 * 60000).getTime();
+    const [members, total] = await Promise.all([
+      this.memberRepository.searchDirectory(search, limit, offset),
+      this.memberRepository.getDirectoryTotal(search),
+    ]);
+    const citizens = members.map((member: any) => ({
+      id: member.id,
+      username: member.username,
+      immigrationDate: member.created_at,
+      primaryRoleName: member.primary_role_name,
+      online: !!member.last_activity && new Date(member.last_activity).getTime() >= activeTime,
+    }));
+    return {
+      citizens,
+      total,
+    };
+  }
+
   public async getBackpack(username: string): Promise<any> {
     let memberId = null;
     let userId = null;
