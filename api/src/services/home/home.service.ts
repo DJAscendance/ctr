@@ -176,7 +176,7 @@ export class HomeService {
       throw new Error('You don\'t have a home yet.');
     }
 
-    const uploadDir = `${process.env.ASSETS_DIR}/homes-uploads`;
+    const uploadDir = process.env.ASSETS_DIR + '/homes-uploads';
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -190,7 +190,7 @@ export class HomeService {
         withoutEnlargement: true,
       })
       .webp()
-      .toFile(`${uploadDir}/${filename}`);
+      .toFile(uploadDir + '/' + filename);
 
     await this.homeRepository.update(home.id, { image: filename });
   }
@@ -206,7 +206,7 @@ export class HomeService {
       throw new Error('You don\'t have a home yet.');
     }
 
-    await this.deleteExistingHomeImage(home.id, `${process.env.ASSETS_DIR}/homes-uploads`);
+    await this.deleteExistingHomeImage(home.id, process.env.ASSETS_DIR + '/homes-uploads');
     await this.homeRepository.update(home.id, { image: null });
   }
 
@@ -214,7 +214,7 @@ export class HomeService {
   private async deleteExistingHomeImage(placeId: number, uploadDir: string): Promise<void> {
     const existingHome = await this.homeRepository.findById(placeId);
     if (existingHome?.image) {
-      const existingPath = `${uploadDir}/${existingHome.image}`;
+      const existingPath = uploadDir + '/' + existingHome.image;
       if (fs.existsSync(existingPath)) {
         fs.unlinkSync(existingPath);
       }
