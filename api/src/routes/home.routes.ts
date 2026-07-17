@@ -18,6 +18,12 @@ homeRoutes.get('/chat-access/status/:placeId',
   (request, response) => homeController.getChatAccessStatus(request, response));
 homeRoutes.get('/information/:placeId',
   (request, response) => homeController.getHomeInformation(request, response));
+homeRoutes.get('/moderation/queue',
+  (request, response) => homeController.getImageModerationQueue(request, response));
+homeRoutes.post('/moderation/:placeId/approve',
+  (request, response) => homeController.approveImage(request, response));
+homeRoutes.post('/moderation/:placeId/reject',
+  (request, response) => homeController.rejectImage(request, response));
 homeRoutes.get('/:username',
   (request, response) => homeController.getHome(request, response));
 homeRoutes.post('/settle',

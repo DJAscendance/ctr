@@ -243,6 +243,9 @@ export class HomeService {
     await this.homeRepository.update(place.id, {
       home_design_id: null,
       image: null,
+      image_status: 'none',
+      image_checked_by: null,
+      image_checked_at: null,
     });
 
     // clear the chat access guest list (unrestricted again)
@@ -315,7 +318,14 @@ export class HomeService {
       .webp()
       .toFile(uploadDir + '/' + filename);
 
-    await this.homeRepository.update(home.id, { image: filename });
+    // New uploads are held for moderation - hidden from the public behind a
+    // "NOT CHECKED!" placeholder until a Block Leader / Deputy / admin approves.
+    await this.homeRepository.update(home.id, {
+      image: filename,
+      image_status: 'pending',
+      image_checked_by: null,
+      image_checked_at: null,
+    });
   }
 
   /**
@@ -330,7 +340,12 @@ export class HomeService {
     }
 
     await this.deleteExistingHomeImage(home.id, process.env.ASSETS_DIR + '/homes-uploads');
-    await this.homeRepository.update(home.id, { image: null });
+    await this.homeRepository.update(home.id, {
+      image: null,
+      image_status: 'none',
+      image_checked_by: null,
+      image_checked_at: null,
+    });
   }
 
   /** Deletes the home's currently uploaded image file from disk, if one exists. */
@@ -431,5 +446,65 @@ export class HomeService {
         ...guests.map(guest => guest.username),
       ],
     };
+  }
+
+  /**
+   * Lists home images awaiting moderation, for the CHECK queue shown to Block Leaders /
+   * Deputies / admins. Each entry carries the owner's username, the block name, and the
+   * public image URL so the moderator can preview it before approving or rejecting.
+   */
+  public async getPendingImageHomes(): Promise<Array<{
+    placeId: number;
+    ownerUsername: string;
+    homeName: string;
+    blockName: string;
+    imageUrl: string;
+  }>> {
+    const rows = await this.homeRepository.findPendingImageHomes();
+    return rows.map(row => ({
+      placeId: row.placeId,
+      ownerUsername: row.ownerUsername,
+      homeName: row.homeName,
+      blockName: row.blockName,
+      imageUrl: '/assets/homes-uploads/' + row.image,
+    }));
+  }
+
+  /**
+   * Approves a home's pending image, making it publicly visible. Records who checked it
+   * and when.
+   * @param homePlaceId id of the home's place record
+   * @param checkerMemberId id of the moderator approving the image
+   */
+  public async approveHomeImage(homePlaceId: number, checkerMemberId: number): Promise<void> {
+    const home = await this.homeRepository.findById(homePlaceId);
+    if (!home || !home.image || home.image_status !== 'pending') {
+      throw new Error('No pending image to approve.');
+    }
+    await this.homeRepository.update(homePlaceId, {
+      image_status: 'approved',
+      image_checked_by: checkerMemberId,
+      image_checked_at: new Date(),
+    });
+  }
+
+  /**
+   * Rejects a home's pending image: deletes the file from disk and clears the image so the
+   * owner must upload a new one. Records who checked it and when.
+   * @param homePlaceId id of the home's place record
+   * @param checkerMemberId id of the moderator rejecting the image
+   */
+  public async rejectHomeImage(homePlaceId: number, checkerMemberId: number): Promise<void> {
+    const home = await this.homeRepository.findById(homePlaceId);
+    if (!home || !home.image || home.image_status !== 'pending') {
+      throw new Error('No pending image to reject.');
+    }
+    await this.deleteExistingHomeImage(homePlaceId, process.env.ASSETS_DIR + '/homes-uploads');
+    await this.homeRepository.update(homePlaceId, {
+      image: null,
+      image_status: 'rejected',
+      image_checked_by: checkerMemberId,
+      image_checked_at: new Date(),
+    });
   }
 }

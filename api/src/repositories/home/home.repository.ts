@@ -41,4 +41,25 @@ export class HomeRepository {
       .del();
   }
 
+  /**
+   * Lists all homes whose uploaded image is awaiting moderation, joined with the owner's
+   * username and the containing block, for display in the image-check queue.
+   */
+  public async findPendingImageHomes(): Promise<any[]> {
+    return this.db.knex('home')
+      .join('place', 'place.id', 'home.place_id')
+      .leftJoin('member', 'member.id', 'place.member_id')
+      .leftJoin('map_location', 'map_location.place_id', 'home.place_id')
+      .leftJoin('place as block', 'block.id', 'map_location.parent_place_id')
+      .where('home.image_status', 'pending')
+      .whereNotNull('home.image')
+      .select(
+        'home.place_id as placeId',
+        'home.image as image',
+        'place.name as homeName',
+        'member.username as ownerUsername',
+        'block.name as blockName',
+      );
+  }
+
 }

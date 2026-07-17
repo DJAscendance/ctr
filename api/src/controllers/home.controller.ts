@@ -59,11 +59,19 @@ class HomeController {
         const blockData = await this.homeService.getHomeBlock(homeData.id);
         const homeDesignData = await this.homeService.getPlaceHomeDesign(userId, homeData.id);
         const homeRecord = await this.homeService.getHomeRecord(homeData.id);
+        // Only expose the real image filename once it has been approved by moderation;
+        // otherwise the client shows the "NOT CHECKED!" placeholder (for a pending image)
+        // or the "No image uploaded yet!" text. This keeps unchecked images off the public
+        // page for everyone, including the owner.
+        const publicHomeRecord = homeRecord && {
+          ...homeRecord,
+          image: homeRecord.image_status === 'approved' ? homeRecord.image : null,
+        };
         response.status(200).json({
           homeData: homeData,
           blockData: blockData,
           homeDesignData: homeDesignData,
-          homeRecord: homeRecord,
+          homeRecord: publicHomeRecord,
         });
       } else {
         response.status(200).json({
@@ -520,6 +528,87 @@ class HomeController {
 
       const status = await this.homeService.getChatAccessStatusByPlaceId(parseInt(placeId));
       response.status(200).json(status);
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
+   * Confirms the session belongs to a moderator (Block Leader / Deputy or admin) allowed
+   * to check home images. Sends a 403 and returns null if not. v1 grants any staff/admin
+   * the ability to check any pending image; block-scoping can be layered on later.
+   */
+  private async requireImageModerator(session): Promise<boolean> {
+    const allowed = await this.memberService.canStaff(session.id)
+      || await this.memberService.canAdmin(session.id);
+    return allowed;
+  }
+
+  /**
+   * Returns the queue of home images awaiting a check. Moderators only.
+   */
+  public async getImageModerationQueue(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    try {
+      if (!(await this.requireImageModerator(session))) {
+        response.status(403).json({ 'error': 'Not authorized to check home images.' });
+        return;
+      }
+      const queue = await this.homeService.getPendingImageHomes();
+      response.status(200).json({ queue });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
+   * Approves a pending home image, making it publicly visible. Moderators only.
+   */
+  public async approveImage(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { placeId } = request.params;
+
+    try {
+      if (!(await this.requireImageModerator(session))) {
+        response.status(403).json({ 'error': 'Not authorized to check home images.' });
+        return;
+      }
+      if (!validator.isInt(placeId)) {
+        throw new Error('placeId must be passed');
+      }
+      await this.homeService.approveHomeImage(parseInt(placeId), session.id);
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
+   * Rejects a pending home image, deleting it. Moderators only.
+   */
+  public async rejectImage(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { placeId } = request.params;
+
+    try {
+      if (!(await this.requireImageModerator(session))) {
+        response.status(403).json({ 'error': 'Not authorized to check home images.' });
+        return;
+      }
+      if (!validator.isInt(placeId)) {
+        throw new Error('placeId must be passed');
+      }
+      await this.homeService.rejectHomeImage(parseInt(placeId), session.id);
+      response.status(200).json({ 'status': 'success' });
     } catch (error) {
       console.error(error);
       response.status(400).json({ 'error': error.message });
