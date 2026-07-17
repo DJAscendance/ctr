@@ -1,12 +1,16 @@
 <template>
   <div class="w-full flex flex-col items-center">
-    <div class="flex justify-center w-full mb-8">
+    <h1 class="flex justify-center w-full mb-8">
+      <!-- The banner conveys the title visually; the sr-only text is the accessible
+           heading so the page keeps a semantic top-level heading even if the image
+           fails to load, and the image is decorative to avoid a duplicate announcement. -->
+      <span class="sr-only">Citizen Directory</span>
       <img
         src="/assets/img/citizen-directory.jpg"
-        alt="Citizen Directory"
+        alt=""
         class="max-w-full h-auto"
       />
-    </div>
+    </h1>
     <div class="flex justify-center w-full mb-5">
       Search:
       <span class="mx-8">
