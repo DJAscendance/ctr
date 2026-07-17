@@ -535,9 +535,10 @@ class HomeController {
   }
 
   /**
-   * Confirms the session belongs to a moderator (Block Leader / Deputy or admin) allowed
-   * to check home images. Sends a 403 and returns null if not. v1 grants any staff/admin
-   * the ability to check any pending image; block-scoping can be layered on later.
+   * Returns whether the session belongs to a moderator allowed to check home images: any
+   * staff role (colony/neighborhood/block leaders and deputies) or admin (including security
+   * roles). Returns a boolean only - the caller is responsible for sending the 403. v1 lets
+   * any such moderator check any pending image; block-scoping can be layered on later.
    */
   private async requireImageModerator(session): Promise<boolean> {
     const allowed = await this.memberService.canStaff(session.id)
@@ -573,6 +574,7 @@ class HomeController {
     if (!session) return;
 
     const { placeId } = request.params;
+    const { revision } = request.body;
 
     try {
       if (!(await this.requireImageModerator(session))) {
@@ -582,11 +584,11 @@ class HomeController {
       if (!validator.isInt(placeId)) {
         throw new Error('placeId must be passed');
       }
-      await this.homeService.approveHomeImage(parseInt(placeId), session.id);
+      await this.homeService.approveHomeImage(parseInt(placeId), session.id, revision);
       response.status(200).json({ 'status': 'success' });
     } catch (error) {
       console.error(error);
-      response.status(400).json({ 'error': error.message });
+      response.status(error.status || 400).json({ 'error': error.message });
     }
   }
 
@@ -598,6 +600,7 @@ class HomeController {
     if (!session) return;
 
     const { placeId } = request.params;
+    const { revision } = request.body;
 
     try {
       if (!(await this.requireImageModerator(session))) {
@@ -607,11 +610,11 @@ class HomeController {
       if (!validator.isInt(placeId)) {
         throw new Error('placeId must be passed');
       }
-      await this.homeService.rejectHomeImage(parseInt(placeId), session.id);
+      await this.homeService.rejectHomeImage(parseInt(placeId), session.id, revision);
       response.status(200).json({ 'status': 'success' });
     } catch (error) {
       console.error(error);
-      response.status(400).json({ 'error': error.message });
+      response.status(error.status || 400).json({ 'error': error.message });
     }
   }
 

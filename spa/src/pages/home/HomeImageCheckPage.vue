@@ -45,7 +45,7 @@
             type="button"
             class="btn"
             :disabled="busy"
-            @click="approve(item.placeId)"
+            @click="approve(item)"
           >
             Approve
           </button>
@@ -53,7 +53,7 @@
             type="button"
             class="btn"
             :disabled="busy"
-            @click="reject(item.placeId)"
+            @click="reject(item)"
           >
             Reject
           </button>
@@ -120,22 +120,29 @@ export default Vue.extend({
         }
       }
     },
-    async approve(placeId) {
-      await this.moderate(`/home/moderation/${placeId}/approve`);
+    async approve(item) {
+      await this.moderate(`/home/moderation/${item.placeId}/approve`, item.revision);
     },
-    async reject(placeId) {
-      await this.moderate(`/home/moderation/${placeId}/reject`);
+    async reject(item) {
+      await this.moderate(`/home/moderation/${item.placeId}/reject`, item.revision);
     },
-    async moderate(url) {
+    async moderate(url, revision) {
       this.busy = true;
       this.showError = false;
       this.error = "";
       try {
-        await this.$http.post(url);
+        // Send the exact revision the moderator reviewed so the server acts only on that
+        // image; if the owner replaced it since the queue loaded, the server answers 409 and
+        // the refresh below shows the new revision to re-check.
+        await this.$http.post(url, { revision });
         await this.fetchQueue();
       } catch (e) {
         this.error = e.response?.data?.error || "Action failed.";
         this.showError = true;
+        // On a conflict the queue has moved on - reload it so the moderator sees the truth.
+        if (e.response?.status === 409) {
+          await this.fetchQueue();
+        }
       } finally {
         this.busy = false;
       }

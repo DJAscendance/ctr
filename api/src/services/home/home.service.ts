@@ -1,3 +1,5 @@
+import { randomBytes } from 'crypto';
+
 import { Service } from 'typedi';
 import sharp from 'sharp';
 const fs = require('fs');
@@ -231,9 +233,6 @@ export class HomeService {
       );
     }
 
-    // delete any uploaded image (whether it was pending/private or approved/public)
-    this.deleteHomeImageFiles(place.id);
-
     // clear customizations back to defaults
     await this.placeRepository.updateHomeByMemberId(memberId, {
       name: `${member.username}'s Home`,
@@ -242,11 +241,21 @@ export class HomeService {
     });
     await this.homeRepository.update(place.id, {
       home_design_id: null,
-      image: null,
-      image_status: 'none',
-      image_checked_by: null,
-      image_checked_at: null,
     });
+
+    // Clear the image record under the row lock (serialized with any in-flight moderation),
+    // then delete every image file for the home (public copy and all pending revisions).
+    await this.homeRepository.runInTransaction(async trx => {
+      await this.homeRepository.lockHome(trx, place.id);
+      await this.homeRepository.updateWithin(trx, place.id, {
+        image: null,
+        image_status: 'none',
+        image_revision: null,
+        image_checked_by: null,
+        image_checked_at: null,
+      });
+    });
+    this.deleteAllHomeImageFiles(place.id);
 
     // clear the chat access guest list (unrestricted again)
     const guestRoleId = this.roleRepository.roleMap.HomeChatGuest;
@@ -307,28 +316,56 @@ export class HomeService {
       fs.mkdirSync(pendingDir, { recursive: true });
     }
 
-    // Replacing any previous image: remove it from both the public and private directories
-    // so a freshly uploaded (unchecked) image never coexists with - or is served in place
-    // of - a previously approved one.
-    this.deleteHomeImageFiles(home.id);
-
-    const filename = `${home.id}.webp`;
+    // Each upload gets its own revision token and its own private filename, so a replacement
+    // upload NEVER overwrites the file an in-flight approval is reading. The processed image
+    // is written before we take the row lock (below) to keep the lock window short - it is
+    // uniquely named, so it is harmless if the transaction then fails.
+    const revision = this.generateRevision();
+    const filename = this.publicImageFilename(home.id);
     await sharp(imageFile.data)
       .resize(HomeService.IMAGE_MAX_DIMENSION, HomeService.IMAGE_MAX_DIMENSION, {
         fit: 'inside',
         withoutEnlargement: true,
       })
       .webp()
-      .toFile(`${pendingDir}/${filename}`);
+      .toFile(this.pendingImagePath(home.id, revision));
 
-    // New uploads are held for moderation in the PRIVATE directory - hidden from the public
-    // behind a "NOT CHECKED!" placeholder until a Block Leader / Deputy / admin approves.
-    await this.homeRepository.update(home.id, {
-      image: filename,
-      image_status: 'pending',
-      image_checked_by: null,
-      image_checked_at: null,
-    });
+    // Record the new pending revision under the home's row lock, serialized against any
+    // concurrent approval/reject/upload for this home. New uploads are held for moderation in
+    // the PRIVATE directory - hidden from the public behind a "NOT CHECKED!" placeholder until
+    // a Block Leader / Deputy / admin approves the exact revision.
+    let previousRevision: string | undefined;
+    try {
+      await this.homeRepository.runInTransaction(async trx => {
+        const locked = await this.homeRepository.lockHome(trx, home.id);
+        previousRevision = locked && locked.image_revision;
+        await this.homeRepository.updateWithin(trx, home.id, {
+          image: filename,
+          image_status: 'pending',
+          image_revision: revision,
+          image_checked_by: null,
+          image_checked_at: null,
+        });
+      });
+    } catch (error) {
+      // The record was not updated: drop the orphaned pending file we just wrote.
+      this.deletePendingRevisionFile(home.id, revision);
+      throw error;
+    }
+
+    // Committed. Now clean up the superseded artifacts. This only ever removes bytes that are
+    // no longer current: any previously-approved public copy (a replacement must be re-checked
+    // before it is public again) and the old pending revision's file. Done after commit so a
+    // rolled-back upload never destroys the existing image; best-effort so a stale leftover
+    // (which is at worst an already-approved image or an orphan) can't fail the request.
+    try {
+      this.deletePublicImageFile(home.id);
+      if (previousRevision && previousRevision !== revision) {
+        this.deletePendingRevisionFile(home.id, previousRevision);
+      }
+    } catch (error) {
+      console.error('home image upload: cleanup of superseded files failed', error);
+    }
   }
 
   /**
@@ -342,18 +379,26 @@ export class HomeService {
       throw new Error('You don\'t have a home yet.');
     }
 
-    this.deleteHomeImageFiles(home.id);
-    await this.homeRepository.update(home.id, {
-      image: null,
-      image_status: 'none',
-      image_checked_by: null,
-      image_checked_at: null,
+    // Clear the image record under the row lock (serialized with any in-flight moderation),
+    // then delete every image file for the home - the public copy and all pending revisions.
+    await this.homeRepository.runInTransaction(async trx => {
+      await this.homeRepository.lockHome(trx, home.id);
+      await this.homeRepository.updateWithin(trx, home.id, {
+        image: null,
+        image_status: 'none',
+        image_revision: null,
+        image_checked_by: null,
+        image_checked_at: null,
+      });
     });
+    this.deleteAllHomeImageFiles(home.id);
   }
 
   /**
    * Directory that publicly visible (approved) home images live in. Served by nginx under
-   * /assets/homes-uploads, so ONLY approved images may ever be placed here.
+   * /assets/homes-uploads, so ONLY approved images may ever be placed here. The public file
+   * is always the canonical "<placeId>.webp" (no revision in the name), so the public URL is
+   * stable across re-uploads.
    */
   private getPublicImageDir(): string {
     return `${process.env.ASSETS_DIR}/homes-uploads`;
@@ -369,37 +414,106 @@ export class HomeService {
     return `${process.env.PRIVATE_UPLOADS_DIR || '/usr/src/app/private-uploads'}/homes-pending`;
   }
 
+  /** Canonical public filename for a home's approved image (no revision - stable URL). */
+  private publicImageFilename(placeId: number): string {
+    return `${placeId}.webp`;
+  }
+
   /**
-   * Moves a file, falling back to copy+unlink when source and destination are on different
-   * filesystems (the public and private image directories may be separate mounts, which
-   * makes a plain rename fail with EXDEV). Prefers an atomic rename when they share a device.
+   * Private filename for a specific pending revision. Each upload gets a fresh revision, so
+   * a replacement upload never overwrites the file an in-flight approval is reading - the
+   * root cause of the moderation-bypass race. Derived solely from the numeric place id and a
+   * hex revision token, so it can never traverse outside the pending directory.
    */
-  private moveFile(sourcePath: string, destPath: string): void {
-    try {
-      fs.renameSync(sourcePath, destPath);
-    } catch (error) {
-      if (error.code === 'EXDEV') {
-        fs.copyFileSync(sourcePath, destPath);
-        fs.unlinkSync(sourcePath);
-      } else {
-        throw error;
-      }
+  private pendingImageFilename(placeId: number, revision: string): string {
+    return `${placeId}-${revision}.webp`;
+  }
+
+  private publicImagePath(placeId: number): string {
+    return `${this.getPublicImageDir()}/${this.publicImageFilename(placeId)}`;
+  }
+
+  private pendingImagePath(placeId: number, revision: string): string {
+    return `${this.getPendingImageDir()}/${this.pendingImageFilename(placeId, revision)}`;
+  }
+
+  /** Generates a fresh, unguessable revision token for a newly uploaded image. */
+  private generateRevision(): string {
+    return randomBytes(16).toString('hex');
+  }
+
+  /** An error that maps to HTTP 409 Conflict (the reviewed image changed underneath us). */
+  private conflict(message: string): Error {
+    return Object.assign(new Error(message), { status: 409 });
+  }
+
+  /** Deletes the home's canonical public (approved) image file, if present. */
+  private deletePublicImageFile(placeId: number): void {
+    const filePath = this.publicImagePath(placeId);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
+
+  /** Deletes a single pending revision's private file, if present. No-op for a null token. */
+  private deletePendingRevisionFile(placeId: number, revision?: string | null): void {
+    if (!revision) {
+      return;
+    }
+    const filePath = this.pendingImagePath(placeId, revision);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
     }
   }
 
   /**
-   * Deletes a home's image file from BOTH the public and private directories. The filename
-   * is derived solely from the numeric place id (images are always stored as
-   * "<placeId>.webp"), so this can never traverse outside those directories. Missing files
-   * are ignored, so it is safe to call regardless of the image's current state.
+   * Deletes every private pending file belonging to a place (any revision). Used by the
+   * full-cleanup paths (remove / reject / reset) so no superseded revision can linger. The
+   * match is anchored to the numeric "<placeId>-" prefix, so it can never touch another
+   * home's files or traverse outside the pending directory.
    */
-  private deleteHomeImageFiles(placeId: number): void {
-    const filename = `${placeId}.webp`;
-    for (const dir of [this.getPublicImageDir(), this.getPendingImageDir()]) {
-      const filePath = `${dir}/${filename}`;
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+  private deleteAllPendingFiles(placeId: number): void {
+    const pendingDir = this.getPendingImageDir();
+    if (!fs.existsSync(pendingDir)) {
+      return;
+    }
+    const prefix = `${placeId}-`;
+    for (const entry of fs.readdirSync(pendingDir)) {
+      if (entry.startsWith(prefix) && entry.endsWith('.webp')) {
+        fs.unlinkSync(`${pendingDir}/${entry}`);
       }
+    }
+  }
+
+  /** Removes a home's image from disk entirely: the public copy and every pending revision. */
+  private deleteAllHomeImageFiles(placeId: number): void {
+    this.deletePublicImageFile(placeId);
+    this.deleteAllPendingFiles(placeId);
+  }
+
+  /**
+   * Publishes an approved revision into the canonical public file. The bytes are copied from
+   * the private pending file into a temp file IN the public directory and then atomically
+   * renamed into place, so nginx never sees a half-written image and the canonical file only
+   * ever flips from one complete approved image to another. The cross-directory copy also
+   * tolerates the public and private dirs being on separate mounts (EXDEV). Throws on any
+   * failure, leaving the canonical file untouched, so the caller can keep the image pending.
+   */
+  private publishApprovedImage(placeId: number, revision: string): void {
+    const sourcePath = this.pendingImagePath(placeId, revision);
+    const publicDir = this.getPublicImageDir();
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+    const tempPath = `${publicDir}/.tmp-${this.pendingImageFilename(placeId, revision)}`;
+    try {
+      fs.copyFileSync(sourcePath, tempPath);
+      fs.renameSync(tempPath, this.publicImagePath(placeId));
+    } catch (error) {
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+      throw error;
     }
   }
 
@@ -503,6 +617,7 @@ export class HomeService {
     homeName: string;
     blockName: string;
     imageUrl: string;
+    revision: string;
   }>> {
     const rows = await this.homeRepository.findPendingImageHomes();
     return rows.map(row => ({
@@ -513,6 +628,8 @@ export class HomeService {
       // The pending image is private; moderators load it through the authenticated preview
       // endpoint (relative to /api), never a public static URL.
       imageUrl: `/home/moderation/${row.placeId}/image`,
+      // Bound to the moderator's approve/reject so it acts on the exact revision reviewed.
+      revision: row.revision,
     }));
   }
 
@@ -525,10 +642,10 @@ export class HomeService {
    */
   public async getPendingImagePath(homePlaceId: number): Promise<string | null> {
     const home = await this.homeRepository.findById(homePlaceId);
-    if (!home || !home.image || home.image_status !== 'pending') {
+    if (!home || !home.image || home.image_status !== 'pending' || !home.image_revision) {
       return null;
     }
-    const filePath = `${this.getPendingImageDir()}/${homePlaceId}.webp`;
+    const filePath = this.pendingImagePath(homePlaceId, home.image_revision);
     if (!fs.existsSync(filePath)) {
       return null;
     }
@@ -536,69 +653,94 @@ export class HomeService {
   }
 
   /**
-   * Approves a home's pending image, making it publicly visible. Records who checked it
-   * and when.
+   * Approves a home's pending image, making it publicly visible - but ONLY the exact
+   * revision the moderator reviewed. The whole check runs under the home's row lock, so it is
+   * serialized against any concurrent upload/reject/reset. If the owner has replaced the
+   * image since the moderator loaded the queue (the current revision no longer matches the
+   * reviewed one), the approval is refused with a 409 conflict and nothing is published, so a
+   * moderator can never inadvertently publish an unreviewed image. The reviewed revision's
+   * bytes are published into the canonical public file with an atomic rename; the private
+   * copy is removed only after the transaction commits.
    * @param homePlaceId id of the home's place record
    * @param checkerMemberId id of the moderator approving the image
+   * @param reviewedRevision revision token the moderator reviewed (from the queue listing)
    */
-  public async approveHomeImage(homePlaceId: number, checkerMemberId: number): Promise<void> {
-    const home = await this.homeRepository.findById(homePlaceId);
-    if (!home || !home.image || home.image_status !== 'pending') {
-      throw new Error('No pending image to approve.');
+  public async approveHomeImage(
+    homePlaceId: number,
+    checkerMemberId: number,
+    reviewedRevision: string,
+  ): Promise<void> {
+    if (typeof reviewedRevision !== 'string' || reviewedRevision.length === 0) {
+      throw this.conflict('Refresh the image queue and check this image again.');
     }
 
-    const filename = `${homePlaceId}.webp`;
-    const pendingPath = `${this.getPendingImageDir()}/${filename}`;
-    const publicDir = this.getPublicImageDir();
-    const publicPath = `${publicDir}/${filename}`;
+    let approvedRevision: string;
+    await this.homeRepository.runInTransaction(async trx => {
+      const home = await this.homeRepository.lockHome(trx, homePlaceId);
+      if (!home || !home.image || home.image_status !== 'pending' || !home.image_revision) {
+        throw new Error('No pending image to approve.');
+      }
+      if (home.image_revision !== reviewedRevision) {
+        throw this.conflict('This image changed since you reviewed it. Refresh and re-check.');
+      }
+      if (!fs.existsSync(this.pendingImagePath(homePlaceId, home.image_revision))) {
+        throw new Error('Pending image file is missing.');
+      }
 
-    if (!fs.existsSync(pendingPath)) {
-      throw new Error('Pending image file is missing.');
-    }
-    if (!fs.existsSync(publicDir)) {
-      fs.mkdirSync(publicDir, { recursive: true });
-    }
-
-    // Atomically claim the pending -> approved transition. Only one caller can match
-    // image_status = 'pending', so concurrent/duplicate approvals can never both proceed and
-    // clobber each other. The image is only moved into the public directory AFTER the claim
-    // succeeds, so it can never be served while still marked pending. If the move then fails
-    // we revert to pending so we never claim "approved" without a published file; the
-    // transient window (approved record, file not yet public) merely shows the placeholder.
-    const claimed = await this.homeRepository.approveIfPending(homePlaceId, checkerMemberId);
-    if (!claimed) {
-      throw new Error('No pending image to approve.');
-    }
-    try {
-      this.moveFile(pendingPath, publicPath);
-    } catch (error) {
-      await this.homeRepository.update(homePlaceId, {
-        image_status: 'pending',
-        image_checked_by: null,
-        image_checked_at: null,
+      // Publish the reviewed revision, then record the approval. If publishing throws, the
+      // transaction rolls back and the image stays pending with nothing exposed publicly.
+      this.publishApprovedImage(homePlaceId, home.image_revision);
+      await this.homeRepository.updateWithin(trx, homePlaceId, {
+        image_status: 'approved',
+        image_checked_by: checkerMemberId,
+        image_checked_at: new Date(),
       });
-      throw new Error('Could not publish the approved image.');
-    }
+      approvedRevision = home.image_revision;
+    });
+
+    // Committed: the reviewed revision is public. Remove its now-redundant private copy.
+    this.deletePendingRevisionFile(homePlaceId, approvedRevision);
   }
 
   /**
-   * Rejects a home's pending image: deletes the file from disk and clears the image so the
-   * owner must upload a new one. Records who checked it and when.
+   * Rejects a home's pending image: clears the image record and deletes the file so the
+   * owner must upload a new one. Runs under the home's row lock and is bound to the exact
+   * revision the moderator reviewed, so a rejection of one image can never clear or delete a
+   * different image the owner uploaded in the meantime (that returns a 409 conflict instead).
    * @param homePlaceId id of the home's place record
    * @param checkerMemberId id of the moderator rejecting the image
+   * @param reviewedRevision revision token the moderator reviewed (from the queue listing)
    */
-  public async rejectHomeImage(homePlaceId: number, checkerMemberId: number): Promise<void> {
-    const home = await this.homeRepository.findById(homePlaceId);
-    if (!home || !home.image || home.image_status !== 'pending') {
-      throw new Error('No pending image to reject.');
+  public async rejectHomeImage(
+    homePlaceId: number,
+    checkerMemberId: number,
+    reviewedRevision: string,
+  ): Promise<void> {
+    if (typeof reviewedRevision !== 'string' || reviewedRevision.length === 0) {
+      throw this.conflict('Refresh the image queue and check this image again.');
     }
-    // Atomically claim the rejection so concurrent rejects can't both process the same image.
-    const claimed = await this.homeRepository.rejectIfPending(homePlaceId, checkerMemberId);
-    if (!claimed) {
-      throw new Error('No pending image to reject.');
-    }
-    // Delete the private pending file (and defensively any public copy). Tolerates a missing
-    // file. The owner may upload a replacement afterwards.
-    this.deleteHomeImageFiles(homePlaceId);
+
+    let rejectedRevision: string;
+    await this.homeRepository.runInTransaction(async trx => {
+      const home = await this.homeRepository.lockHome(trx, homePlaceId);
+      if (!home || !home.image || home.image_status !== 'pending' || !home.image_revision) {
+        throw new Error('No pending image to reject.');
+      }
+      if (home.image_revision !== reviewedRevision) {
+        throw this.conflict('This image changed since you reviewed it. Refresh and re-check.');
+      }
+      rejectedRevision = home.image_revision;
+      await this.homeRepository.updateWithin(trx, homePlaceId, {
+        image: null,
+        image_status: 'rejected',
+        image_revision: null,
+        image_checked_by: checkerMemberId,
+        image_checked_at: new Date(),
+      });
+    });
+
+    // Committed: delete the rejected private file (and defensively any public copy).
+    this.deletePendingRevisionFile(homePlaceId, rejectedRevision);
+    this.deletePublicImageFile(homePlaceId);
   }
 }

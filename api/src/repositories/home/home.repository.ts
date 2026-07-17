@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
@@ -42,43 +43,48 @@ export class HomeRepository {
   }
 
   /**
+   * Runs the given work inside a single database transaction, so all image mutations for a
+   * home (upload / approve / reject / remove / reset) commit or roll back together.
+   * @param work callback receiving the transaction handle
+   */
+  public async runInTransaction<T>(work: (trx: Knex.Transaction) => Promise<T>): Promise<T> {
+    return this.db.knex.transaction(work);
+  }
+
+  /**
+   * Reads a home row while taking an exclusive row-level lock on it (`SELECT ... FOR
+   * UPDATE`). Because every image mutation for a home first acquires this lock, they are
+   * serialized against one another across concurrent requests - and across processes, since
+   * the lock lives in the database, not in this process. Must be called inside a
+   * transaction; the lock is held until that transaction commits or rolls back.
+   * @param trx transaction handle from runInTransaction
+   * @param placeId id of the home's place record
+   */
+  public async lockHome(trx: Knex.Transaction, placeId: number): Promise<Home> {
+    const [home] = await trx<Home>('home').where({ place_id: placeId }).forUpdate();
+    return home;
+  }
+
+  /**
+   * Updates a home row within an existing transaction (see lockHome / runInTransaction).
+   * @param trx transaction handle
+   * @param placeId id of the home's place record
+   * @param props columns to update
+   */
+  public async updateWithin(
+    trx: Knex.Transaction,
+    placeId: number,
+    props: Partial<Home>,
+  ): Promise<void> {
+    await trx<Home>('home').where({ place_id: placeId }).update(props);
+  }
+
+  /**
    * Lists all homes whose uploaded image is awaiting moderation, joined with the owner's
-   * username and the containing block, for display in the image-check queue.
+   * username and the containing block, for display in the image-check queue. Includes each
+   * pending image's revision token so the moderator's approve/reject request can be bound to
+   * the exact revision they reviewed.
    */
-  /**
-   * Atomically transitions a home's image from pending to approved, but only if it is still
-   * pending. Returns true if this call performed the transition, false if it was already
-   * approved/removed (e.g. a concurrent approval won the race). Makes approval safe under
-   * duplicate/concurrent submissions - only one caller can ever flip a given pending image.
-   */
-  public async approveIfPending(placeId: number, checkerMemberId: number): Promise<boolean> {
-    const affected = await this.db.home
-      .where({ place_id: placeId, image_status: 'pending' })
-      .update({
-        image_status: 'approved',
-        image_checked_by: checkerMemberId,
-        image_checked_at: new Date(),
-      });
-    return affected > 0;
-  }
-
-  /**
-   * Atomically transitions a home's image from pending to rejected (clearing the stored
-   * image), but only if it is still pending. Returns true if this call performed the
-   * transition, false if a concurrent rejection already did.
-   */
-  public async rejectIfPending(placeId: number, checkerMemberId: number): Promise<boolean> {
-    const affected = await this.db.home
-      .where({ place_id: placeId, image_status: 'pending' })
-      .update({
-        image: null,
-        image_status: 'rejected',
-        image_checked_by: checkerMemberId,
-        image_checked_at: new Date(),
-      });
-    return affected > 0;
-  }
-
   public async findPendingImageHomes(): Promise<any[]> {
     return this.db.knex('home')
       .join('place', 'place.id', 'home.place_id')
@@ -90,6 +96,7 @@ export class HomeRepository {
       .select(
         'home.place_id as placeId',
         'home.image as image',
+        'home.image_revision as revision',
         'place.name as homeName',
         'member.username as ownerUsername',
         'block.name as blockName',
