@@ -231,8 +231,8 @@ export class HomeService {
       );
     }
 
-    // delete any uploaded image
-    await this.deleteExistingHomeImage(place.id, process.env.ASSETS_DIR + '/homes-uploads');
+    // delete any uploaded image (whether it was pending/private or approved/public)
+    this.deleteHomeImageFiles(place.id);
 
     // clear customizations back to defaults
     await this.placeRepository.updateHomeByMemberId(memberId, {
@@ -302,12 +302,15 @@ export class HomeService {
       throw new Error('You don\'t have a home yet.');
     }
 
-    const uploadDir = process.env.ASSETS_DIR + '/homes-uploads';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    const pendingDir = this.getPendingImageDir();
+    if (!fs.existsSync(pendingDir)) {
+      fs.mkdirSync(pendingDir, { recursive: true });
     }
 
-    await this.deleteExistingHomeImage(home.id, uploadDir);
+    // Replacing any previous image: remove it from both the public and private directories
+    // so a freshly uploaded (unchecked) image never coexists with - or is served in place
+    // of - a previously approved one.
+    this.deleteHomeImageFiles(home.id);
 
     const filename = `${home.id}.webp`;
     await sharp(imageFile.data)
@@ -316,10 +319,10 @@ export class HomeService {
         withoutEnlargement: true,
       })
       .webp()
-      .toFile(uploadDir + '/' + filename);
+      .toFile(`${pendingDir}/${filename}`);
 
-    // New uploads are held for moderation - hidden from the public behind a
-    // "NOT CHECKED!" placeholder until a Block Leader / Deputy / admin approves.
+    // New uploads are held for moderation in the PRIVATE directory - hidden from the public
+    // behind a "NOT CHECKED!" placeholder until a Block Leader / Deputy / admin approves.
     await this.homeRepository.update(home.id, {
       image: filename,
       image_status: 'pending',
@@ -339,7 +342,7 @@ export class HomeService {
       throw new Error('You don\'t have a home yet.');
     }
 
-    await this.deleteExistingHomeImage(home.id, process.env.ASSETS_DIR + '/homes-uploads');
+    this.deleteHomeImageFiles(home.id);
     await this.homeRepository.update(home.id, {
       image: null,
       image_status: 'none',
@@ -348,13 +351,54 @@ export class HomeService {
     });
   }
 
-  /** Deletes the home's currently uploaded image file from disk, if one exists. */
-  private async deleteExistingHomeImage(placeId: number, uploadDir: string): Promise<void> {
-    const existingHome = await this.homeRepository.findById(placeId);
-    if (existingHome?.image) {
-      const existingPath = uploadDir + '/' + existingHome.image;
-      if (fs.existsSync(existingPath)) {
-        fs.unlinkSync(existingPath);
+  /**
+   * Directory that publicly visible (approved) home images live in. Served by nginx under
+   * /assets/homes-uploads, so ONLY approved images may ever be placed here.
+   */
+  private getPublicImageDir(): string {
+    return `${process.env.ASSETS_DIR}/homes-uploads`;
+  }
+
+  /**
+   * Private directory that pending (unapproved) home images live in. Deliberately kept
+   * outside ASSETS_DIR and every nginx-served path so an unchecked image cannot be fetched
+   * directly - moderators preview it only through the authenticated
+   * /home/moderation/:placeId/image endpoint. Configurable via PRIVATE_UPLOADS_DIR.
+   */
+  private getPendingImageDir(): string {
+    return `${process.env.PRIVATE_UPLOADS_DIR || '/usr/src/app/private-uploads'}/homes-pending`;
+  }
+
+  /**
+   * Moves a file, falling back to copy+unlink when source and destination are on different
+   * filesystems (the public and private image directories may be separate mounts, which
+   * makes a plain rename fail with EXDEV). Prefers an atomic rename when they share a device.
+   */
+  private moveFile(sourcePath: string, destPath: string): void {
+    try {
+      fs.renameSync(sourcePath, destPath);
+    } catch (error) {
+      if (error.code === 'EXDEV') {
+        fs.copyFileSync(sourcePath, destPath);
+        fs.unlinkSync(sourcePath);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Deletes a home's image file from BOTH the public and private directories. The filename
+   * is derived solely from the numeric place id (images are always stored as
+   * "<placeId>.webp"), so this can never traverse outside those directories. Missing files
+   * are ignored, so it is safe to call regardless of the image's current state.
+   */
+  private deleteHomeImageFiles(placeId: number): void {
+    const filename = `${placeId}.webp`;
+    for (const dir of [this.getPublicImageDir(), this.getPendingImageDir()]) {
+      const filePath = `${dir}/${filename}`;
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
       }
     }
   }
@@ -466,8 +510,29 @@ export class HomeService {
       ownerUsername: row.ownerUsername,
       homeName: row.homeName,
       blockName: row.blockName,
-      imageUrl: '/assets/homes-uploads/' + row.image,
+      // The pending image is private; moderators load it through the authenticated preview
+      // endpoint (relative to /api), never a public static URL.
+      imageUrl: `/home/moderation/${row.placeId}/image`,
     }));
+  }
+
+  /**
+   * Resolves the on-disk path of a home's pending image for an authenticated moderator
+   * preview, or null if there is no pending image or its file is missing. The path is
+   * derived solely from the numeric place id, never from client input, so it cannot be used
+   * to traverse the filesystem.
+   * @param homePlaceId id of the home's place record
+   */
+  public async getPendingImagePath(homePlaceId: number): Promise<string | null> {
+    const home = await this.homeRepository.findById(homePlaceId);
+    if (!home || !home.image || home.image_status !== 'pending') {
+      return null;
+    }
+    const filePath = `${this.getPendingImageDir()}/${homePlaceId}.webp`;
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    return filePath;
   }
 
   /**
@@ -481,11 +546,39 @@ export class HomeService {
     if (!home || !home.image || home.image_status !== 'pending') {
       throw new Error('No pending image to approve.');
     }
-    await this.homeRepository.update(homePlaceId, {
-      image_status: 'approved',
-      image_checked_by: checkerMemberId,
-      image_checked_at: new Date(),
-    });
+
+    const filename = `${homePlaceId}.webp`;
+    const pendingPath = `${this.getPendingImageDir()}/${filename}`;
+    const publicDir = this.getPublicImageDir();
+    const publicPath = `${publicDir}/${filename}`;
+
+    if (!fs.existsSync(pendingPath)) {
+      throw new Error('Pending image file is missing.');
+    }
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+
+    // Atomically claim the pending -> approved transition. Only one caller can match
+    // image_status = 'pending', so concurrent/duplicate approvals can never both proceed and
+    // clobber each other. The image is only moved into the public directory AFTER the claim
+    // succeeds, so it can never be served while still marked pending. If the move then fails
+    // we revert to pending so we never claim "approved" without a published file; the
+    // transient window (approved record, file not yet public) merely shows the placeholder.
+    const claimed = await this.homeRepository.approveIfPending(homePlaceId, checkerMemberId);
+    if (!claimed) {
+      throw new Error('No pending image to approve.');
+    }
+    try {
+      this.moveFile(pendingPath, publicPath);
+    } catch (error) {
+      await this.homeRepository.update(homePlaceId, {
+        image_status: 'pending',
+        image_checked_by: null,
+        image_checked_at: null,
+      });
+      throw new Error('Could not publish the approved image.');
+    }
   }
 
   /**
@@ -499,12 +592,13 @@ export class HomeService {
     if (!home || !home.image || home.image_status !== 'pending') {
       throw new Error('No pending image to reject.');
     }
-    await this.deleteExistingHomeImage(homePlaceId, process.env.ASSETS_DIR + '/homes-uploads');
-    await this.homeRepository.update(homePlaceId, {
-      image: null,
-      image_status: 'rejected',
-      image_checked_by: checkerMemberId,
-      image_checked_at: new Date(),
-    });
+    // Atomically claim the rejection so concurrent rejects can't both process the same image.
+    const claimed = await this.homeRepository.rejectIfPending(homePlaceId, checkerMemberId);
+    if (!claimed) {
+      throw new Error('No pending image to reject.');
+    }
+    // Delete the private pending file (and defensively any public copy). Tolerates a missing
+    // file. The owner may upload a replacement afterwards.
+    this.deleteHomeImageFiles(homePlaceId);
   }
 }

@@ -45,6 +45,40 @@ export class HomeRepository {
    * Lists all homes whose uploaded image is awaiting moderation, joined with the owner's
    * username and the containing block, for display in the image-check queue.
    */
+  /**
+   * Atomically transitions a home's image from pending to approved, but only if it is still
+   * pending. Returns true if this call performed the transition, false if it was already
+   * approved/removed (e.g. a concurrent approval won the race). Makes approval safe under
+   * duplicate/concurrent submissions - only one caller can ever flip a given pending image.
+   */
+  public async approveIfPending(placeId: number, checkerMemberId: number): Promise<boolean> {
+    const affected = await this.db.home
+      .where({ place_id: placeId, image_status: 'pending' })
+      .update({
+        image_status: 'approved',
+        image_checked_by: checkerMemberId,
+        image_checked_at: new Date(),
+      });
+    return affected > 0;
+  }
+
+  /**
+   * Atomically transitions a home's image from pending to rejected (clearing the stored
+   * image), but only if it is still pending. Returns true if this call performed the
+   * transition, false if a concurrent rejection already did.
+   */
+  public async rejectIfPending(placeId: number, checkerMemberId: number): Promise<boolean> {
+    const affected = await this.db.home
+      .where({ place_id: placeId, image_status: 'pending' })
+      .update({
+        image: null,
+        image_status: 'rejected',
+        image_checked_by: checkerMemberId,
+        image_checked_at: new Date(),
+      });
+    return affected > 0;
+  }
+
   public async findPendingImageHomes(): Promise<any[]> {
     return this.db.knex('home')
       .join('place', 'place.id', 'home.place_id')

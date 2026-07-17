@@ -615,6 +615,64 @@ class HomeController {
     }
   }
 
+  /**
+   * Streams a home's pending image to an authenticated moderator so it can be previewed in
+   * the CHECK queue. Pending images are stored in a private directory that nginx never
+   * serves, so this endpoint is the only way to view an unapproved image - and it enforces
+   * the same moderator authorization as the rest of the queue. The image is resolved from a
+   * validated numeric place id, never a client-supplied path, and is sent with no-store so
+   * unchecked content is not cached.
+   */
+  public async previewImage(request: Request, response: Response): Promise<void> {
+    // Authenticate explicitly (401 on missing/invalid credentials) rather than via
+    // decryptSession, which would answer 400, and never echo the token back.
+    const { apitoken } = request.headers;
+    if (!apitoken || typeof apitoken !== 'string') {
+      response.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    let session;
+    try {
+      session = this.memberService.decodeMemberToken(apitoken);
+    } catch (error) {
+      response.status(401).json({ error: 'Invalid or expired token.' });
+      return;
+    }
+    if (!session) {
+      response.status(401).json({ error: 'Invalid or expired token.' });
+      return;
+    }
+
+    const { placeId } = request.params;
+
+    try {
+      if (!(await this.requireImageModerator(session))) {
+        response.status(403).json({ 'error': 'Not authorized to check home images.' });
+        return;
+      }
+      if (!validator.isInt(placeId)) {
+        response.status(400).json({ 'error': 'placeId must be passed' });
+        return;
+      }
+
+      const imagePath = await this.homeService.getPendingImagePath(parseInt(placeId));
+      if (!imagePath) {
+        response.status(404).json({ 'error': 'No pending image.' });
+        return;
+      }
+
+      response.sendFile(imagePath, {
+        headers: {
+          'Content-Type': 'image/webp',
+          'Cache-Control': 'no-store, private',
+        },
+      });
+    } catch (error) {
+      console.error(error);
+      response.status(500).json({ 'error': 'Could not load image.' });
+    }
+  }
+
 }
 const memberService = Container.get(MemberService);
 const homeService = Container.get(HomeService);

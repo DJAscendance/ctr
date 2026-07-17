@@ -24,7 +24,12 @@
       </tr>
       <tr v-for="item in queue" :key="item.placeId">
         <td class="border-double border-4 border-gray-400 p-1 text-center">
-          <img :src="item.imageUrl" style="max-width: 150px; max-height: 150px;" />
+          <img
+            v-if="item.previewUrl"
+            :src="item.previewUrl"
+            style="max-width: 150px; max-height: 150px;"
+          />
+          <span v-else><i>preview unavailable</i></span>
         </td>
         <td class="border-double border-4 border-gray-400 p-1 text-center">
           {{ item.ownerUsername }}
@@ -64,6 +69,9 @@
 
 <script lang="ts">
 import Vue from "vue";
+// The shared axios instance carries the request interceptor that attaches the apiToken
+// header, so authenticated binary fetches (the private image previews) go through it.
+import axios from "axios";
 
 export default Vue.extend({
   name: "HomeImageCheckPage",
@@ -82,12 +90,34 @@ export default Vue.extend({
       this.error = "";
       try {
         const response = await this.$http.get("/home/moderation/queue");
-        this.queue = response.data.queue || [];
+        const queue = response.data.queue || [];
+        this.revokePreviews();
+        // Pending images live in a private directory that is never served publicly, so each
+        // one is fetched through the authenticated preview endpoint (which sends the
+        // apiToken header) and shown via a temporary object URL.
+        await Promise.all(queue.map(async (item) => {
+          try {
+            const image = await axios.get(`/api${item.imageUrl}`, {
+              responseType: "blob",
+            });
+            item.previewUrl = URL.createObjectURL(image.data);
+          } catch (e) {
+            item.previewUrl = "";
+          }
+        }));
+        this.queue = queue;
         this.loaded = true;
       } catch (e) {
         this.error = e.response?.data?.error || "Could not load the image queue.";
         this.showError = true;
         this.loaded = true;
+      }
+    },
+    revokePreviews() {
+      for (const item of this.queue) {
+        if (item.previewUrl) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
       }
     },
     async approve(placeId) {
@@ -113,6 +143,9 @@ export default Vue.extend({
   },
   mounted() {
     this.fetchQueue();
+  },
+  beforeDestroy() {
+    this.revokePreviews();
   },
 });
 </script>

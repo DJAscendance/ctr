@@ -20,6 +20,8 @@ homeRoutes.get('/information/:placeId',
   (request, response) => homeController.getHomeInformation(request, response));
 homeRoutes.get('/moderation/queue',
   (request, response) => homeController.getImageModerationQueue(request, response));
+homeRoutes.get('/moderation/:placeId/image',
+  (request, response) => homeController.previewImage(request, response));
 homeRoutes.post('/moderation/:placeId/approve',
   (request, response) => homeController.approveImage(request, response));
 homeRoutes.post('/moderation/:placeId/reject',
