@@ -57,7 +57,19 @@ printf '%s' "$B_B64" | base64 -d > "$WORK/b.png"
 api() { curl -s -o /dev/null -w '%{http_code}' -H "apitoken: $2" "${@:3}" "$API_BASE$1"; }
 upload() { curl -s -o /dev/null -w '%{http_code}' -X POST "$API_BASE/home/upload-image" -H "apitoken: $OWNER_TOKEN" -F "imageFile=@$1"; }
 remove() { curl -s -o /dev/null -X POST "$API_BASE/home/remove-image" -H "apitoken: $OWNER_TOKEN"; }
-queue_rev() { curl -s "$API_BASE/home/moderation/queue" -H "apitoken: $MOD_TOKEN" | grep -o "\"revision\":\"[a-f0-9]*\"" | head -1 | cut -d'"' -f4; }
+# Selects the pending revision for THIS home (HOME_PLACE_ID) specifically. The moderation
+# queue is now scoped to the moderator's block and can list several homes, so a global
+# "first revision in the queue" (the old head -1) could return a different home's token and
+# make every approve/reject 409 spuriously. Split the JSON array into one object per line,
+# match this home's placeId exactly (the trailing comma stops 1 from matching 11), then read
+# that one object's revision. A plain tr/grep parser - no jq/python dependency.
+queue_rev() {
+  curl -s "$API_BASE/home/moderation/queue" -H "apitoken: $MOD_TOKEN" \
+    | tr '{' '\n' \
+    | grep "\"placeId\":$PID," \
+    | grep -o "\"revision\":\"[a-f0-9]*\"" \
+    | head -1 | cut -d'"' -f4
+}
 approve() { curl -s -o /dev/null -w '%{http_code}' -X POST "$API_BASE/home/moderation/$PID/approve" -H "apitoken: $MOD_TOKEN" -H 'Content-Type: application/json' -d "{\"revision\":\"$1\"}"; }
 reject() { curl -s -o /dev/null -w '%{http_code}' -X POST "$API_BASE/home/moderation/$PID/reject" -H "apitoken: $MOD_TOKEN" -H 'Content-Type: application/json' -d "{\"revision\":\"$1\"}"; }
 served_sha() { curl -s "$PUB" -o "$WORK/pub" -w '%{http_code}' > "$WORK/code"; if [ "$(cat "$WORK/code")" = 200 ]; then sha256sum "$WORK/pub" | cut -d' ' -f1; else echo "absent"; fi; }

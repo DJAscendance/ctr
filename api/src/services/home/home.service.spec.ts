@@ -2,6 +2,8 @@ import { Container } from 'typedi';
 import { createSpyObj } from 'jest-createspyobj';
 
 import { HomeService } from './home.service';
+import { MemberService } from '../member/member.service';
+import { BlockService } from '../block/block.service';
 import {
   PlaceRepository,
   MapLocationRepository,
@@ -35,6 +37,8 @@ describe('HomeService image moderation', () => {
   let roleAssignmentRepository: jest.Mocked<RoleAssignmentRepository>;
   let roleRepository: jest.Mocked<RoleRepository>;
   let memberRepository: jest.Mocked<MemberRepository>;
+  let memberService: jest.Mocked<MemberService>;
+  let blockService: jest.Mocked<BlockService>;
   let service: HomeService;
 
   // The service accesses the filesystem via `const fs = require('fs')`, so we monkeypatch the
@@ -53,6 +57,8 @@ describe('HomeService image moderation', () => {
     roleAssignmentRepository = createSpyObj(RoleAssignmentRepository);
     roleRepository = createSpyObj(RoleRepository);
     memberRepository = createSpyObj(MemberRepository);
+    memberService = createSpyObj(MemberService);
+    blockService = createSpyObj(BlockService);
 
     Container.reset();
     Container.set(PlaceRepository, placeRepository);
@@ -62,6 +68,8 @@ describe('HomeService image moderation', () => {
     Container.set(RoleAssignmentRepository, roleAssignmentRepository);
     Container.set(RoleRepository, roleRepository);
     Container.set(MemberRepository, memberRepository);
+    Container.set(MemberService, memberService);
+    Container.set(BlockService, blockService);
     service = Container.get(HomeService);
 
     // runInTransaction simply runs the callback with a dummy transaction handle.
@@ -197,5 +205,115 @@ describe('HomeService image moderation', () => {
 
     await expect(service.approveHomeImage(1694, 42, 'R')).rejects.toThrow('db down');
     expect(deletedPublic()).toBe(true);   // compensation deleted the published canonical file
+  });
+
+  // ---- 3. block-level authorization ---------------------------------------------------------
+  //
+  // canModerateHome is the single decision path: a global admin may moderate any home; anyone
+  // else may moderate only a home whose block they administer (BlockService.canAdmin, the same
+  // predicate that gates the CHECK button). The block is resolved from server-side data
+  // (map_location -> parent_place_id), never from client input.
+
+  // Points getHomeBlock(homePlaceId) at a block place id: home -> map_location -> block.
+  const homeInBlock = (blockId: number) => {
+    mapLocationRepository.findPlaceIdMapLocation.mockResolvedValue(
+      { parent_place_id: blockId } as any,
+    );
+    placeRepository.findById.mockResolvedValue({ id: blockId } as any);
+  };
+
+  it('admin may moderate any home without needing block authority', async () => {
+    memberService.canAdmin.mockResolvedValue(true);
+
+    await expect(service.canModerateHome(1694, 42)).resolves.toBe(true);
+    // Short-circuits on the global admin check; block authority is never consulted.
+    expect(blockService.canAdmin).not.toHaveBeenCalled();
+  });
+
+  it('block leader may moderate a home in the block they administer', async () => {
+    memberService.canAdmin.mockResolvedValue(false);
+    homeInBlock(500);
+    blockService.canAdmin.mockImplementation(
+      async (blockId: number) => blockId === 500,
+    );
+
+    await expect(service.canModerateHome(1694, 42)).resolves.toBe(true);
+    expect(blockService.canAdmin).toHaveBeenCalledWith(500, 42);
+  });
+
+  it('block leader may NOT moderate a home in a different block', async () => {
+    memberService.canAdmin.mockResolvedValue(false);
+    homeInBlock(999); // home lives in block 999
+    // The member only administers block 500, not 999.
+    blockService.canAdmin.mockImplementation(
+      async (blockId: number) => blockId === 500,
+    );
+
+    await expect(service.canModerateHome(1694, 42)).resolves.toBe(false);
+  });
+
+  it('ordinary member (no admin, no block authority) may not moderate', async () => {
+    memberService.canAdmin.mockResolvedValue(false);
+    homeInBlock(500);
+    blockService.canAdmin.mockResolvedValue(false);
+
+    await expect(service.canModerateHome(1694, 42)).resolves.toBe(false);
+  });
+
+  it('denies moderation when the home/block cannot be resolved', async () => {
+    memberService.canAdmin.mockResolvedValue(false);
+    mapLocationRepository.findPlaceIdMapLocation.mockRejectedValue(new Error('no such home'));
+
+    await expect(service.canModerateHome(123456, 42)).resolves.toBe(false);
+    expect(blockService.canAdmin).not.toHaveBeenCalled();
+  });
+
+  // ---- 4. server-side queue filtering -------------------------------------------------------
+
+  const pendingRows = [
+    { placeId: 11, ownerUsername: 'a', homeName: 'A', blockId: 500, blockName: 'Blk500',
+      revision: 'r1' },
+    { placeId: 22, ownerUsername: 'b', homeName: 'B', blockId: 999, blockName: 'Blk999',
+      revision: 'r2' },
+    { placeId: 33, ownerUsername: 'c', homeName: 'C', blockId: 500, blockName: 'Blk500',
+      revision: 'r3' },
+    { placeId: 44, ownerUsername: 'd', homeName: 'D', blockId: null, blockName: null,
+      revision: 'r4' },
+  ];
+
+  it('admin receives the complete pending queue', async () => {
+    homeRepository.findPendingImageHomes.mockResolvedValue(pendingRows as any);
+    memberService.canAdmin.mockResolvedValue(true);
+
+    const queue = await service.getModerationQueue(7);
+
+    expect(queue.map(q => q.placeId)).toEqual([11, 22, 33, 44]);
+    // The private preview endpoint URL is used, never a public asset path.
+    expect(queue[0].imageUrl).toBe('/home/moderation/11/image');
+    expect(blockService.canAdmin).not.toHaveBeenCalled();
+  });
+
+  it('block leader receives only pending homes in the block(s) they administer', async () => {
+    homeRepository.findPendingImageHomes.mockResolvedValue(pendingRows as any);
+    memberService.canAdmin.mockResolvedValue(false);
+    // Leader of block 500 only.
+    blockService.canAdmin.mockImplementation(async (blockId: number) => blockId === 500);
+
+    const queue = await service.getModerationQueue(7);
+
+    // Rows 11 and 33 (block 500) only; block 999 and the unresolved-block row are excluded.
+    expect(queue.map(q => q.placeId)).toEqual([11, 33]);
+    // Block authority is resolved once per distinct block id, not once per row.
+    expect(blockService.canAdmin).toHaveBeenCalledTimes(2);
+  });
+
+  it('member with no block authority receives an empty queue', async () => {
+    homeRepository.findPendingImageHomes.mockResolvedValue(pendingRows as any);
+    memberService.canAdmin.mockResolvedValue(false);
+    blockService.canAdmin.mockResolvedValue(false);
+
+    const queue = await service.getModerationQueue(7);
+
+    expect(queue).toEqual([]);
   });
 });
