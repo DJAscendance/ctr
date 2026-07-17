@@ -64,41 +64,41 @@ export default Vue.extend({
     getLinks() {
       const links  = [
         {
-          img: '/assets/img/homes/updhome.jpg',
-          label: 'Home',
-          link: '/home/update/home',
+          img: "/assets/img/homes/updhome.jpg",
+          label: "Home",
+          link: "/home/update/home",
         },
         {
-          img: '/assets/img/homes/updinfo.jpg',
-          label: 'Information',
-          link: '/home/update/information',
+          img: "/assets/img/homes/updinfo.jpg",
+          label: "Information",
+          link: "/home/update/information",
         },
         {
-          img: '/assets/img/homes/updimage.jpg',
-          label: 'Image',
-          link: '/home/update/image',
+          img: "/assets/img/homes/updimage.jpg",
+          label: "Image",
+          link: "/home/update/image",
         },
         {
-          img: '/assets/img/homes/updinfo.jpg',
-          label: 'Reset',
-          link: '/home/update/reset',
+          img: "/assets/img/homes/updinfo.jpg",
+          label: "Reset",
+          link: "/home/update/reset",
         },{
-          img: '/assets/img/homes/updright.jpg',
-          label: 'Chat Access Rights',
-          link: '/home/update/chat-access',
+          img: "/assets/img/homes/updright.jpg",
+          label: "Chat Access Rights",
+          link: "/home/update/chat-access",
         },
         {
-          img: '/assets/img/homes/updpet.jpg',
-          label: 'Configure Virtual Pet',
+          img: "/assets/img/homes/updpet.jpg",
+          label: "Configure Virtual Pet",
           link: `/virtualpet/${this.place_id}`,
         },
         {
           blank: true,
         },
         {
-          img: '',
-          label: '',
-          link: '',
+          img: "",
+          label: "",
+          link: "",
         },
       ];
       this.links = links;

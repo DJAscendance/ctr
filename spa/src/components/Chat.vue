@@ -133,7 +133,8 @@
             <img
               src="/assets/img/av_mute.gif"
               class="inline"
-              v-if="blockedMembers.includes(user.username) === true || isMutedByChatAccess(user.username)"
+              v-if="blockedMembers.includes(user.username) === true
+                || isMutedByChatAccess(user.username)"
             />
             <img src="/assets/img/av_def.gif" class="inline" v-else-if="worldMembers.includes(user.username) === true" />
             <img src="/assets/img/av_invis.gif" class="inline" v-else />
