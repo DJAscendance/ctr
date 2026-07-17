@@ -13,6 +13,8 @@ import {
   RoleRepository,
 } from '../../repositories';
 import { Place, HomeDesign, Home } from '../../types/models';
+import { MemberService } from '../member/member.service';
+import { BlockService } from '../block/block.service';
 
 /** Service for dealing with members */
 @Service()
@@ -25,6 +27,8 @@ export class HomeService {
     private homeRepository: HomeRepository,
     private roleAssignmentRepository: RoleAssignmentRepository,
     private roleRepository: RoleRepository,
+    private memberService: MemberService,
+    private blockService: BlockService,
   ) {}
 
 
@@ -435,11 +439,50 @@ export class HomeService {
   }
 
   /**
-   * Lists home images awaiting moderation, for the CHECK queue shown to Block Leaders /
-   * Deputies / admins. Each entry carries the owner's username, the block name, and the
-   * public image URL so the moderator can preview it before approving or rejecting.
+   * The single server-side authorization decision for home-image moderation. A member may
+   * moderate a home's image when they are a global administrator (Admin or a security role)
+   * OR they hold block-administration authority over the block the home sits in.
+   *
+   * Block authority reuses the repository's established convention -
+   * BlockService.canAdmin(blockId, memberId) - which is the same predicate that gates the
+   * CHECK button (GET /block/:id/can_admin) and other Block Tools. It grants a member the
+   * block scoped to their BlockLeader/BlockDeputy assignment, plus the block's hierarchical
+   * superiors scoped to the containing hood/colony; it does NOT grant unrelated staff roles.
+   *
+   * The block is derived from server-side data (map_location), never from a client-supplied
+   * block id, so a member cannot claim authority over a block by passing its id. Returns
+   * false (deny) if the home or its block cannot be resolved.
+   * @param homePlaceId id of the home's place record
+   * @param memberId id of the member requesting to moderate
    */
-  public async getPendingImageHomes(): Promise<Array<{
+  public async canModerateHome(homePlaceId: number, memberId: number): Promise<boolean> {
+    if (await this.memberService.canAdmin(memberId)) {
+      return true;
+    }
+    let block: Place;
+    try {
+      block = await this.getHomeBlock(homePlaceId);
+    } catch (error) {
+      return false;
+    }
+    if (!block) {
+      return false;
+    }
+    return this.blockService.canAdmin(block.id, memberId);
+  }
+
+  /**
+   * Lists home images awaiting moderation for the CHECK queue, filtered server-side to only
+   * the homes the requesting moderator is authorized to review. A global administrator
+   * receives the complete pending queue; any other moderator receives only pending homes in
+   * the block(s) they administer (block authority is deduped per block id so a queue spanning
+   * many homes in one block resolves that block's hierarchy once). Each entry carries the
+   * owner's username, the block name, and the authenticated preview URL so the moderator can
+   * view the image before approving or rejecting. A member never receives a pending row for a
+   * block they cannot moderate.
+   * @param memberId id of the moderator loading the queue
+   */
+  public async getModerationQueue(memberId: number): Promise<Array<{
     placeId: number;
     ownerUsername: string;
     homeName: string;
@@ -448,7 +491,31 @@ export class HomeService {
     revision: string;
   }>> {
     const rows = await this.homeRepository.findPendingImageHomes();
-    return rows.map(row => ({
+    const isAdmin = await this.memberService.canAdmin(memberId);
+    let visibleRows = rows;
+    if (!isAdmin) {
+      // Resolve block authority once per distinct block, then keep only rows the moderator is
+      // authorized for. Rows whose block cannot be resolved (blockId null) are never visible
+      // to a non-admin.
+      const decisionByBlock = new Map<number, boolean>();
+      const allowed: any[] = [];
+      for (const row of rows) {
+        if (row.blockId === null || typeof row.blockId === 'undefined') {
+          continue;
+        }
+        if (!decisionByBlock.has(row.blockId)) {
+          decisionByBlock.set(
+            row.blockId,
+            await this.blockService.canAdmin(row.blockId, memberId),
+          );
+        }
+        if (decisionByBlock.get(row.blockId)) {
+          allowed.push(row);
+        }
+      }
+      visibleRows = allowed;
+    }
+    return visibleRows.map(row => ({
       placeId: row.placeId,
       ownerUsername: row.ownerUsername,
       homeName: row.homeName,

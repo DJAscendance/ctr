@@ -385,30 +385,33 @@ class HomeController {
   }
 
   /**
-   * Returns whether the session belongs to a moderator allowed to check home images: any
-   * staff role (colony/neighborhood/block leaders and deputies) or admin (including security
-   * roles). Returns a boolean only - the caller is responsible for sending the 403. v1 lets
-   * any such moderator check any pending image; block-scoping can be layered on later.
+   * Returns whether the session belongs to a moderator of ANY scope - a global admin/security
+   * role or any block/hood/colony leader or deputy. This gates the queue endpoint so ordinary
+   * members (who moderate no block) are refused; it does NOT by itself authorize acting on a
+   * specific home. The queue is then filtered, and every per-home action re-checked, by
+   * HomeService against the target home's block (see canModerateHome). Returns a boolean only;
+   * the caller sends the 403.
    */
-  private async requireImageModerator(session): Promise<boolean> {
-    const allowed = await this.memberService.canStaff(session.id)
-      || await this.memberService.canAdmin(session.id);
-    return allowed;
+  private async isImageModerator(session): Promise<boolean> {
+    return (await this.memberService.canAdmin(session.id))
+      || (await this.memberService.canStaff(session.id));
   }
 
   /**
-   * Returns the queue of home images awaiting a check. Moderators only.
+   * Returns the queue of home images awaiting a check, scoped server-side to the blocks the
+   * requesting moderator administers (admins receive the full queue). Ordinary members are
+   * refused with 403.
    */
   public async getImageModerationQueue(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
 
     try {
-      if (!(await this.requireImageModerator(session))) {
+      if (!(await this.isImageModerator(session))) {
         response.status(403).json({ 'error': 'Not authorized to check home images.' });
         return;
       }
-      const queue = await this.homeService.getPendingImageHomes();
+      const queue = await this.homeService.getModerationQueue(session.id);
       response.status(200).json({ queue });
     } catch (error) {
       console.error(error);
@@ -417,7 +420,9 @@ class HomeController {
   }
 
   /**
-   * Approves a pending home image, making it publicly visible. Moderators only.
+   * Approves a pending home image, making it publicly visible. Restricted to a moderator with
+   * block authority over the home's block (or a global admin) - a leader of a different block
+   * is refused with 403.
    */
   public async approveImage(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
@@ -427,12 +432,12 @@ class HomeController {
     const { revision } = request.body;
 
     try {
-      if (!(await this.requireImageModerator(session))) {
-        response.status(403).json({ 'error': 'Not authorized to check home images.' });
-        return;
-      }
       if (!validator.isInt(placeId)) {
         throw new Error('placeId must be passed');
+      }
+      if (!(await this.homeService.canModerateHome(parseInt(placeId), session.id))) {
+        response.status(403).json({ 'error': 'Not authorized to check images for this block.' });
+        return;
       }
       await this.homeService.approveHomeImage(parseInt(placeId), session.id, revision);
       response.status(200).json({ 'status': 'success' });
@@ -443,7 +448,9 @@ class HomeController {
   }
 
   /**
-   * Rejects a pending home image, deleting it. Moderators only.
+   * Rejects a pending home image, deleting it. Restricted to a moderator with block authority
+   * over the home's block (or a global admin) - a leader of a different block is refused with
+   * 403.
    */
   public async rejectImage(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
@@ -453,12 +460,12 @@ class HomeController {
     const { revision } = request.body;
 
     try {
-      if (!(await this.requireImageModerator(session))) {
-        response.status(403).json({ 'error': 'Not authorized to check home images.' });
-        return;
-      }
       if (!validator.isInt(placeId)) {
         throw new Error('placeId must be passed');
+      }
+      if (!(await this.homeService.canModerateHome(parseInt(placeId), session.id))) {
+        response.status(403).json({ 'error': 'Not authorized to check images for this block.' });
+        return;
       }
       await this.homeService.rejectHomeImage(parseInt(placeId), session.id, revision);
       response.status(200).json({ 'status': 'success' });
@@ -499,12 +506,12 @@ class HomeController {
     const { placeId } = request.params;
 
     try {
-      if (!(await this.requireImageModerator(session))) {
-        response.status(403).json({ 'error': 'Not authorized to check home images.' });
-        return;
-      }
       if (!validator.isInt(placeId)) {
         response.status(400).json({ 'error': 'placeId must be passed' });
+        return;
+      }
+      if (!(await this.homeService.canModerateHome(parseInt(placeId), session.id))) {
+        response.status(403).json({ 'error': 'Not authorized to check images for this block.' });
         return;
       }
 

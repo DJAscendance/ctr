@@ -83,7 +83,8 @@ export class HomeRepository {
    * Lists all homes whose uploaded image is awaiting moderation, joined with the owner's
    * username and the containing block, for display in the image-check queue. Includes each
    * pending image's revision token so the moderator's approve/reject request can be bound to
-   * the exact revision they reviewed.
+   * the exact revision they reviewed, and the containing block's place id so the queue can be
+   * filtered server-side to the blocks a moderator is authorized for.
    */
   public async findPendingImageHomes(): Promise<any[]> {
     return this.db.knex('home')
@@ -99,6 +100,7 @@ export class HomeRepository {
         'home.image_revision as revision',
         'place.name as homeName',
         'member.username as ownerUsername',
+        'block.id as blockId',
         'block.name as blockName',
       );
   }
