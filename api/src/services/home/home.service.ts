@@ -244,9 +244,11 @@ export class HomeService {
     });
 
     // Clear the image record under the row lock (serialized with any in-flight moderation),
-    // then delete every image file for the home (public copy and all pending revisions).
+    // capturing the exact revision being cleared so cleanup targets only that immutable file.
+    let clearedRevision: string | undefined;
     await this.homeRepository.runInTransaction(async trx => {
-      await this.homeRepository.lockHome(trx, place.id);
+      const locked = await this.homeRepository.lockHome(trx, place.id);
+      clearedRevision = locked && locked.image_revision;
       await this.homeRepository.updateWithin(trx, place.id, {
         image: null,
         image_status: 'none',
@@ -255,7 +257,14 @@ export class HomeService {
         image_checked_at: null,
       });
     });
-    this.deleteAllHomeImageFiles(place.id);
+    // Same state-guarded cleanup as removeHomeImage: only the captured revision's private file
+    // and, while the home is still cleared, the public copy - never a later operation's files.
+    try {
+      this.deletePendingRevisionFile(place.id, clearedRevision);
+      await this.deletePublicImageIfState(place.id, 'none', null);
+    } catch (error) {
+      console.error('home image reset: cleanup failed', error);
+    }
 
     // clear the chat access guest list (unrestricted again)
     const guestRoleId = this.roleRepository.roleMap.HomeChatGuest;
@@ -353,16 +362,19 @@ export class HomeService {
       throw error;
     }
 
-    // Committed. Now clean up the superseded artifacts. This only ever removes bytes that are
-    // no longer current: any previously-approved public copy (a replacement must be re-checked
-    // before it is public again) and the old pending revision's file. Done after commit so a
-    // rolled-back upload never destroys the existing image; best-effort so a stale leftover
-    // (which is at worst an already-approved image or an orphan) can't fail the request.
+    // Committed. Now clean up the superseded artifacts. Both operations only ever remove bytes
+    // that are no longer current: the OLD pending revision's private file (immutable and
+    // uniquely named, so deleting exactly it can never touch a concurrent upload's file), and
+    // any previously-approved public copy - but the latter goes through the state-guarded
+    // helper, which re-locks and only deletes while this home is still pending THIS revision.
+    // That prevents an upload whose transaction has already committed from deleting a public
+    // image a concurrent approval published in the gap. Best-effort: a stale leftover is at
+    // worst an already-approved image or an orphan, and must not fail the request.
     try {
-      this.deletePublicImageFile(home.id);
       if (previousRevision && previousRevision !== revision) {
         this.deletePendingRevisionFile(home.id, previousRevision);
       }
+      await this.deletePublicImageIfState(home.id, 'pending', revision);
     } catch (error) {
       console.error('home image upload: cleanup of superseded files failed', error);
     }
@@ -380,9 +392,11 @@ export class HomeService {
     }
 
     // Clear the image record under the row lock (serialized with any in-flight moderation),
-    // then delete every image file for the home - the public copy and all pending revisions.
+    // capturing the exact revision being removed so cleanup targets only that immutable file.
+    let removedRevision: string | undefined;
     await this.homeRepository.runInTransaction(async trx => {
-      await this.homeRepository.lockHome(trx, home.id);
+      const locked = await this.homeRepository.lockHome(trx, home.id);
+      removedRevision = locked && locked.image_revision;
       await this.homeRepository.updateWithin(trx, home.id, {
         image: null,
         image_status: 'none',
@@ -391,7 +405,15 @@ export class HomeService {
         image_checked_at: null,
       });
     });
-    this.deleteAllHomeImageFiles(home.id);
+    // Delete only the captured revision's private file (never a wildcard, which could wipe a
+    // concurrent upload's freshly-written file) and, via the state guard, the public copy only
+    // while the home is still cleared - so a later upload/approval's files are never touched.
+    try {
+      this.deletePendingRevisionFile(home.id, removedRevision);
+      await this.deletePublicImageIfState(home.id, 'none', null);
+    } catch (error) {
+      console.error('home image remove: cleanup failed', error);
+    }
   }
 
   /**
@@ -467,28 +489,42 @@ export class HomeService {
   }
 
   /**
-   * Deletes every private pending file belonging to a place (any revision). Used by the
-   * full-cleanup paths (remove / reject / reset) so no superseded revision can linger. The
-   * match is anchored to the numeric "<placeId>-" prefix, so it can never touch another
-   * home's files or traverse outside the pending directory.
+   * Deletes the canonical public image file, but only after RE-ACQUIRING the home's row lock
+   * and confirming the record still has the exact (status, revision) the caller produced.
+   *
+   * The row lock only protects work done while its transaction is open; a filesystem cleanup
+   * performed after the caller's own transaction commits is no longer serialized. Without this
+   * guard, a request whose transaction has already committed could delete a public file that a
+   * newer operation (which committed in the gap) is now responsible for - e.g. an upload's
+   * cleanup deleting an image a concurrent approval just published. Re-checking the state under
+   * a fresh lock makes the post-commit timing irrelevant: if a later operation has changed the
+   * status or revision, the public file is left untouched. The delete itself runs while the
+   * lock is held, so it is serialized with every other image mutation, across processes.
+   *
+   * Callers pass the state THEY committed:
+   *   - upload                       -> ('pending', theirRevision)
+   *   - remove / reset               -> ('none', null)
+   *   - reject                       -> ('rejected', null)
+   *   - approve rollback compensation-> ('pending', reviewedRevision)
+   * It is never correct to call this expecting 'approved': an approved public file must survive.
    */
-  private deleteAllPendingFiles(placeId: number): void {
-    const pendingDir = this.getPendingImageDir();
-    if (!fs.existsSync(pendingDir)) {
-      return;
-    }
-    const prefix = `${placeId}-`;
-    for (const entry of fs.readdirSync(pendingDir)) {
-      if (entry.startsWith(prefix) && entry.endsWith('.webp')) {
-        fs.unlinkSync(`${pendingDir}/${entry}`);
+  private async deletePublicImageIfState(
+    placeId: number,
+    expectedStatus: string,
+    expectedRevision: string | null,
+  ): Promise<void> {
+    await this.homeRepository.runInTransaction(async trx => {
+      const home = await this.homeRepository.lockHome(trx, placeId);
+      if (!home) {
+        return;
       }
-    }
-  }
-
-  /** Removes a home's image from disk entirely: the public copy and every pending revision. */
-  private deleteAllHomeImageFiles(placeId: number): void {
-    this.deletePublicImageFile(placeId);
-    this.deleteAllPendingFiles(placeId);
+      const currentRevision = home.image_revision || null;
+      if (home.image_status !== expectedStatus || currentRevision !== expectedRevision) {
+        // A later operation now owns this home's image; leave its public file alone.
+        return;
+      }
+      this.deletePublicImageFile(placeId);
+    });
   }
 
   /**
@@ -505,6 +541,10 @@ export class HomeService {
     if (!fs.existsSync(publicDir)) {
       fs.mkdirSync(publicDir, { recursive: true });
     }
+    // Remove any leftover temp files for this home from an earlier approval that was killed
+    // between the copy and the rename (the rename is the atomic publish point). Approvals for a
+    // home are serialized by its row lock, so at most one such temp can exist at a time.
+    this.deletePublicTempFiles(placeId);
     const tempPath = `${publicDir}/.tmp-${this.pendingImageFilename(placeId, revision)}`;
     try {
       fs.copyFileSync(sourcePath, tempPath);
@@ -514,6 +554,25 @@ export class HomeService {
         fs.unlinkSync(tempPath);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Removes any leftover ".tmp-<placeId>-*.webp" staging files from the public directory (a
+   * process killed between the copy and rename in publishApprovedImage can strand one). The
+   * match is anchored to the numeric "<placeId>-" segment, so it can only touch this home's
+   * temp files, never another home's or the canonical public image.
+   */
+  private deletePublicTempFiles(placeId: number): void {
+    const publicDir = this.getPublicImageDir();
+    if (!fs.existsSync(publicDir)) {
+      return;
+    }
+    const prefix = `.tmp-${placeId}-`;
+    for (const entry of fs.readdirSync(publicDir)) {
+      if (entry.startsWith(prefix) && entry.endsWith('.webp')) {
+        fs.unlinkSync(`${publicDir}/${entry}`);
+      }
     }
   }
 
@@ -675,31 +734,48 @@ export class HomeService {
     }
 
     let approvedRevision: string;
-    await this.homeRepository.runInTransaction(async trx => {
-      const home = await this.homeRepository.lockHome(trx, homePlaceId);
-      if (!home || !home.image || home.image_status !== 'pending' || !home.image_revision) {
-        throw new Error('No pending image to approve.');
-      }
-      if (home.image_revision !== reviewedRevision) {
-        throw this.conflict('This image changed since you reviewed it. Refresh and re-check.');
-      }
-      if (!fs.existsSync(this.pendingImagePath(homePlaceId, home.image_revision))) {
-        throw new Error('Pending image file is missing.');
-      }
+    try {
+      await this.homeRepository.runInTransaction(async trx => {
+        const home = await this.homeRepository.lockHome(trx, homePlaceId);
+        if (!home || !home.image || home.image_status !== 'pending' || !home.image_revision) {
+          throw new Error('No pending image to approve.');
+        }
+        if (home.image_revision !== reviewedRevision) {
+          throw this.conflict('This image changed since you reviewed it. Refresh and re-check.');
+        }
+        if (!fs.existsSync(this.pendingImagePath(homePlaceId, home.image_revision))) {
+          throw new Error('Pending image file is missing.');
+        }
 
-      // Publish the reviewed revision, then record the approval. If publishing throws, the
-      // transaction rolls back and the image stays pending with nothing exposed publicly.
-      this.publishApprovedImage(homePlaceId, home.image_revision);
-      await this.homeRepository.updateWithin(trx, homePlaceId, {
-        image_status: 'approved',
-        image_checked_by: checkerMemberId,
-        image_checked_at: new Date(),
+        // Publish the reviewed revision, then record the approval. Publishing writes the public
+        // file before the DB commit and the filesystem is not transactional, so if the update
+        // or commit then fails we must remove that published file (see the catch below) - it
+        // would otherwise be served while the record is still pending.
+        this.publishApprovedImage(homePlaceId, home.image_revision);
+        await this.homeRepository.updateWithin(trx, homePlaceId, {
+          image_status: 'approved',
+          image_checked_by: checkerMemberId,
+          image_checked_at: new Date(),
+        });
+        approvedRevision = home.image_revision;
       });
-      approvedRevision = home.image_revision;
-    });
+    } catch (error) {
+      // The approval did not commit. If publishing had already written the public file, the
+      // rollback left it live while the row is still pending - remove it, but only while the
+      // home is still pending exactly this revision so a concurrent op's file is never touched.
+      await this.deletePublicImageIfState(homePlaceId, 'pending', reviewedRevision).catch(
+        cleanupError => console.error('home image approve: rollback cleanup failed', cleanupError),
+      );
+      throw error;
+    }
 
     // Committed: the reviewed revision is public. Remove its now-redundant private copy.
-    this.deletePendingRevisionFile(homePlaceId, approvedRevision);
+    // Best-effort - the approval already succeeded, so a failed unlink must not report an error.
+    try {
+      this.deletePendingRevisionFile(homePlaceId, approvedRevision);
+    } catch (error) {
+      console.error('home image approve: removing published private copy failed', error);
+    }
   }
 
   /**
@@ -739,8 +815,14 @@ export class HomeService {
       });
     });
 
-    // Committed: delete the rejected private file (and defensively any public copy).
-    this.deletePendingRevisionFile(homePlaceId, rejectedRevision);
-    this.deletePublicImageFile(homePlaceId);
+    // Committed: delete the rejected private file (immutable, revision-specific) and, via the
+    // state guard, any public copy - but only while the home is still rejected, so a later
+    // upload/approval's public file is never removed. Best-effort so cleanup can't fail the call.
+    try {
+      this.deletePendingRevisionFile(homePlaceId, rejectedRevision);
+      await this.deletePublicImageIfState(homePlaceId, 'rejected', null);
+    } catch (error) {
+      console.error('home image reject: cleanup failed', error);
+    }
   }
 }

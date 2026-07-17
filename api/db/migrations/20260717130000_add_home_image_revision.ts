@@ -16,6 +16,27 @@ export async function up(knex: Knex): Promise<void> {
       table.string('image_revision', 64).nullable();
     });
   }
+
+  // Any image already AWAITING moderation before this migration has no revision token and its
+  // file uses the old shared "<placeId>.webp" name, so it cannot be bound to the new
+  // revision-based approval - it would sit in the queue forever (approve/reject require a
+  // matching revision). These images were never public (they are pending). Clear them back to
+  // "no image" so the queue is not permanently stuck and the owner simply re-uploads; nothing
+  // unchecked is ever exposed. (Approved rows keep their NULL revision - an approved image
+  // needs no revision, and this only targets image_status = 'pending'.) Forward-only: down()
+  // cannot restore these rows, which is acceptable for clearing unchecked, unbindable images.
+  const cleared = await knex('home')
+    .where({ image_status: 'pending' })
+    .whereNull('image_revision')
+    .update({
+      image: null,
+      image_status: 'none',
+      image_checked_by: null,
+      image_checked_at: null,
+    });
+  if (cleared > 0) {
+    console.log(`Cleared ${cleared} legacy pending home image(s) that predate image_revision`);
+  }
 }
 
 export async function down(knex: Knex): Promise<void> {

@@ -59,6 +59,7 @@ upload() { curl -s -o /dev/null -w '%{http_code}' -X POST "$API_BASE/home/upload
 remove() { curl -s -o /dev/null -X POST "$API_BASE/home/remove-image" -H "apitoken: $OWNER_TOKEN"; }
 queue_rev() { curl -s "$API_BASE/home/moderation/queue" -H "apitoken: $MOD_TOKEN" | grep -o "\"revision\":\"[a-f0-9]*\"" | head -1 | cut -d'"' -f4; }
 approve() { curl -s -o /dev/null -w '%{http_code}' -X POST "$API_BASE/home/moderation/$PID/approve" -H "apitoken: $MOD_TOKEN" -H 'Content-Type: application/json' -d "{\"revision\":\"$1\"}"; }
+reject() { curl -s -o /dev/null -w '%{http_code}' -X POST "$API_BASE/home/moderation/$PID/reject" -H "apitoken: $MOD_TOKEN" -H 'Content-Type: application/json' -d "{\"revision\":\"$1\"}"; }
 served_sha() { curl -s "$PUB" -o "$WORK/pub" -w '%{http_code}' > "$WORK/code"; if [ "$(cat "$WORK/code")" = 200 ]; then sha256sum "$WORK/pub" | cut -d' ' -f1; else echo "absent"; fi; }
 
 # Establish the reviewed (A) and replacement (B) stored checksums.
@@ -75,10 +76,15 @@ echo "replacement B sha=$SHA_B"
 
 fail=0; runs=0
 assert_not_B() {  # $1=context
+  # B (the replacement) is NEVER reviewed/approved in any scenario below, so the public image
+  # must be either absent or A - and never B.
   local s; s=$(served_sha)
   runs=$((runs + 1))
   if [ "$s" = "$SHA_B" ]; then
     echo "  [$1] FAIL: unchecked replacement (B) is publicly served"
+    fail=$((fail + 1))
+  elif [ "$s" != "absent" ] && [ "$s" != "$SHA_A" ]; then
+    echo "  [$1] FAIL: public image is neither A nor absent (partial/unknown bytes)"
     fail=$((fail + 1))
   fi
 }
@@ -96,7 +102,7 @@ while [ "$i" -lt "$ITERATIONS" ]; do
     ( upload "$WORK/b.png" >/dev/null ) & ( sleep "$stag"; approve "$rev" >/dev/null ) &
   fi
   wait; sleep 0.08
-  assert_not_B "concurrent#$i"
+  assert_not_B "approve-vs-upload#$i"
 done
 
 echo "== non-concurrent review->swap->approve (must 409, B never public) =="
@@ -109,12 +115,51 @@ for i in 1 2 3 4 5; do
   assert_not_B "swap#$i"
 done
 
+# Post-commit cleanup races: an operation's filesystem cleanup runs after its own transaction
+# commits. These exercise that a later operation's public/private files are never clobbered by
+# an earlier request's delayed cleanup (the state-guarded public delete + captured-revision
+# private delete). In every case B is never reviewed, so B must never be publicly reachable.
+echo "== approve(A) immediately followed by upload(B) (upload cleanup vs approved image) =="
+i=0
+while [ "$i" -lt "$ITERATIONS" ]; do
+  i=$((i + 1))
+  remove >/dev/null; upload "$WORK/a.png" >/dev/null
+  rev=$(queue_rev)
+  # approve A, then race a replacement upload of B against the approval's post-commit cleanup.
+  ( approve "$rev" >/dev/null ) & ( upload "$WORK/b.png" >/dev/null ) &
+  wait; sleep 0.08
+  assert_not_B "approve-then-upload#$i"
+done
+
+echo "== remove(A) vs upload(B) (remove cleanup must not wipe the new upload's file) =="
+for i in 1 2 3 4 5; do
+  remove >/dev/null; upload "$WORK/a.png" >/dev/null
+  ( remove >/dev/null ) & ( upload "$WORK/b.png" >/dev/null ) &
+  wait; sleep 0.08
+  # If the home ended pending (upload won), its private file must exist so the preview works.
+  rev=$(queue_rev)
+  if [ -n "$rev" ]; then
+    pc=$(curl -s -o /dev/null -w '%{http_code}' "$API_BASE/home/moderation/$PID/image" -H "apitoken: $MOD_TOKEN")
+    [ "$pc" != 200 ] && { echo "  [remove-vs-upload#$i] FAIL: pending image preview $pc (file wiped by remove cleanup)"; fail=$((fail + 1)); }
+  fi
+  assert_not_B "remove-vs-upload#$i"
+done
+
+echo "== reject(A) vs upload(B) (reject cleanup must not touch the new upload) =="
+for i in 1 2 3 4 5; do
+  remove >/dev/null; upload "$WORK/a.png" >/dev/null
+  rev=$(queue_rev)
+  ( reject "$rev" >/dev/null ) & ( upload "$WORK/b.png" >/dev/null ) &
+  wait; sleep 0.08
+  assert_not_B "reject-vs-upload#$i"
+done
+
 remove >/dev/null
 echo "-----------------------------------------------------------"
 echo "iterations checked: $runs ; invariant failures: $fail"
 if [ "$fail" -eq 0 ]; then
-  echo "PASS: the unchecked replacement image was never publicly reachable."
+  echo "PASS: no unchecked/other bytes ever became publicly reachable; cleanup never clobbered a newer op."
   exit 0
 fi
-echo "FAIL: moderation bypass reproduced."
+echo "FAIL: moderation/coherence invariant violated."
 exit 1
