@@ -82,10 +82,12 @@ class ObjectInstanceController {
       const id = Number.parseInt(request.params.id);
       const objectInstance = await this.objectInstanceService.find(id);
       const place = await this.placeService.findById(Number.parseInt(request.body.placeId));
+      const admin = await this.memberService.getAccessLevel(session.id);
 
       if (
         place.slug !== 'fleamarket' && 
         place.slug !== 'blackmarket' && 
+        !admin &&
         place.member_id !== session.id) {
         throw new Error('Not the owner of this place');
       }

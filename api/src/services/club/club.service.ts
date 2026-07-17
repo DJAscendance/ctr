@@ -29,6 +29,14 @@ export class ClubService {
         return (
           [
             this.roleRepository.roleMap.Admin,
+            this.roleRepository.roleMap.SecurityChief,
+            this.roleRepository.roleMap.DeputySecurityChief,
+            this.roleRepository.roleMap.SecurityCaptain,
+            this.roleRepository.roleMap.SecurityLieutenant,
+            this.roleRepository.roleMap.SecurityOfficer,
+            this.roleRepository.roleMap.SecuritySergeant,
+            this.roleRepository.roleMap.SecurityAdvisor,
+            this.roleRepository.roleMap.SecurityCommissioner,
           ].includes(assignment.role_id) ||
           ([
             this.roleRepository.roleMap.ClubOwner,

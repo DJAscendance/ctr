@@ -78,6 +78,19 @@ export class PlaceRepository {
     return place;
   }
 
+  /**
+   * Finds which of the given member ids own a home, in a single query.
+   * @param memberIds member ids to check
+   */
+  public async findMemberIdsWithHome(memberIds: number[]): Promise<Set<number>> {
+    if (memberIds.length === 0) return new Set();
+    const homes = await this.db.place
+      .select('member_id')
+      .where({ type: 'home' })
+      .whereIn('member_id', memberIds);
+    return new Set(homes.map((home) => home.member_id));
+  }
+
   public async findStorageByUserID(memberId: number): Promise<any> {
     return this.db.place
       .select('place.name', 'place.id')

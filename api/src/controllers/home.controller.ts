@@ -8,6 +8,14 @@ import {
   HomeService,
 } from '../services';
 
+/**
+ * Maximum size, in bytes, of an uploaded home image before it's resized. The final stored
+ * file is always a small WebP thumbnail regardless of input size (see
+ * HomeService.uploadHomeImage), so this only guards against oversized uploads, not final
+ * disk usage - kept generous so normal smartphone photos aren't rejected.
+ */
+const IMAGE_FILESIZE_LIMIT = 5 * 1024 * 1024;
+
 class HomeController {
 
   /**
@@ -50,16 +58,19 @@ class HomeController {
       if(homeData) {
         const blockData = await this.homeService.getHomeBlock(homeData.id);
         const homeDesignData = await this.homeService.getPlaceHomeDesign(userId, homeData.id);
+        const homeRecord = await this.homeService.getHomeRecord(homeData.id);
         response.status(200).json({
           homeData: homeData,
           blockData: blockData,
           homeDesignData: homeDesignData,
+          homeRecord: homeRecord,
         });
       } else {
         response.status(200).json({
           homeData: null,
           blockData: null,
           homeDesignData: null,
+          homeRecord: null,
         });
       }
 
@@ -307,6 +318,208 @@ class HomeController {
 
       }
 
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async resetHome(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { blockId, location } = request.body;
+
+    try {
+      if (!validator.isInt(blockId)) {
+        throw new Error('blockId must be passed');
+      }
+
+      if (!validator.isInt(location)) {
+        throw new Error('location must be passed');
+      }
+
+      const homeInfo = await this.homeService.getHome(session.id);
+      if (!homeInfo) {
+        throw new Error('You don\'t have a home yet.');
+      }
+
+      const donor = await this.memberService.getDonorLevel(session.id);
+      let donorLevel = null;
+      if (donor) {
+        donorLevel = Object.values(donor).toString();
+      }
+      const currentHomeDesign = await this.homeService.getPlaceHomeDesign(
+        session.id,
+        homeInfo.id,
+      );
+      let refund = 0;
+      if (currentHomeDesign) {
+        if (donorLevel === 'Champion' && currentHomeDesign.id === 'championhome') {
+          refund = 0;
+        } else {
+          refund = currentHomeDesign.price;
+        }
+      }
+
+      await this.homeService.resetHome(session.id, parseInt(blockId), parseInt(location));
+
+      if (refund > 0) {
+        await this.memberService.performHomeRefundTransaction(session.id, refund);
+      }
+
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async getHomeInformation(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { placeId } = request.params;
+
+    try {
+      if (!validator.isInt(placeId)) {
+        throw new Error('placeId must be passed');
+      }
+
+      const description = await this.homeService.getHomeInformation(parseInt(placeId));
+      response.status(200).json({ description });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async updateHomeInformation(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { houseDescription } = request.body;
+
+    try {
+      if (houseDescription && houseDescription.length > 1000) {
+        throw new Error('Description must be 1000 characters or fewer.');
+      }
+
+      const bannedwords = badwords.regex;
+      if (houseDescription && houseDescription.match(bannedwords)) {
+        throw new Error('This language can not be used on CTR!');
+      }
+
+      await this.homeService.updateHomeInformation(session.id, houseDescription || '');
+
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async uploadImage(request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    if (
+      typeof request.files?.imageFile === 'undefined' ||
+      validator.isEmpty(request.files.imageFile.name)
+    ) {
+      response.status(400).json({
+        error: 'Image file is required.',
+      });
+      return;
+    }
+
+    const imageFile = request.files.imageFile;
+    if (!imageFile.mimetype.startsWith('image/')) {
+      response.status(400).json({
+        error: 'File must be an image.',
+      });
+      return;
+    }
+    if (imageFile.size > IMAGE_FILESIZE_LIMIT) {
+      response.status(400).json({
+        error: 'Image file must be less than 5MB',
+      });
+      return;
+    }
+
+    try {
+      // Converted to WebP and downscaled to a max of 200x200 server-side, regardless of
+      // the source format/dimensions - see HomeService.uploadHomeImage.
+      await this.homeService.uploadHomeImage(session.id, imageFile);
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async removeImage(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    try {
+      await this.homeService.removeHomeImage(session.id);
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async getChatAccess(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    try {
+      const chatAccess = await this.homeService.getChatAccess(session.id);
+      response.status(200).json(chatAccess);
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  public async updateChatAccess(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { guests } = request.body;
+
+    try {
+      if (!Array.isArray(guests)) {
+        throw new Error('guests must be a list of usernames.');
+      }
+
+      await this.homeService.updateChatAccess(session.id, guests);
+
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
+   * Public endpoint used by the realtime chat server to determine whether a room (place)
+   * restricts chat to a specific citizen list. No session required - this is a
+   * server-to-server call and returns no personally identifying data beyond usernames
+   * the owner has already chosen to publish via the access list.
+   */
+  public async getChatAccessStatus(request: Request, response: Response): Promise<void> {
+    const { placeId } = request.params;
+
+    try {
+      if (!validator.isInt(placeId)) {
+        throw new Error('placeId must be passed');
+      }
+
+      const status = await this.homeService.getChatAccessStatusByPlaceId(parseInt(placeId));
+      response.status(200).json(status);
     } catch (error) {
       console.error(error);
       response.status(400).json({ 'error': error.message });

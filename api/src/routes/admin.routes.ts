@@ -48,5 +48,7 @@ adminRoutes.get('/object-instances/:id', (request, response) =>
   adminController.getOwnedObjects(request, response));
 adminRoutes.get('/get-community-data/', (request, response) =>
   adminController.getCommunityData(request, response));
+adminRoutes.post('/remove-account/', (request, response) =>
+  adminController.removeAccount(request, response));
 
 export {adminRoutes};

@@ -161,6 +161,40 @@ export class MemberRepository {
       .offset(offset);
   }
 
+  /**
+   * This is to assist with the pagination of the citizen directory
+   * @param search
+   * @return number
+   */
+  public async getDirectoryTotal(search: string): Promise<any> {
+    return knex
+      .count('id as count')
+      .from('member')
+      .where(this.like('username', search));
+  }
+
+  /**
+   * Public-safe citizen directory search - only exposes fields that are
+   * safe to show to anyone, not the admin-only member fields.
+   */
+  public async searchDirectory(search: string, limit: number, offset: number): Promise<any> {
+    return knex
+      .select(
+        'member.id',
+        'member.username',
+        'member.created_at',
+        'member.last_activity',
+        'member.primary_role_id',
+        'role.name as primary_role_name',
+      )
+      .from('member')
+      .leftJoin('role', 'member.primary_role_id', 'role.id')
+      .where(this.like('member.username', search))
+      .orderBy('member.username', 'asc')
+      .limit(limit)
+      .offset(offset);
+  }
+
   public async joinedPlace(memberId: number, props: Partial<Member>): Promise<void> {
     await this.db.member.where({ id: memberId }).update(props);
   }

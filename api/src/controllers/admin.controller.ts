@@ -7,7 +7,13 @@ import {
   AvatarService, 
   PlaceService, 
   RoleAssignmentService,
-  ObjectInstanceService, } from '../services';
+  ObjectInstanceService, 
+  ObjectService,
+  MessageService,
+  InboxService,
+  MessageboardService,
+  ClubService
+} from '../services';
 import { Place } from 'models/place.model';
 import * as badwordlist from 'badwords-list';
 
@@ -19,6 +25,11 @@ class AdminController {
     private placeService: PlaceService,
     private roleAssignmentService: RoleAssignmentService,
     private objectInstanceService: ObjectInstanceService,
+    private objectService: ObjectService,
+    private messageService: MessageService,
+    private inboxService: InboxService,
+    private messageboardService: MessageboardService,
+    private clubService: ClubService,
   ) {}
   
   public async addBan(request: Request, response: Response): Promise<any> {
@@ -621,6 +632,39 @@ class AdminController {
       response.status(403).json({message: 'Access Denied'});
     }
   }
+
+  public async removeAccount(request: Request, response: Response):  Promise<void>{
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+    const admin = await this.memberService.canAdmin(session.id);
+    if (admin) {
+      const id = request.body.id;
+    try {
+      await this.objectInstanceService.moveAllObjects(id);
+      await this.objectService.removeAccount(id);
+      await this.messageService.removeAllMessages(id);
+      await this.inboxService.removeAllMessages(id);
+      await this.messageboardService.removeAllMessages(id);
+      await this.avatarService.removeAllAvatars(id);
+      await this.clubService.removeAccount(id);
+      const places = await this.placeService.getOwnedPlaces(id);
+      if(places.length >= 1) {
+        const home = places.find(place => place.type === 'home');
+        if(home){
+          await this.placeService.removeVirtualPet(home.id);
+        }
+        
+        places.forEach(place => {
+          this.placeService.removePlace(place.id);
+        });
+      }
+      await this.memberService.removeAccount(id);
+      response.status(200).json({ status: 'success' });
+    } catch {
+      response.status(400).json({error: 'Error moving objects.'});
+    }
+    }
+  }
 }
 
 const adminService = Container.get(AdminService);
@@ -629,5 +673,21 @@ const avatarService = Container.get(AvatarService);
 const placeService = Container.get(PlaceService);
 const roleAssignmentService = Container.get(RoleAssignmentService);
 const objectInstanceService = Container.get(ObjectInstanceService);
+const objectService = Container.get(ObjectService);
+const messageService = Container.get(MessageService);
+const inboxService = Container.get(InboxService);
+const messageboardService = Container.get(MessageboardService);
+const clubService = Container.get(ClubService);
 export const adminController = new AdminController(
-  adminService, memberService, avatarService, placeService, roleAssignmentService, objectInstanceService);
+  adminService, 
+  memberService, 
+  avatarService, 
+  placeService, 
+  roleAssignmentService, 
+  objectInstanceService,
+  objectService,
+  messageService,
+  inboxService,
+  messageboardService,
+  clubService,
+);

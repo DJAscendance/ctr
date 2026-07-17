@@ -4,6 +4,7 @@ import { Container } from 'typedi';
 
 import * as badwords from 'badwords-list';
 import { Place } from 'models';
+import { SessionInfo } from 'session-info.interface';
 
 class PlaceController {
   constructor(
@@ -15,37 +16,49 @@ class PlaceController {
   /** Get Admin status for the specific place's slug */
   public async canAdmin(request: Request, response: Response): Promise<void> {
     const { apitoken } = request.headers;
-    const { slug} = request.params;
-    const { id } = request.params;
+    const { slug, id } = request.params;
+
+    // Authenticate first. A missing or malformed/expired token is an authentication failure
+    // (401), not a generic 400, and we never echo the token or the underlying error back.
+    if (!apitoken || typeof apitoken !== 'string') {
+      response.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    let session: SessionInfo;
+    try {
+      session = this.memberService.decodeMemberToken(apitoken);
+    } catch (error) {
+      response.status(401).json({ error: 'Invalid or expired token.' });
+      return;
+    }
+    if (!session) {
+      response.status(401).json({ error: 'Invalid or expired token.' });
+      return;
+    }
 
     if (!slug || typeof slug !== 'string') {
       response.status(400).json({ error: 'invalid or missing place slug' });
-    }
-
-    // the following is needed to make sure shops find the mall's place id
-    let place_id = 0;
-    if (id === undefined) {
-      const place = await this.placeService.findBySlug(slug);
-      place_id = place.id;
-    } else {
-      place_id = Number.parseInt(id);
+      return;
     }
 
     try {
-      const session = this.memberService.decodeMemberToken(<string>apitoken);
-      if (!session) {
-        response.status(400).json({
-          error: 'Invalid or missing token.',
-        });
-        return;
+      // the following is needed to make sure shops find the mall's place id
+      let place_id: number;
+      if (id === undefined) {
+        const place = await this.placeService.findBySlug(slug);
+        if (!place) {
+          response.status(404).json({ error: 'Place not found.' });
+          return;
+        }
+        place_id = place.id;
+      } else {
+        place_id = Number.parseInt(id);
       }
       const result = await this.placeService.canAdmin(slug, place_id, session.id);
-      console.log(result);
       response.status(200).json({ result });
-      return;
     } catch (error) {
-      console.error(error);
-      response.status(400).json({ error });
+      console.error('place.canAdmin failed', error);
+      response.status(500).json({ error: 'Unable to determine admin status.' });
     }
   }
 

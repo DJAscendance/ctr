@@ -33,6 +33,25 @@ export class MapLocationRepository {
       .merge(['place_id','available']);
   }
 
+  /**
+   * Atomically claims a free lot for a place, guarding against a concurrent claim of the
+   * same lot. Only succeeds if the lot is currently unoccupied (place_id is null) -
+   * unlike `create()`'s blind upsert, this can't silently overwrite a lot another request
+   * claimed a moment earlier.
+   * @returns whether the claim succeeded
+   */
+  public async claimLocation(
+    parentPlaceId: number,
+    location: number,
+    placeId: number,
+  ): Promise<boolean> {
+    const updated = await this.db.mapLocation
+      .where({ parent_place_id: parentPlaceId, location, available: true })
+      .whereNull('place_id')
+      .update({ place_id: placeId });
+    return updated > 0;
+  }
+
   public async unsetPlaceId(parentPlaceId: number, location: number): Promise<void> {
     await this.db.mapLocation
       .update({place_id: null})

@@ -130,7 +130,12 @@
             {{ this.$store.data.user.username }}
           </li>
           <li class="cursor-default" v-for="(user, key) in users" :key="key" @click="handler($event)" @contextmenu="handler($event)" @mouseup="menu(user.id, user.username)">
-            <img src="/assets/img/av_mute.gif" class="inline" v-if="blockedMembers.includes(user.username) === true" />
+            <img
+              src="/assets/img/av_mute.gif"
+              class="inline"
+              v-if="blockedMembers.includes(user.username) === true
+                || isMutedByChatAccess(user.username)"
+            />
             <img src="/assets/img/av_def.gif" class="inline" v-else-if="worldMembers.includes(user.username) === true" />
             <img src="/assets/img/av_invis.gif" class="inline" v-else />
             {{ user.username }}
@@ -304,6 +309,7 @@ interface ChatData {
   chatIntervalId: any;
   pingIntervalId: any;
   worldMembers: any[];
+  chatAccess: { restricted: boolean; allowedUsernames: string[] };
   chatEnabled: boolean;
   showRole: boolean;
   showXP: boolean;
@@ -397,6 +403,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       chatIntervalId: null,
       pingIntervalId: null,
       worldMembers: [],
+      chatAccess: { restricted: false, allowedUsernames: [] },
       chatEnabled: false,
       showRole: true,
       showXP: true,
@@ -666,6 +673,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
           (
             this.$store.data.place.slug === 'fleamarket' ||
             this.$store.data.place.slug === 'blackmarket' ||
+            this.canInteractWithObject ||
             this.$store.data.place.member_id === this.$store.data.user.id
           )){
             this.menuDrop = true;
@@ -683,22 +691,29 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
     },
     async canAdmin(){
       let admin = null;
+      let staff = null;
       if(this.$store.data.place.slug === 'mall' || this.$store.data.place.type === 'shop'){
-        admin = await this.$http.get("/mall/can_admin", {
+        staff = await this.$http.get("/mall/can_admin", {
           'id': this.$store.data.user.id
         });
       }
       if(this.$store.data.place.slug === 'fleamarket'){
-        admin = await this.$http.get("/fleamarket/can_admin", {
+        staff = await this.$http.get("/fleamarket/can_admin", {
           'id': this.$store.data.user.id
         });
       }
       if(this.$store.data.place.slug === 'blackmarket'){
-        admin = await this.$http.get("/blackmarket/can_admin", {
+        staff = await this.$http.get("/blackmarket/can_admin", {
           'id': this.$store.data.user.id
         });
       }
-      if(admin && admin.data.status === 'success'){
+      if(this.$store.data.place.type === 'public') {
+        admin = await this.$http.get(`/place/can_admin/${this.$store.data.place.slug}/${this.$store.data.user.id}`);
+      }
+      
+      if(staff && staff.data.status === 'success' ||
+        admin && admin.data.result === true
+      ){
         this.canModify = true;
         if(this.$store.data.view3d){
           this.canInteractWithObject = true;
@@ -1030,7 +1045,6 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
             this.messages.push({msg: response, username: data.msg.username, from: this.virtualPet.pet_name, whisper: true, new: true,})
             if(this.tts){
               this.textToSpeech({msg: response});
-              console.log(response);
             }
           }, 1500);
         } 
@@ -1086,6 +1100,13 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
           this.deleteMessageFromLive(data.data.messageID);
         }
       });
+      this.$socket.on("CHAT_ACCESS", data => {
+        this.chatAccess = data;
+      });
+    },
+    isMutedByChatAccess(username: string): boolean {
+      return this.chatAccess.restricted &&
+        !this.chatAccess.allowedUsernames.includes(username);
     },
     dropObject() {
       this.$emit("drop-object", this.objectId);

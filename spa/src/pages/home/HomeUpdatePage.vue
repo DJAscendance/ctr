@@ -52,52 +52,53 @@ export default Vue.extend({
       console.log("get home")
       try {
         const homeResponse = await this.$http.get("/home");
-        this.place_id = homeResponse.data.homeData.id;
         this.hasHome = !!homeResponse.data.homeData;
-        this.loaded = true;
+        this.place_id = this.hasHome ? homeResponse.data.homeData.id : null;
         this.getLinks();
       } catch(e) {
         console.error(e);
+      } finally {
+        this.loaded = true;
       }
     },
     getLinks() {
       const links  = [
         {
-          img: '/assets/img/homes/updhome.jpg',
-          label: 'Home',
-          link: '/home/update/home',
+          img: "/assets/img/homes/updhome.jpg",
+          label: "Home",
+          link: "/home/update/home",
         },
         {
-          img: '/assets/img/homes/updinfo.jpg',
-          label: 'Information',
-          link: '',
+          img: "/assets/img/homes/updinfo.jpg",
+          label: "Information",
+          link: "/home/update/information",
         },
         {
-          img: '/assets/img/homes/updimage.jpg',
-          label: 'Image',
-          link: '',
+          img: "/assets/img/homes/updimage.jpg",
+          label: "Image",
+          link: "/home/update/image",
         },
         {
-          img: '/assets/img/homes/updinfo.jpg',
-          label: 'Reset',
-          link: '',
+          img: "/assets/img/homes/updinfo.jpg",
+          label: "Reset",
+          link: "/home/update/reset",
         },{
-          img: '/assets/img/homes/updright.jpg',
-          label: 'Chat Access Rights',
-          link: '',
+          img: "/assets/img/homes/updright.jpg",
+          label: "Chat Access Rights",
+          link: "/home/update/chat-access",
         },
         {
-          img: '/assets/img/homes/updpet.jpg',
-          label: 'Configure Virtual Pet',
+          img: "/assets/img/homes/updpet.jpg",
+          label: "Configure Virtual Pet",
           link: `/virtualpet/${this.place_id}`,
         },
         {
           blank: true,
         },
         {
-          img: '',
-          label: '',
-          link: '',
+          img: "",
+          label: "",
+          link: "",
         },
       ];
       this.links = links;
