@@ -93,6 +93,12 @@
           :src="'/assets/homes-uploads/' + homeImage"
           style="max-width: 200px; max-height: 200px;"
         />
+        <img
+          v-else-if="homeImageStatus === 'pending'"
+          src="/assets/img/not-checked.gif"
+          title="This image is awaiting review by a Block Leader."
+          style="max-width: 200px; max-height: 200px;"
+        />
         <small v-else><i>No image uploaded yet!</i></small>
       </div>
     </div>
@@ -115,6 +121,7 @@ export default Vue.extend({
       loaded: false,
       showStorage: false,
       homeImage: null,
+      homeImageStatus: null,
     };
   },
 
@@ -128,7 +135,10 @@ export default Vue.extend({
           this.showStorage = true;
         }
         const homeResponse = await this.$http.get(`/home/${this.memberInfo.username}`);
+        // The API only returns the real image once it has passed moderation; a pending
+        // image is signalled via image_status so we can show the "NOT CHECKED!" placeholder.
         this.homeImage = homeResponse.data.homeRecord?.image || null;
+        this.homeImageStatus = homeResponse.data.homeRecord?.image_status || null;
       } catch (error) {
         console.log(error);
       }
