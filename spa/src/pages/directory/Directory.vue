@@ -56,7 +56,7 @@
             {{ offset + index + 1 }}
           </td>
           <td class="border-double border-4 border-gray-400">
-            <router-link v-if="citizen.hasHome" :to="'/home/' + citizen.username">
+            <router-link v-if="citizen.homeId" :to="'/home/' + citizen.username">
               {{ citizen.username }}
             </router-link>
             <span v-else>{{ citizen.username }}</span>

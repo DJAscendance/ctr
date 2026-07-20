@@ -501,9 +501,6 @@ class MemberController {
       const limit = Number.parseInt(request.query.limit?.toString()) || 20;
       const offset = Number.parseInt(request.query.offset?.toString()) || 0;
       const { citizens, total } = await this.memberService.getDirectory(search, limit, offset);
-      for (const citizen of citizens) {
-        citizen.hasHome = await this.homeService.getHome(citizen.id) ? true : false;
-      }
       response.status(200).json({ citizens, total });
     } catch (error) {
       console.error(error);

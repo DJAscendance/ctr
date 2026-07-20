@@ -154,4 +154,49 @@ describe('MemberService', () => {
       });
     });
   });
+
+  describe('getDirectory', () => {
+    beforeEach(() => {
+      memberRepository.searchDirectory.mockResolvedValue([
+        {
+          id: 1,
+          username: 'withhome',
+          created_at: new Date('2020-01-01'),
+          last_activity: new Date(),
+          primary_role_name: 'Citizen',
+          home_id: 42,
+        },
+        {
+          id: 2,
+          username: 'nohome',
+          created_at: new Date('2020-01-01'),
+          last_activity: null,
+          primary_role_name: 'Citizen',
+          home_id: null,
+        },
+      ]);
+      memberRepository.getDirectoryTotal.mockResolvedValue([{ count: 2 }]);
+    });
+
+    it('returns a non-null homeId for a citizen with a home', async () => {
+      const { citizens } = await service.getDirectory('', 20, 0);
+      expect(citizens.find(c => c.username === 'withhome').homeId).toBe(42);
+    });
+
+    it('returns a null homeId for a citizen without a home', async () => {
+      const { citizens } = await service.getDirectory('', 20, 0);
+      expect(citizens.find(c => c.username === 'nohome').homeId).toBeNull();
+    });
+
+    it('queries citizens and the total count exactly once each', async () => {
+      await service.getDirectory('', 20, 0);
+      expect(memberRepository.searchDirectory).toHaveBeenCalledTimes(1);
+      expect(memberRepository.getDirectoryTotal).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns the total citizen count', async () => {
+      const { total } = await service.getDirectory('', 20, 0);
+      expect(total).toEqual([{ count: 2 }]);
+    });
+  });
 });

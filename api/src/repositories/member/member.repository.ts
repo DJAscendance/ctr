@@ -175,7 +175,9 @@ export class MemberRepository {
 
   /**
    * Public-safe citizen directory search - only exposes fields that are
-   * safe to show to anyone, not the admin-only member fields.
+   * safe to show to anyone, not the admin-only member fields. Left-joins
+   * each member to their home place (if any) in a single query so the
+   * directory can render a home link without a per-citizen lookup.
    */
   public async searchDirectory(search: string, limit: number, offset: number): Promise<any> {
     return knex
@@ -184,11 +186,15 @@ export class MemberRepository {
         'member.username',
         'member.created_at',
         'member.last_activity',
-        'member.primary_role_id',
         'role.name as primary_role_name',
+        'home.id as home_id',
       )
       .from('member')
       .leftJoin('role', 'member.primary_role_id', 'role.id')
+      .leftJoin('place as home', function () {
+        this.on('member.id', '=', 'home.member_id')
+          .andOnVal('home.type', '=', 'home');
+      })
       .where(this.like('member.username', search))
       .orderBy('member.username', 'asc')
       .limit(limit)

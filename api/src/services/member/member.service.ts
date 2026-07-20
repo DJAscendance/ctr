@@ -593,6 +593,7 @@ export class MemberService {
       immigrationDate: member.created_at,
       primaryRoleName: member.primary_role_name,
       online: !!member.last_activity && new Date(member.last_activity).getTime() >= activeTime,
+      homeId: member.home_id || null,
     }));
     return {
       citizens,
