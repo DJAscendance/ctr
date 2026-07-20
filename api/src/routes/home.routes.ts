@@ -13,7 +13,7 @@ homeRoutes.get('',
 homeRoutes.get('/moderation/queue',
   (request, response) => homeController.getImageModerationQueue(request, response));
 homeRoutes.get('/moderation/:placeId/image',
-  (request, response) => homeController.previewImage(request, response));
+  (request, response, next) => homeController.previewImage(request, response, next));
 homeRoutes.post('/moderation/:placeId/approve',
   (request, response) => homeController.approveImage(request, response));
 homeRoutes.post('/moderation/:placeId/reject',

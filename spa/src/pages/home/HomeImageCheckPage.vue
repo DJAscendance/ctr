@@ -44,7 +44,7 @@
           <button
             type="button"
             class="btn"
-            :disabled="busy"
+            :disabled="busy || fetching"
             @click="approve(item)"
           >
             Approve
@@ -52,7 +52,7 @@
           <button
             type="button"
             class="btn"
-            :disabled="busy"
+            :disabled="busy || fetching"
             @click="reject(item)"
           >
             Reject
@@ -62,7 +62,9 @@
     </table>
 
     <div class="text-center mt-4">
-      <button type="button" class="btn" @click="fetchQueue">Refresh</button>
+      <button type="button" class="btn" :disabled="fetching || busy" @click="fetchQueue">
+        Refresh
+      </button>
     </div>
   </div>
 </template>
@@ -79,19 +81,29 @@ export default Vue.extend({
     return {
       loaded: false,
       busy: false,
+      fetching: false,
       showError: false,
       error: "",
       queue: [] as any[],
+      // Monotonic request id. Only the response matching the current value is allowed to
+      // update the UI - anything older is a stale response from a superseded fetchQueue()
+      // call and is discarded (its own object URLs are revoked instead of ever being shown).
+      fetchToken: 0,
+      // Set once the component is torn down, so a fetchQueue() call still pending (e.g. the
+      // post-moderation refresh awaiting its POST) never starts a fresh request afterward.
+      disposed: false,
     };
   },
   methods: {
     async fetchQueue() {
+      if (this.disposed) return;
+      const token = ++this.fetchToken;
+      this.fetching = true;
       this.showError = false;
       this.error = "";
       try {
         const response = await this.$http.get("/home/moderation/queue");
         const queue = response.data.queue || [];
-        this.revokePreviews();
         // Pending images live in a private directory that is never served publicly, so each
         // one is fetched through the authenticated preview endpoint (which sends the
         // apiToken header) and shown via a temporary object URL.
@@ -105,16 +117,33 @@ export default Vue.extend({
             item.previewUrl = "";
           }
         }));
+
+        if (token !== this.fetchToken) {
+          // A newer fetchQueue() call has since started - this response lost the race.
+          // Discard it without touching the (newer) queue currently on screen.
+          this.revokePreviews(queue);
+          return;
+        }
+
+        this.revokePreviews(this.queue);
         this.queue = queue;
         this.loaded = true;
       } catch (e) {
+        if (token !== this.fetchToken) {
+          // A newer request superseded this one; let its own result/error win instead.
+          return;
+        }
         this.error = e.response?.data?.error || "Could not load the image queue.";
         this.showError = true;
         this.loaded = true;
+      } finally {
+        if (token === this.fetchToken) {
+          this.fetching = false;
+        }
       }
     },
-    revokePreviews() {
-      for (const item of this.queue) {
+    revokePreviews(queue) {
+      for (const item of queue) {
         if (item.previewUrl) {
           URL.revokeObjectURL(item.previewUrl);
         }
@@ -152,7 +181,13 @@ export default Vue.extend({
     this.fetchQueue();
   },
   beforeDestroy() {
-    this.revokePreviews();
+    // Bump the token so any in-flight fetchQueue() call recognizes itself as stale once it
+    // resolves and revokes its own preview URLs instead of touching a destroyed component.
+    // disposed additionally stops moderate()'s post-action refresh from starting a brand new
+    // fetchQueue() call (with its own fresh token) after teardown.
+    this.disposed = true;
+    this.fetchToken++;
+    this.revokePreviews(this.queue);
   },
 });
 </script>

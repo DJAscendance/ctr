@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { Container } from 'typedi';
 import validator from 'validator';
 import * as badwords from 'badwords-list';
@@ -16,7 +16,7 @@ import {
  */
 const IMAGE_FILESIZE_LIMIT = 5 * 1024 * 1024;
 
-class HomeController {
+export class HomeController {
 
   /**
    * Constructor.
@@ -63,10 +63,10 @@ class HomeController {
         // otherwise the client shows the "NOT CHECKED!" placeholder (for a pending image)
         // or the "No image uploaded yet!" text. This keeps unchecked images off the public
         // page for everyone, including the owner.
-        const publicHomeRecord = homeRecord && {
-          ...homeRecord,
+        const publicHomeRecord = homeRecord ? {
           image: homeRecord.image_status === 'approved' ? homeRecord.image : null,
-        };
+          imagePending: homeRecord.image_status === 'pending',
+        } : null;
         response.status(200).json({
           homeData: homeData,
           blockData: blockData,
@@ -483,7 +483,11 @@ class HomeController {
    * validated numeric place id, never a client-supplied path, and is sent with no-store so
    * unchecked content is not cached.
    */
-  public async previewImage(request: Request, response: Response): Promise<void> {
+  public async previewImage(
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ): Promise<void> {
     // Authenticate explicitly (401 on missing/invalid credentials) rather than via
     // decryptSession, which would answer 400, and never echo the token back.
     const { apitoken } = request.headers;
@@ -526,6 +530,20 @@ class HomeController {
           'Content-Type': 'image/webp',
           'Cache-Control': 'no-store, private',
         },
+      }, (error) => {
+        if (!error) return;
+        if (response.headersSent) {
+          // The response has already started streaming; let Express's error pipeline
+          // close/abort the connection rather than attempting a second response.
+          next(error);
+          return;
+        }
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          response.status(404).json({ 'error': 'No pending image.' });
+        } else {
+          console.error(error);
+          response.status(500).json({ 'error': 'Could not load image.' });
+        }
       });
     } catch (error) {
       console.error(error);
