@@ -111,6 +111,12 @@ export class PlaceRepository {
       : undefined;
   }
 
+  public async updateMapBackgroundIndex(placeId: number, index: number | null): Promise<void> {
+    await this.db.place
+      .where({ id: placeId })
+      .update({ map_background_index: index });
+  }
+
   public async updatePlaces(placeinfo: any): Promise<void> {
     const { id, created_at, updated_at, ...updateData } = placeinfo;
 
