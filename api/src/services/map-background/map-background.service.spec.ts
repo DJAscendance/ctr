@@ -80,6 +80,42 @@ describe('MapBackgroundService', () => {
       expect(options).toEqual([]);
     });
 
+    it('ignores an entry removed between readdir and stat (ENOENT)', async () => {
+      await writeFixture('grass', 'block', 'Pimg2D000.gif');
+      await writeFixture('grass', 'block', 'Pimg2D001.gif');
+      const dir = path.join(assetsDir, 'img', 'map_themes', 'grass', 'block');
+      const originalStat = fs.stat.bind(fs);
+      const statSpy = jest.spyOn(fs, 'stat').mockImplementation(async (target: any) => {
+        if (target === path.join(dir, 'Pimg2D001.gif')) {
+          const error: NodeJS.ErrnoException = new Error('ENOENT');
+          error.code = 'ENOENT';
+          throw error;
+        }
+        return originalStat(target);
+      });
+
+      const options = await service.listOptions('grass', 'block');
+      statSpy.mockRestore();
+
+      expect(options.map(option => option.index)).toEqual([0]);
+    });
+
+    it('propagates a non-ENOENT stat failure instead of silently skipping the entry', async () => {
+      await writeFixture('grass', 'block', 'Pimg2D000.gif');
+      const dir = path.join(assetsDir, 'img', 'map_themes', 'grass', 'block');
+      const statSpy = jest.spyOn(fs, 'stat').mockImplementation(async (target: any) => {
+        if (target === path.join(dir, 'Pimg2D000.gif')) {
+          const error: NodeJS.ErrnoException = new Error('EACCES');
+          error.code = 'EACCES';
+          throw error;
+        }
+        return Promise.reject(new Error('unexpected stat target'));
+      });
+
+      await expect(service.listOptions('grass', 'block')).rejects.toThrow('EACCES');
+      statSpy.mockRestore();
+    });
+
     it('deduplicates defensively if the same index somehow appears twice', async () => {
       const dir = path.join(assetsDir, 'img', 'map_themes', 'grass', 'block');
       await fs.mkdir(dir, { recursive: true });

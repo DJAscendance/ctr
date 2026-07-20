@@ -124,13 +124,20 @@ describe('HoodService - map background selection', () => {
       expect(result).toEqual({ status: 'success', selectedIndex: null });
     });
 
-    it('persists a valid positive index', async () => {
+    it('canonicalizes a submitted 0 to null without validating against the pool', async () => {
       const result = await service.updateMapBackgroundSelection(HOOD_ID, 0);
 
-      // index 0 canonicalizes to null and never needs pool validation
       expect(mapBackgroundService.isValidIndex).not.toHaveBeenCalled();
       expect(placeRepository.updateMapBackgroundIndex).toHaveBeenCalledWith(HOOD_ID, null);
       expect(result).toEqual({ status: 'success', selectedIndex: null });
+    });
+
+    it('persists a valid positive index', async () => {
+      const result = await service.updateMapBackgroundSelection(HOOD_ID, 1);
+
+      expect(mapBackgroundService.isValidIndex).toHaveBeenCalledWith('cyberhood', 'hood', 1);
+      expect(placeRepository.updateMapBackgroundIndex).toHaveBeenCalledWith(HOOD_ID, 1);
+      expect(result).toEqual({ status: 'success', selectedIndex: 1 });
     });
 
     it('returns not_found when the hood does not exist', async () => {

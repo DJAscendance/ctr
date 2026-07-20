@@ -59,7 +59,15 @@ export class MapBackgroundService {
       if (!match) {
         continue;
       }
-      const stats = await fs.stat(path.join(dir, entry));
+      let stats;
+      try {
+        stats = await fs.stat(path.join(dir, entry));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          continue;
+        }
+        throw error;
+      }
       if (!stats.isFile()) {
         continue;
       }
