@@ -43,7 +43,7 @@ export class PlaceRepository {
   public async findByUserId(userId: number): Promise<any> {
     return await this.db.place
       .select('place.id', 'place.type')
-      .where({ member_id: userId })
+      .where({ member_id: userId });
   }
 
   public async findAllStores(orderBy: string): Promise<Store[]> {

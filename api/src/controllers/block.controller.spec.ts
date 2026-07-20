@@ -90,7 +90,7 @@ describe('BlockController - map background endpoints', () => {
       expect(blockService.canAdmin).not.toHaveBeenCalled();
     });
 
-    it('returns 403 when the member is authenticated but not authorized for this block', async () => {
+    it('returns 403 when the member is authenticated but not authorized', async () => {
       const request: any = {
         params: { id: '500' },
         headers: { apitoken: 'token' },
@@ -194,7 +194,7 @@ describe('BlockController - map background endpoints', () => {
       expect(response.status).toHaveBeenCalledWith(200);
     });
 
-    it('validates authorization against the block id in the URL, not any client-supplied id', async () => {
+    it('validates authorization against the URL block id, not any client-supplied id', async () => {
       const request: any = {
         params: { id: '501' },
         headers: { apitoken: 'token' },

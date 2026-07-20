@@ -78,7 +78,7 @@ describe('HoodController - map background endpoints', () => {
       expect(hoodService.canAdmin).not.toHaveBeenCalled();
     });
 
-    it('returns 403 when the member is authenticated but not authorized for this hood', async () => {
+    it('returns 403 when the member is authenticated but not authorized', async () => {
       const request: any = {
         params: { id: '60' },
         headers: { apitoken: 'token' },

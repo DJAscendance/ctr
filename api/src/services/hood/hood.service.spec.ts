@@ -77,7 +77,8 @@ describe('HoodService - map background selection', () => {
     });
 
     it('supports a high grass/hood index such as 26', async () => {
-      colonyRepository.find.mockResolvedValue({ id: COLONY_ID, type: 'colony', slug: 'campus' } as Place);
+      colonyRepository.find
+        .mockResolvedValue({ id: COLONY_ID, type: 'colony', slug: 'campus' } as Place);
       hoodRepository.find.mockResolvedValue({ ...fakeHood, map_background_index: 26 } as Place);
       mapBackgroundService.getEffectiveUrl
         .mockResolvedValue('/assets/img/map_themes/grass/hood/Pimg2D026.gif');
@@ -107,7 +108,7 @@ describe('HoodService - map background selection', () => {
   });
 
   describe('updateMapBackgroundSelection', () => {
-    it('rejects an index outside the resolved pool (e.g. cyberhood/hood only has index 0)', async () => {
+    it('rejects an index outside the resolved pool (cyberhood/hood only has index 0)', async () => {
       mapBackgroundService.isValidIndex.mockResolvedValue(false);
 
       const result = await service.updateMapBackgroundSelection(HOOD_ID, 1);
