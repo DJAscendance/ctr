@@ -26,7 +26,7 @@ export default Vue.extend({
   methods: {
     async checkAdmin(): Promise<boolean> {
       try {
-        await this.$http.get(`/block/${  this.block.id  }/can_admin`);
+        await this.$http.get(`/block/${  this.$route.params.id  }/can_admin`);
         return true;
       } catch (e) {
         return false;

@@ -12,3 +12,4 @@ spa/assets/homes-uploads/
 .agents/
 qa/
 skills-lock.json
+.playwright-mcp/
