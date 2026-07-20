@@ -16,10 +16,12 @@ import CityMapPage from "./pages/CityMapPage.vue";
 import InformationPage from "./pages/Information.vue";
 import NeighborhoodPage from "./pages/neighborhood/NeighborhoodPage.vue";
 import NeighborhoodMapPage from "./pages/neighborhood/NeighborhoodMapPage.vue";
+import NeighborhoodMapBackgroundPage from "./pages/neighborhood/NeighborhoodMapBackgroundPage.vue";
 import NeighborhoodTools from "@/pages/neighborhood/NeighborhoodTools.vue";
 
 import BlockPage from "./pages/block/BlockPage.vue";
 import BlockMapPage from "./pages/block/BlockMapPage.vue";
+import BlockMapBackgroundPage from "./pages/block/BlockMapBackgroundPage.vue";
 import BlockMovePage from "./pages/block/BlockMovePage.vue";
 import BlockTools from "@/pages/block/BlockTools.vue";
 import BlockWizardPage from "./pages/block/BlockWizardPage.vue";
@@ -252,6 +254,12 @@ export default [
         meta: { wrapper: true },
       },
       {
+        path: "background",
+        component: NeighborhoodMapBackgroundPage,
+        name: "neighborhoodmapbackground",
+        meta: { wrapper: true },
+      },
+      {
         path: "",
         component: AccessRights,
         name: "neighborhoodAccessRights",
@@ -296,6 +304,12 @@ export default [
         path: "wizard",
         component: BlockWizardPage,
         name: "blockwizard",
+        meta: { wrapper: true },
+      },
+      {
+        path: "wizard/background",
+        component: BlockMapBackgroundPage,
+        name: "blockmapbackground",
         meta: { wrapper: true },
       },
       {

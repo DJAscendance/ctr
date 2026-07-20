@@ -24,5 +24,8 @@ const api = {
             return axios.post<T>("/api" + endpoint, data);
         }
     },
+    put: <T>(endpoint: string, data?: any) => {
+        return axios.put<T>("/api" + endpoint, data);
+    },
 };
 export default api;

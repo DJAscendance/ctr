@@ -75,8 +75,8 @@
 
 			<small>
 				Change the
-				<a href="block<$g_exe>?ac=wizardimage&ID=<$ID>" target="place"
-					>background image</a
+				<router-link :to="{ name: 'blockmapbackground' }"
+					>background image</router-link
 				>
 				for this <strong>block</strong>.
 			</small>
