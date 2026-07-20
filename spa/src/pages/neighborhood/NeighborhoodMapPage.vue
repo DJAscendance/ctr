@@ -50,6 +50,13 @@ import Chat from "../../components/Chat.vue";
 import { NeighborhoodData } from "./neighborhood-data.interface";
 import { colonyDataHelper } from "@/helpers";
 
+function mapBackgroundFilename(index: number | null | undefined): string {
+  if (!Number.isInteger(index) || (index as number) <= 0) {
+    return "Pimg2D000.gif";
+  }
+  return "Pimg2D" + (index as number).toString().padStart(3, "0") + ".gif";
+}
+
 export default Vue.extend({
   name: "NeighborhoodMapPage",
   components: { Chat },
@@ -99,11 +106,15 @@ export default Vue.extend({
   watch: {},
   computed: {
     mapBackground() {
-      return (
-        `url('/assets/img/map_themes/${ 
-          colonyDataHelper[this.colony.slug].map_theme 
-        }/hood/Pimg2D000.gif')`
-      );
+      const theme = colonyDataHelper[this.colony.slug].map_theme;
+      const defaultUrl = `/assets/img/map_themes/${theme}/hood/Pimg2D000.gif`;
+      const selectedFilename = mapBackgroundFilename(this.hood.map_background_index);
+      if (selectedFilename === "Pimg2D000.gif") {
+        return `url('${defaultUrl}')`;
+      }
+      const selectedUrl = `/assets/img/map_themes/${theme}/hood/${selectedFilename}`;
+      // Layered so a missing/failed selected file falls back to the default underneath it.
+      return `url('${selectedUrl}'), url('${defaultUrl}')`;
     },
     blockBackground() {
       return (

@@ -25,7 +25,8 @@
         Message to All</router-link>
       <router-link :to="{ name: 'neighborhoodInboxToAll'}" class="btn-ui">
         Inbox to All</router-link>
-			<span href="" class="btn-ui">Update</span>
+			<router-link :to="{ name: 'neighborhoodmapbackground' }" class="btn-ui">
+				Update</router-link>
       <router-link :to="{ name: 'neighborhoodAccessRights' }" class="btn-ui">Access Rights</router-link>
 		</div>
 		<br />
