@@ -6,3 +6,9 @@ node_modules
 .idea
 dist/
 spa/assets/object/
+spa/assets/homes-uploads/
+
+# Local coding-agent tooling output (not part of the app)
+.agents/
+qa/
+skills-lock.json
