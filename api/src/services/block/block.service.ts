@@ -2,25 +2,49 @@ import { Service } from 'typedi';
 
 import {
   BlockRepository,
+  ColonyRepository,
   MapLocationRepository,
   HoodRepository,
+  PlaceRepository,
   RoleAssignmentRepository,
   RoleRepository,
   MemberRepository,
 } from '../../repositories';
 import {Member, Place} from '../../types/models';
 import {includes} from 'lodash';
+import {
+  MapBackgroundOption,
+  MapBackgroundService,
+} from '../map-background/map-background.service';
+import { resolveMapTheme } from '../../libs';
+
+/** Result of a successful map background options lookup */
+export interface MapBackgroundOptionsResult {
+  selectedIndex: number | null;
+  effectiveIndex: number;
+  effectiveUrl: string;
+  options: MapBackgroundOption[];
+}
+
+/** Outcome of attempting to persist a map background selection */
+export type MapBackgroundSelectionResult =
+  | { status: 'success'; selectedIndex: number | null }
+  | { status: 'not_found' }
+  | { status: 'invalid' };
 
 /** Service for dealing with blocks */
 @Service()
 export class BlockService {
   constructor(
     private blockRepository: BlockRepository,
+    private colonyRepository: ColonyRepository,
     private mapLocationRepository: MapLocationRepository,
     private hoodRepository: HoodRepository,
+    private placeRepository: PlaceRepository,
     private roleAssignmentRepository: RoleAssignmentRepository,
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
+    private mapBackgroundService: MapBackgroundService,
   ) {}
   
   public async find(blockId: number): Promise<Place> {
@@ -31,7 +55,69 @@ export class BlockService {
     const blockMapLocation = await this.mapLocationRepository.findPlaceIdMapLocation(blockId);
     return await this.hoodRepository.find(blockMapLocation.parent_place_id);
   }
-  
+
+  public async getColony(blockId: number): Promise<Place | undefined> {
+    const hood = await this.getHood(blockId);
+    if (!hood) {
+      return undefined;
+    }
+    const hoodMapLocation = await this.mapLocationRepository.findPlaceIdMapLocation(hood.id);
+    return await this.colonyRepository.find(hoodMapLocation.parent_place_id);
+  }
+
+  public async getMapBackgroundOptions(
+    blockId: number,
+  ): Promise<MapBackgroundOptionsResult | null> {
+    const block = await this.find(blockId);
+    if (!block) {
+      return null;
+    }
+    const colony = await this.getColony(blockId);
+    const theme = resolveMapTheme(colony?.slug);
+    if (!theme) {
+      return null;
+    }
+
+    const selectedIndex = block.map_background_index ?? null;
+    const [options, effectiveUrl] = await Promise.all([
+      this.mapBackgroundService.listOptions(theme, 'block'),
+      this.mapBackgroundService.getEffectiveUrl(theme, 'block', selectedIndex),
+    ]);
+
+    return {
+      selectedIndex,
+      effectiveIndex: selectedIndex ?? 0,
+      effectiveUrl,
+      options,
+    };
+  }
+
+  public async updateMapBackgroundSelection(
+    blockId: number,
+    index: number | null,
+  ): Promise<MapBackgroundSelectionResult> {
+    const block = await this.find(blockId);
+    if (!block) {
+      return { status: 'not_found' };
+    }
+    const colony = await this.getColony(blockId);
+    const theme = resolveMapTheme(colony?.slug);
+    if (!theme) {
+      return { status: 'not_found' };
+    }
+
+    const normalizedIndex = index === 0 ? null : index;
+    if (normalizedIndex !== null) {
+      const valid = await this.mapBackgroundService.isValidIndex(theme, 'block', normalizedIndex);
+      if (!valid) {
+        return { status: 'invalid' };
+      }
+    }
+
+    await this.placeRepository.updateMapBackgroundIndex(blockId, normalizedIndex);
+    return { status: 'success', selectedIndex: normalizedIndex };
+  }
+
   public async getAccessInfoByUsername(blockId: number): Promise<object> {
     const deputyCode = await this.roleRepository.roleMap.BlockDeputy;
     const ownerCode = await this.roleRepository.roleMap.BlockLeader;
