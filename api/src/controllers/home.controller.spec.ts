@@ -117,6 +117,59 @@ describe('HomeController', () => {
     });
   });
 
+  describe('uploadImage file normalization', () => {
+    const session = { id: 1 };
+
+    beforeEach(() => {
+      memberService.decryptSession.mockReturnValue(session as any);
+      homeService.uploadHomeImage.mockResolvedValue(undefined);
+    });
+
+    async function callUploadImage(files: any) {
+      const request = { files } as any;
+      const response = mockResponse();
+      await controller.uploadImage(request, response);
+      return response;
+    }
+
+    it('accepts a single valid image file', async () => {
+      const imageFile = {
+        name: 'photo.png',
+        mimetype: 'image/png',
+        size: 1024,
+        data: Buffer.from('x'),
+      };
+
+      const response = await callUploadImage({ imageFile });
+
+      expect(homeService.uploadHomeImage).toHaveBeenCalledWith(session.id, imageFile);
+      expect(response.status).toHaveBeenCalledWith(200);
+    });
+
+    it('rejects when no file is provided', async () => {
+      const response = await callUploadImage({});
+
+      expect(homeService.uploadHomeImage).not.toHaveBeenCalled();
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith({ error: 'Image file is required.' });
+    });
+
+    it('rejects multiple files uploaded under the same field instead of throwing', async () => {
+      const imageFile = [
+        { name: 'a.png', mimetype: 'image/png', size: 10, data: Buffer.from('a') },
+        { name: 'b.png', mimetype: 'image/png', size: 10, data: Buffer.from('b') },
+      ];
+
+      const response = await callUploadImage({ imageFile });
+
+      expect(homeService.uploadHomeImage).not.toHaveBeenCalled();
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith({
+        error: 'Only one image file may be uploaded at a time.',
+      });
+    });
+  });
+
   describe('previewImage sendFile error handling', () => {
     const session = { id: 1 };
 

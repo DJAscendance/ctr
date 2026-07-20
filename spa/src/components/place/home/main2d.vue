@@ -91,11 +91,13 @@
         <img
           v-if="homeImage"
           :src="'/assets/homes-uploads/' + homeImage"
+          alt="Home image"
           style="max-width: 200px; max-height: 200px;"
         />
         <img
           v-else-if="homeImagePending"
           src="/assets/img/not-checked.gif"
+          alt="Home image awaiting moderation"
           title="This image is awaiting review by a Block Leader."
           style="max-width: 200px; max-height: 200px;"
         />

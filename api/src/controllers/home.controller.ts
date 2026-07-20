@@ -336,17 +336,33 @@ export class HomeController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
 
-    if (
-      typeof request.files?.imageFile === 'undefined' ||
-      validator.isEmpty(request.files.imageFile.name)
-    ) {
+    const imageFileInput = request.files?.imageFile;
+
+    if (typeof imageFileInput === 'undefined') {
       response.status(400).json({
         error: 'Image file is required.',
       });
       return;
     }
 
-    const imageFile = request.files.imageFile;
+    // express-fileupload exposes the field as an array when the client sends multiple files
+    // under the same form field name. Reject that explicitly with a clear 400 rather than
+    // reading .name/.mimetype/.size off an array (which would throw and 500) or silently
+    // picking one of the files.
+    if (Array.isArray(imageFileInput)) {
+      response.status(400).json({
+        error: 'Only one image file may be uploaded at a time.',
+      });
+      return;
+    }
+
+    const imageFile = imageFileInput;
+    if (validator.isEmpty(imageFile.name)) {
+      response.status(400).json({
+        error: 'Image file is required.',
+      });
+      return;
+    }
     if (!imageFile.mimetype.startsWith('image/')) {
       response.status(400).json({
         error: 'File must be an image.',
