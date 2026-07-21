@@ -81,50 +81,98 @@ io.on("connection", async function(socket) {
     socket.emit("VERSION", { version: package.version });
 
     socket.on("JOIN", (data) => {
+        // Never throw on a malformed or missing payload - a bad client must
+        // not be able to crash the socket handler.
+        if (!data || typeof data !== "object") {
+            socket.emit("JOIN:error", { room: undefined, joinId: undefined, reason: "invalid_payload" });
+            return;
+        }
+        const { room, joinId } = data;
         const tokenData = validJwt(data.token);
         if (!tokenData) {
             console.error("invalid token!");
-            socket.emit("JOIN:error", { reason: "invalid_token" });
+            socket.emit("JOIN:error", { room, joinId, reason: "invalid_token" });
             return;
         }
         const presenceId = data.presenceId;
-        const MAX_PRESENCE_ID_LENGTH = 128;
+        const MAX_ID_LENGTH = 128;
         if (
             typeof presenceId !== "string" ||
             presenceId.length === 0 ||
-            presenceId.length > MAX_PRESENCE_ID_LENGTH
+            presenceId.length > MAX_ID_LENGTH
         ) {
             console.error("JOIN has invalid presenceId!");
-            socket.emit("JOIN:error", { reason: "invalid_presence_id" });
+            socket.emit("JOIN:error", { room, joinId, reason: "invalid_presence_id" });
+            return;
+        }
+        // The joinId correlates this attempt with its authoritative response so
+        // a stale/superseded reply can never settle a newer client attempt.
+        if (typeof joinId !== "string" || joinId.length === 0 || joinId.length > MAX_ID_LENGTH) {
+            console.error("JOIN has invalid joinId!");
+            socket.emit("JOIN:error", { room, joinId: undefined, reason: "invalid_join_id" });
+            return;
+        }
+        if (room === undefined || room === null || `${room}`.length === 0) {
+            socket.emit("JOIN:error", { room, joinId, reason: "invalid_room" });
             return;
         }
 
-        const { room } = data;
         // memberId, username, and avatar are derived only from the verified
         // JWT - never from client-supplied data - so presenceId can be
         // freely client-chosen without letting a client impersonate another
         // account's identity.
         const memberId = tokenData.id;
         const key = presenceKey(memberId, presenceId);
-        const defaultPos = [0, 0, 0];
-        const defaultRot = [0, 1, 0, 0];
         const user = USERS.get(socket);
 
-        // Defensively leave any previously tracked room for this socket
-        // before joining the new one - guarantees one room per socket even
-        // if a client ever calls JOIN without a preceding unsubscribe.
-        if (user.room && user.room !== room) {
-            const oldPresence = user.presenceKey ? PRESENCE.get(user.presenceKey) : null;
-            socket.leave(user.room);
-            socket.to(user.room).emit("AV:del", {
-                id: socket.id,
-                memberId: oldPresence?.memberId,
-                presenceId: oldPresence?.presenceId,
-                username: user.username,
-            });
-            if (user.presenceKey && oldPresence?.socketId === socket.id) {
+        // (A) Tear down a DIFFERENT logical presence this socket previously
+        // owned (e.g. the same socket re-JOINing with a different presenceId).
+        // Only if this socket still owns that record - never clobber a presence
+        // a newer socket now owns.
+        if (user.presenceKey && user.presenceKey !== key) {
+            const oldOwned = PRESENCE.get(user.presenceKey);
+            if (oldOwned && oldOwned.socketId === socket.id) {
+                socket.to(oldOwned.room).emit("AV:del", {
+                    id: socket.id,
+                    room: oldOwned.room,
+                    memberId: oldOwned.memberId,
+                    presenceId: oldOwned.presenceId,
+                    username: oldOwned.username,
+                });
                 PRESENCE.delete(user.presenceKey);
             }
+        }
+
+        // (B) The target logical presence (key). If a record for it already
+        // exists in a DIFFERENT room, the presence is relocating: announce its
+        // departure from the old room and drop the stale record so it re-enters
+        // the new room as a fresh presence. If it exists in the SAME room, this
+        // is a rebind (reconnect / redundant JOIN) - preserve its transform so a
+        // restarted socket server (or a reconnecting client) doesn't snap the
+        // avatar back to the origin, and don't re-announce it.
+        const existingForKey = PRESENCE.get(key);
+        let pos = [0, 0, 0];
+        let rot = [0, 1, 0, 0];
+        if (existingForKey) {
+            if (`${existingForKey.room}` === `${room}`) {
+                pos = existingForKey.pos;
+                rot = existingForKey.rot;
+            } else {
+                socket.to(existingForKey.room).emit("AV:del", {
+                    id: existingForKey.socketId,
+                    room: existingForKey.room,
+                    memberId: existingForKey.memberId,
+                    presenceId: existingForKey.presenceId,
+                    username: existingForKey.username,
+                });
+                PRESENCE.delete(key);
+            }
+        }
+
+        // (C) This socket's own room membership: leave the prior room if the
+        // socket is moving to a different one.
+        if (user.room && `${user.room}` !== `${room}`) {
+            socket.leave(user.room);
         }
 
         const isNewPresence = !PRESENCE.has(key);
@@ -137,11 +185,11 @@ io.on("connection", async function(socket) {
         PRESENCE.set(key, {
             memberId,
             presenceId,
-            socketId: socket.id,
+            socketId: socket.id, // transport metadata - rebinds to the current socket
             username: tokenData.username,
             avatar: tokenData.avatar,
-            pos: defaultPos,
-            rot: defaultRot,
+            pos,
+            rot,
             room,
         });
 
@@ -150,15 +198,16 @@ io.on("connection", async function(socket) {
         // Give the joining client one authoritative snapshot of everyone
         // currently in the room (including itself) instead of an ad-hoc
         // AV:new/AV replay loop. Chat and the X_ITE avatar layer reconcile
-        // against this by logical presence key, independent of readiness.
-        socket.emit("ROOM_STATE", { room, presences: roomPresenceSnapshot(room) });
+        // against this by logical presence key, independent of readiness. The
+        // joinId is echoed so the client can correlate it with its attempt.
+        socket.emit("ROOM_STATE", { room, joinId, presences: roomPresenceSnapshot(room) });
 
-        // Only announce a genuinely new presence - repeating JOIN for the
-        // same room/presence (e.g. a redundant client call) must not spam
-        // peers with another "someone joined" broadcast.
+        // Only announce a genuinely new presence - a rebind/redundant JOIN for
+        // the same room/presence must not spam peers with "someone joined".
         if (isNewPresence) {
             socket.to(room).emit("AV:new", {
                 id: socket.id,
+                room,
                 memberId,
                 presenceId,
                 avatar: tokenData.avatar,
@@ -175,28 +224,26 @@ io.on("connection", async function(socket) {
 
     //handle avatar related calls.
     socket.on("AV", function(msg) {
-        msg.id = socket.id;
+        if (!msg || typeof msg !== "object") return;
         const user = USERS.get(socket);
-        if (user?.presenceKey) {
-            const presence = PRESENCE.get(user.presenceKey);
-            if (presence) {
-                msg.memberId = presence.memberId;
-                msg.presenceId = presence.presenceId;
-                if (msg.pos) presence.pos = msg.pos;
-                if (msg.rot) presence.rot = msg.rot;
-            }
-        }
-        if (user?.room) {
-            socket.to(user.room).emit("AV", msg);
-        }
-        if (user) {
-            if (msg.pos) {
-                USERS.get(socket).pos = msg.pos;
-            }
-            if (msg.rot) {
-                USERS.get(socket).rot = msg.rot;
-            }
-        }
+        if (!user || !user.room) return;
+        const presence = user.presenceKey ? PRESENCE.get(user.presenceKey) : null;
+        // Only the socket that currently owns the logical presence may move or
+        // relay it - a stale/replaced socket must not broadcast under this key.
+        if (!presence || presence.socketId !== socket.id) return;
+        // Reject AV tagged for a room other than the socket's current
+        // authoritative room (e.g. an offline-buffered event flushed after a
+        // room change) so it can't mutate the new room.
+        if (msg.room !== undefined && `${msg.room}` !== `${user.room}`) return;
+        msg.id = socket.id;
+        msg.room = user.room; // authoritative room tag for the broadcast
+        msg.memberId = presence.memberId;
+        msg.presenceId = presence.presenceId;
+        if (msg.pos) presence.pos = msg.pos;
+        if (msg.rot) presence.rot = msg.rot;
+        socket.to(user.room).emit("AV", msg);
+        if (msg.pos) user.pos = msg.pos;
+        if (msg.rot) user.rot = msg.rot;
     });
 
     //handle shared events
@@ -280,13 +327,17 @@ io.on("connection", async function(socket) {
         const room = user.room;
         const presence = user.presenceKey ? PRESENCE.get(user.presenceKey) : null;
         socket.leave(room);
-        socket.to(room).emit("AV:del", {
-            id: socket.id,
-            memberId: presence?.memberId,
-            presenceId: presence?.presenceId,
-            username: user.username,
-        });
-        if (user.presenceKey) {
+        // Only announce the departure and delete the record if this socket
+        // still owns the logical presence - a stale/replaced socket must not
+        // remove or announce a presence a newer socket now owns.
+        if (presence && presence.socketId === socket.id) {
+            socket.to(room).emit("AV:del", {
+                id: socket.id,
+                room,
+                memberId: presence.memberId,
+                presenceId: presence.presenceId,
+                username: user.username,
+            });
             PRESENCE.delete(user.presenceKey);
         }
         // Clear so a later disconnect (without a rejoin in between) sees
@@ -303,22 +354,19 @@ io.on("connection", async function(socket) {
     socket.on("disconnect", function() {
         const user = USERS.get(socket);
         const presence = user?.presenceKey ? PRESENCE.get(user.presenceKey) : null;
-        // Only announce a departure if this socket was still in a room. A
-        // socket that already unsubscribed has had user.room cleared (and its
-        // AV:del already sent there), so re-emitting here would broadcast to
-        // an undefined room - matches the guard used in the "AV" handler.
-        if (user?.room) {
+        // Announce the departure and remove the record only if this socket was
+        // still in a room AND still owns the logical presence. Guarding BOTH on
+        // socketId (not just the delete) means a stale/delayed disconnect from
+        // an old socket can neither delete nor broadcast AV:del for a presence a
+        // newer reconnected socket now owns.
+        if (user?.room && presence && presence.socketId === socket.id) {
             io.to(user.room).emit("AV:del", {
                 id: socket.id,
-                memberId: presence?.memberId,
-                presenceId: presence?.presenceId,
+                room: user.room,
+                memberId: presence.memberId,
+                presenceId: presence.presenceId,
                 username: user?.username,
             });
-        }
-        // Only remove the presence record if this socket is still the one
-        // it's bound to - guards against a stale/delayed disconnect from an
-        // old socket clobbering a newer connection for the same presence.
-        if (user?.presenceKey && presence?.socketId === socket.id) {
             PRESENCE.delete(user.presenceKey);
         }
         USERS.delete(socket);

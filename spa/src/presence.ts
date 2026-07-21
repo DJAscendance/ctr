@@ -49,6 +49,22 @@ export function isSelfPresence(
   return theirKey === myKey;
 }
 
+/**
+ * True only when a room-scoped presence event (AV / AV:new / AV:del) is tagged
+ * with, and matches, the room the client is currently in. A missing or
+ * mismatched room tag is rejected rather than accepted ambiguously - this is
+ * what stops an in-flight event from a room we've navigated away from (or a
+ * legacy untagged event) from mutating the current room's presence store.
+ */
+export function isPresenceEventForRoom(
+  eventRoom: string | number | null | undefined,
+  activeRoom: string | number | null | undefined,
+): boolean {
+  if (eventRoom === null || eventRoom === undefined) return false;
+  if (activeRoom === null || activeRoom === undefined) return false;
+  return `${eventRoom}` === `${activeRoom}`;
+}
+
 export interface ReconcileResult {
   added: Presence[];
   updated: Presence[];
