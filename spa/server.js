@@ -303,12 +303,18 @@ io.on("connection", async function(socket) {
     socket.on("disconnect", function() {
         const user = USERS.get(socket);
         const presence = user?.presenceKey ? PRESENCE.get(user.presenceKey) : null;
-        io.to(user?.room).emit("AV:del", {
-            id: socket.id,
-            memberId: presence?.memberId,
-            presenceId: presence?.presenceId,
-            username: user?.username,
-        });
+        // Only announce a departure if this socket was still in a room. A
+        // socket that already unsubscribed has had user.room cleared (and its
+        // AV:del already sent there), so re-emitting here would broadcast to
+        // an undefined room - matches the guard used in the "AV" handler.
+        if (user?.room) {
+            io.to(user.room).emit("AV:del", {
+                id: socket.id,
+                memberId: presence?.memberId,
+                presenceId: presence?.presenceId,
+                username: user?.username,
+            });
+        }
         // Only remove the presence record if this socket is still the one
         // it's bound to - guards against a stale/delayed disconnect from an
         // old socket clobbering a newer connection for the same presence.
