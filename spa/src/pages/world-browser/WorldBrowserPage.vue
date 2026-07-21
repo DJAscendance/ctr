@@ -16,8 +16,9 @@
     <div class="flex flex-none h-1/3 bg-chat">
       <chat
         ref="chat"
-        v-if="loaded"
+        v-if="chatReady"
         :place="place"
+        :presence-store="presenceStore"
         :shared-event="sharedEvent"
         :shared-objects="sharedObjects"
         :clickId="clickId"
@@ -42,6 +43,7 @@ import {
   debugMsg,
   environment,
 } from "@/helpers";
+import { PresenceStore, Presence, presenceKey } from "@/presence";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -50,6 +52,8 @@ export default Vue.extend({
   data: (): WorldBrowserData => {
     return {
       loaded: false,
+      chatReady: false,
+      presenceStore: new PresenceStore(),
       worldsData: worldDataJson,
       avatarsData: avatarsDataJson,
       browser: null,
@@ -220,9 +224,13 @@ export default Vue.extend({
     },
     async loadAndJoinPlace(): Promise<void> {
       this.loaded = false;
+      this.chatReady = false;
       this.force2d = false;
 
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
+      // Fresh presence state per place - nothing from the previous room's
+      // roster/avatars should leak into the one we're about to join.
+      this.presenceStore = new PresenceStore();
       await this.getPlace();
 
       if(this.$store.data.place.slug === "clubdir"){
@@ -239,10 +247,19 @@ export default Vue.extend({
         const browser = X3D.getBrowser(this.browser);
         browser.replaceWorld(null);
       }
+
+      // Room membership (JOIN) and Chat readiness no longer wait on X_ITE -
+      // only avatar rendering needs the 3D scene to exist. AV/AV:new/AV:del
+      // events for this room can now arrive before X_ITE initializes; they
+      // flow into presenceStore (see startSocketListeners) and are drained
+      // into the scene once it's ready (see startAvatarRenderer).
+      await this.joinPlace();
+      this.chatReady = true;
+
       if(this.$store.data.view3d && !this.force2d) {
         const browser = await this.startX3D();
-        this.loaded = true;
         this.startX3DListeners(browser);
+        this.loaded = true;
       } else {
 
         if(this.$store.data.place.type === "shop"){
@@ -260,16 +277,19 @@ export default Vue.extend({
         }
         this.loaded = true;
       }
-      this.joinPlace();
     },
     async unloadPlace(): Promise<void> {
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
+      this.presenceStore = new PresenceStore();
       const browser = X3D.getBrowser(this.browser);
       browser.replaceWorld(null);
     },
     async joinPlace(): Promise<void> {
       await this.$socket.joinRoom(this.$store.data.place.id, this.$store.data.user.token);
       this.debugMsg("joined room success", this.$store.data.place.id);
+    },
+    /** Announces our own current viewpoint once X_ITE has one to report. */
+    sendInitialViewpoint(): void {
       if(this.$store.data.view3d){
         const { viewpointPosition, viewpointOrientation } = X3D.getBrowser(this.browser);
         this.$socket.emit("AV", {
@@ -286,7 +306,7 @@ export default Vue.extend({
               viewpointOrientation.angle,
             ],
           },
-        });       
+        });
       }
     },
     moveObject(objectId): void {
@@ -393,7 +413,15 @@ export default Vue.extend({
         });
       }
     },
-    async onAvatarAdded(event): Promise<void> {
+    /**
+     * Renders a presence's avatar for the first time. Called both when
+     * draining presenceStore at X_ITE-ready time and for live "add" events
+     * that arrive afterward - either way the presence object already
+     * carries whatever transform is currently known, so there's no need to
+     * wait for a separate "moved" event to position it correctly.
+     */
+    async renderPresenceAdded(presence: Presence): Promise<void> {
+      const key = presenceKey(presence.memberId, presence.presenceId);
       const ROTATE180 = new X3D.SFRotation(0, 1, 0, Math.PI);
 
       const unique = (prefix) => {
@@ -425,101 +453,119 @@ export default Vue.extend({
 
       const browser = X3D.getBrowser(this.browser);
 
-      if (!this.users[event.id]) {
-        this.users[event.id] = {};
+      if (!this.users[key]) {
+        this.users[key] = {};
       }
 
-      if (
-        !this.users[event.id].loading &&
-        !this.users[event.id].loaded
-      ) {
-        const { directory, filename } = event.avatar;
-        const avURL = `/assets/avatars/${directory}/${filename}`;
+      if (this.users[key].loading || this.users[key].loaded) {
+        return;
+      }
 
-        this.users[event.id].loading = true;
-        loadInlineAsync(browser, avURL).then((avInline) => {
-          const uniqueID = unique("Av-");
-          browser.currentScene.updateImportedNode(avInline, "Avatar", uniqueID);
-          const avImport = browser.currentScene.getImportedNode(uniqueID);
-          browser.currentScene.addRootNode(avInline);
-          this.users[event.id].loading = false;
-          this.users[event.id].loaded = true;
-          this.users[event.id]["inline"] = avInline;
-          this.users[event.id]["import"] = avImport;
+      if (presence.pos || presence.rot) {
+        this.users[key].transform = {
+          pos: presence.pos,
+          rot: presence.rot,
+        };
+      }
 
-          if (this.users[event.id]["inline"]) {
-            if (
-              this.users[event.id].transform &&
-              this.users[event.id].transform.pos
-            ) {
-              this.users[event.id]["import"].set_position = new X3D.SFVec3f(
-                ...this.users[event.id].transform.pos,
-              );
-            }
-            if (
-              this.users[event.id].transform &&
-              this.users[event.id].transform.rot
-            ) {
-              this.users[event.id]["import"].rotation = ROTATE180.multiply(
-                new X3D.SFRotation(...this.users[event.id].transform.rot),
-              );
-            }
+      const { directory, filename } = presence.avatar;
+      const avURL = `/assets/avatars/${directory}/${filename}`;
+
+      this.users[key].loading = true;
+      loadInlineAsync(browser, avURL).then((avInline) => {
+        const uniqueID = unique("Av-");
+        browser.currentScene.updateImportedNode(avInline, "Avatar", uniqueID);
+        const avImport = browser.currentScene.getImportedNode(uniqueID);
+        browser.currentScene.addRootNode(avInline);
+        this.users[key].loading = false;
+        this.users[key].loaded = true;
+        this.users[key]["inline"] = avInline;
+        this.users[key]["import"] = avImport;
+
+        if (this.users[key]["inline"]) {
+          if (
+            this.users[key].transform &&
+            this.users[key].transform.pos
+          ) {
+            this.users[key]["import"].set_position = new X3D.SFVec3f(
+              ...this.users[key].transform.pos,
+            );
           }
-        });
-      }
+          if (
+            this.users[key].transform &&
+            this.users[key].transform.rot
+          ) {
+            this.users[key]["import"].rotation = ROTATE180.multiply(
+              new X3D.SFRotation(...this.users[key].transform.rot),
+            );
+          }
+        }
+      });
     },
-    onAvatarMoved(event): void {
+    /** Updates an already-known presence's rendered position/rotation. */
+    renderPresenceUpdated(presence: Presence): void {
+      const key = presenceKey(presence.memberId, presence.presenceId);
       const ROTATE180 = new X3D.SFRotation(0, 1, 0, Math.PI);
-      const browser = X3D.getBrowser(this.browser);
 
-      if (!this.users[event.id]) {
-        this.users[event.id] = {};
+      if (!this.users[key]) {
+        // An update arrived before this presence was ever added (e.g. a
+        // transform update racing the initial render) - render it fresh
+        // instead of silently dropping it.
+        this.renderPresenceAdded(presence);
+        return;
       }
 
-      if (!this.users[event.id].transform) {
-        this.users[event.id].transform = {};
+      if (!this.users[key].transform) {
+        this.users[key].transform = {};
       }
 
-      if (event.pos) {
-        this.users[event.id].transform.pos = event.pos;
+      if (presence.pos) {
+        this.users[key].transform.pos = presence.pos;
       }
-      if (event.rot) {
-        this.users[event.id].transform.rot = event.rot;
+      if (presence.rot) {
+        this.users[key].transform.rot = presence.rot;
       }
 
-      if (this.users[event.id]["inline"]) {
-        if (this.users[event.id].transform.pos) {
-          this.users[event.id]["import"].set_position = new X3D.SFVec3f(
-            ...this.users[event.id].transform.pos,
+      if (this.users[key]["inline"]) {
+        if (this.users[key].transform.pos) {
+          this.users[key]["import"].set_position = new X3D.SFVec3f(
+            ...this.users[key].transform.pos,
           );
         }
-        if (this.users[event.id].transform.rot) {
-          this.users[event.id]["import"].rotation = ROTATE180.multiply(
-            new X3D.SFRotation(...this.users[event.id].transform.rot),
+        if (this.users[key].transform.rot) {
+          this.users[key]["import"].rotation = ROTATE180.multiply(
+            new X3D.SFRotation(...this.users[key].transform.rot),
           );
-        }
-
-        if (typeof event.gesture === "number") {
-          this.users[event.id]["import"][
-            `set_gesture${  event.gesture.toString()}`
-          ] = browser.getCurrentTime();
         }
       }
     },
-    onAvatarRemoved(event): void {
-      const { id } = event;
+    /** Removes a presence's rendered avatar, if it was ever rendered. */
+    renderPresenceRemoved(key: string): void {
+      if (!this.users[key]) return;
 
-      if (this.users[id].inline) {
+      if (this.users[key].inline) {
         X3D.getBrowser(this.browser)
           .currentScene
-          .removeRootNode(this.users[id].inline);
+          .removeRootNode(this.users[key].inline);
       }
 
-      if (this.users[id].import) {
-        this.users[id].import.dispose();
+      if (this.users[key].import) {
+        this.users[key].import.dispose();
       }
 
-      delete this.users[id];
+      delete this.users[key];
+    },
+    /**
+     * Gestures are momentary triggers, not persistent state, so they don't
+     * belong in presenceStore's latest-state model - they're only ever
+     * forwarded live, and simply dropped if the avatar isn't rendered yet
+     * rather than buffered and replayed once it is.
+     */
+    applyGesture(key: string, gesture: number): void {
+      const avatar = this.users[key];
+      if (!avatar || !avatar.loaded || !avatar.import) return;
+      avatar.import[`set_gesture${gesture.toString()}`] =
+        X3D.getBrowser(this.browser).getCurrentTime();
     },
     onSharedEvent(event): void {
       for (const node of this.eventNodeMap.get(event.name)) {
@@ -549,6 +595,40 @@ export default Vue.extend({
         const objectInstanceResponse = await this.$http.get(`/place/${  this.$store.data.place.id 
         }/object_instance`);
         this.sharedObjects = objectInstanceResponse.data.object_instance;
+      }
+    },
+    /**
+     * Authoritative snapshot of who's in the room right now, sent once on
+     * JOIN. Reconciling (rather than blindly appending) means this same
+     * handler can be reused as-is if a future reconnect PR re-sends
+     * ROOM_STATE to resync after a drop.
+     */
+    onRoomState(event: { room: string | number; presences: Presence[] }): void {
+      this.presenceStore.reconcile(event.presences);
+    },
+    /** A peer joined the room - renderer-independent, may run before X_ITE exists. */
+    onPresenceJoined(event): void {
+      if (typeof event.memberId === "undefined" || !event.presenceId) return;
+      this.presenceStore.upsert({
+        memberId: event.memberId,
+        presenceId: event.presenceId,
+        socketId: event.id,
+        username: event.username,
+        avatar: event.avatar,
+      });
+    },
+    /** A peer left the room - removes them from the authoritative store. */
+    onPresenceLeft(event): void {
+      if (typeof event.memberId === "undefined" || !event.presenceId) return;
+      this.presenceStore.remove(presenceKey(event.memberId, event.presenceId));
+    },
+    /** A peer moved - updates the store; gestures are forwarded live only. */
+    onPresenceMoved(event): void {
+      if (typeof event.memberId === "undefined" || !event.presenceId) return;
+      const key = presenceKey(event.memberId, event.presenceId);
+      this.presenceStore.updateTransform(key, event.pos, event.rot);
+      if (typeof event.gesture === "number") {
+        this.applyGesture(key, event.gesture);
       }
     },
     onVersion(event: { version: string }): void {
@@ -735,12 +815,31 @@ export default Vue.extend({
         }
       });
       this.$socket.on("SO", event => this.onSharedObjectEvent(event));
+      // Presence/room-membership events are renderer-independent and must
+      // be wired up here (mounted once), not gated behind X_ITE - they can
+      // arrive as soon as JOIN succeeds, before any 3D scene exists.
+      this.$socket.on("ROOM_STATE", event => this.onRoomState(event));
+      this.$socket.on("AV:new", event => this.onPresenceJoined(event));
+      this.$socket.on("AV:del", event => this.onPresenceLeft(event));
+      this.$socket.on("AV", event => this.onPresenceMoved(event));
     },
+    /** SE (shared events) only makes sense once an X_ITE scene exists. */
     start3DSocketListeners(): void {
-      this.$socket.on("AV", event => this.onAvatarMoved(event));
-      this.$socket.on("AV:del", event => this.onAvatarRemoved(event));
-      this.$socket.on("AV:new", event => this.onAvatarAdded(event));
       this.$socket.on("SE", event => this.onSharedEvent(event));
+    },
+    /**
+     * Drains whatever presence state already accumulated in presenceStore
+     * before X_ITE was ready, then subscribes for live updates. A presence
+     * that both joined and left before this ever ran is simply never
+     * rendered - it was removed from the store before `all()` was called.
+     */
+    startAvatarRenderer(): void {
+      this.presenceStore.all().forEach(presence => this.renderPresenceAdded(presence));
+      this.presenceStore.subscribe(event => {
+        if (event.type === "add") this.renderPresenceAdded(event.presence);
+        if (event.type === "update") this.renderPresenceUpdated(event.presence);
+        if (event.type === "remove") this.renderPresenceRemoved(event.key);
+      });
     },
     async startX3D(): Promise<any> {
       if (!this.browser) {
@@ -801,7 +900,9 @@ export default Vue.extend({
 
       this.startSharedEvents();
       this.start3DSocketListeners();
+      this.startAvatarRenderer();
       this.loaded = true;
+      this.sendInitialViewpoint();
     },
   },
   computed: {

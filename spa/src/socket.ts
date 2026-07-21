@@ -2,10 +2,30 @@ import * as SocketIO from "socket.io-client";
 
 import { debugMsg } from '@/helpers';
 
+/**
+ * Generates a random per-tab presence id. Held only in memory for the
+ * lifetime of this page instance - never persisted to localStorage or
+ * otherwise shared across tabs, so two tabs on the same account always
+ * present as two distinct presences.
+ */
+function generatePresenceId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 class SocketManager {
   private socket: SocketIO.Socket;
+  private readonly presenceIdValue: string = generatePresenceId();
 
   constructor() {}
+
+  /**
+   * The random per-tab presence id for this page instance. Combined with
+   * the JWT-derived member id server-side to form the logical presence key
+   * `memberId:presenceId` - never the transport-level socket id.
+   */
+  public get presenceId(): string {
+    return this.presenceIdValue;
+  }
 
   /**
    * Determines if the socket is currently connected.
@@ -38,6 +58,7 @@ class SocketManager {
       this.socket.emit("JOIN", {
         room: roomId,
         token: userToken,
+        presenceId: this.presenceIdValue,
       });
       resolve();
     });

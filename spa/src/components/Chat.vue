@@ -253,6 +253,7 @@
 
 import Vue from 'vue';
 import { debugMsg } from '@/helpers';
+import { Presence, presenceKey } from '@/presence';
 import UserMenu from './UserMenu.vue';
 
 interface ChatData {
@@ -318,6 +319,7 @@ interface ChatData {
   virtualPetDefault: any[];
   entryMessageCode: number;
   selectedId: any;
+  unsubscribePresence: (() => void) | null;
 }
 
 interface ChatMethods {
@@ -335,6 +337,9 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
   },
   props: {
     place: {
+      default: null,
+    },
+    presenceStore: {
       default: null,
     },
     sharedEvent: {
@@ -411,6 +416,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       virtualPetDefault: [],
       entryMessageCode: new Date().getTime(),
       selectedId: null,
+      unsubscribePresence: null,
     };
   },
   directives: {
@@ -1051,6 +1057,57 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
         }
       }
     },
+    /**
+     * The user roster is driven by the shared presenceStore (same source
+     * X_ITE's avatar renderer reads from), not raw AV:new/AV:del socket
+     * events directly - this is what lets the roster be correct whether or
+     * not X_ITE has initialized yet, and keeps both consumers reconciled by
+     * the same logical presence key instead of independently tracking ids.
+     */
+    isSelf(presence: Presence): boolean {
+      return `${presence.memberId}` === `${this.$store.data.user.id}` &&
+        presence.presenceId === this.$socket.presenceId;
+    },
+    addRosterEntry(presence: Presence): void {
+      if (this.isSelf(presence)) return;
+      const key = presenceKey(presence.memberId, presence.presenceId);
+      if (this.users.some(u => u.id === key)) return;
+      this.systemMessage(presence.username + " has entered.");
+      const rosterEntry = { id: key, username: presence.username, avatar: presence.avatar };
+      this.users.push(rosterEntry);
+      this.isMember3D(rosterEntry);
+    },
+    updateRosterEntry(presence: Presence): void {
+      if (this.isSelf(presence)) return;
+      const key = presenceKey(presence.memberId, presence.presenceId);
+      const existing = this.users.find(u => u.id === key);
+      if (!existing) {
+        this.addRosterEntry(presence);
+        return;
+      }
+      existing.username = presence.username;
+      existing.avatar = presence.avatar;
+    },
+    removeRosterEntry(key: string, presence?: Presence): void {
+      const wasPresent = this.users.some(u => u.id === key);
+      this.users = this.users.filter((u) => u.id !== key);
+      if (wasPresent) {
+        this.systemMessage(`${presence?.username || "Someone"} has left.`);
+      }
+      const index = this.worldMembers.indexOf(presence?.username);
+      if (index > -1) {
+        this.worldMembers.splice(index, 1);
+      }
+    },
+    subscribeToPresence(): void {
+      if (!this.presenceStore) return;
+      this.presenceStore.all().forEach(presence => this.addRosterEntry(presence));
+      this.unsubscribePresence = this.presenceStore.subscribe(event => {
+        if (event.type === "add") this.addRosterEntry(event.presence);
+        if (event.type === "update") this.updateRosterEntry(event.presence);
+        if (event.type === "remove") this.removeRosterEntry(event.key, event.presence);
+      });
+    },
     startSocketListeners(): void {
       this.$socket.on("CHAT", data => {
         this.debugMsg("chat message received...", data);
@@ -1063,19 +1120,6 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
             this.textToSpeech(data);
           }
         }
-      });
-      this.$socket.on("AV:del", event => {
-        this.systemMessage(event.username + " has left.");
-        this.users = this.users.filter((u) => u.id !== event.id);
-        let index = this.worldMembers.indexOf(event.username);
-        if(index > -1){
-          this.worldMembers.splice(index, 1);
-        }
-      });
-      this.$socket.on("AV:new", event => {
-        this.systemMessage(event.username + " has entered.");
-        this.users.push(event);
-        this.isMember3D(event);
       });
       this.$socket.on("disconnect", () => {
         this.systemMessage("Chat server disconnected. Please refresh to reconnect.");
@@ -1198,10 +1242,12 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
   },
   beforeDestroy() {
     this.setTimers(false);
+    if (this.unsubscribePresence) this.unsubscribePresence();
   },
   mounted() {
     this.debugMsg("starting chat page...");
     this.startSocketListeners();
+    this.subscribeToPresence();
     if (this.$store.data.place && this.connected) {
       this.chatEnabled = true;
       this.startNewChat();

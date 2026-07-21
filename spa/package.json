@@ -7,7 +7,8 @@
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint",
     "dev": "vue-cli-service build --mode development --watch",
-    "dev-server": "nodemon --inspect=0.0.0.0:9230 -r dotenv/config server.js"
+    "dev-server": "nodemon --inspect=0.0.0.0:9230 -r dotenv/config server.js",
+    "test": "tsc --project tests/tsconfig.json && node tests/.compiled/tests/presence.test.js"
   },
   "dependencies": {
     "axios": "^0.23.0",
