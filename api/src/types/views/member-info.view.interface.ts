@@ -23,6 +23,19 @@ export interface MemberInfoView {
   chatdefault?: number;
 }
 
+/**
+ * Public-safe citizen directory entry. Deliberately omits the internal
+ * member id and home place id - the SPA only needs to know whether the
+ * citizen has a home to link to, not which place it is.
+ */
+export interface DirectoryCitizenView {
+  username: string;
+  immigrationDate: Date;
+  primaryRoleName: string | null;
+  online: boolean;
+  hasHome: boolean;
+}
+
 export interface MemberAdminView {
   /** Member's email address */
   email?: string;

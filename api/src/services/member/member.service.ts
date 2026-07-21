@@ -7,6 +7,7 @@ import { Service } from 'typedi';
 import {
   AvatarRepository,
   BanRepository,
+  DirectoryMemberRow,
   MapLocationRepository,
   MemberRepository,
   PlaceRepository,
@@ -18,7 +19,7 @@ import {
   VoteRepository,
 } from '../../repositories';
 import { Member } from '../../types/models';
-import { MemberInfoView, MemberAdminView } from '../../types/views';
+import { DirectoryCitizenView, MemberInfoView, MemberAdminView } from '../../types/views';
 import { SessionInfo } from 'session-info.interface';
 import { Request, Response } from 'express';
 
@@ -581,19 +582,22 @@ export class MemberService {
     return users;
   }
 
-  public async getDirectory(search: string, limit: number, offset: number): Promise<any> {
+  public async getDirectory(
+    search: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ citizens: DirectoryCitizenView[]; total: any }> {
     const activeTime = new Date(Date.now() - 5 * 60000).getTime();
     const [members, total] = await Promise.all([
       this.memberRepository.searchDirectory(search, limit, offset),
       this.memberRepository.getDirectoryTotal(search),
     ]);
-    const citizens = members.map((member: any) => ({
-      id: member.id,
+    const citizens: DirectoryCitizenView[] = members.map((member: DirectoryMemberRow) => ({
       username: member.username,
       immigrationDate: member.created_at,
       primaryRoleName: member.primary_role_name,
       online: !!member.last_activity && new Date(member.last_activity).getTime() >= activeTime,
-      homeId: member.home_id || null,
+      hasHome: !!member.home_id,
     }));
     return {
       citizens,

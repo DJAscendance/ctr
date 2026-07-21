@@ -3,6 +3,16 @@ import { Db } from '../../db/db.class';
 import { Member, Wallet } from 'models';
 import { knex } from '../../db';
 
+/**
+ * A single row returned by the citizen directory search query: a narrow
+ * projection of member columns plus the fields joined in from role and
+ * home place, rather than a complete Member record.
+ */
+export type DirectoryMemberRow = Pick<Member, 'username' | 'created_at' | 'last_activity'> & {
+  primary_role_name: string | null;
+  home_id: number | null;
+};
+
 /** Repository for interacting with member table data in the database. */
 @Service()
 export class MemberRepository {
@@ -179,10 +189,13 @@ export class MemberRepository {
    * each member to their home place (if any) in a single query so the
    * directory can render a home link without a per-citizen lookup.
    */
-  public async searchDirectory(search: string, limit: number, offset: number): Promise<any> {
+  public async searchDirectory(
+    search: string,
+    limit: number,
+    offset: number,
+  ): Promise<DirectoryMemberRow[]> {
     return knex
       .select(
-        'member.id',
         'member.username',
         'member.created_at',
         'member.last_activity',

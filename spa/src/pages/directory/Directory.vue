@@ -51,12 +51,12 @@
           <th class="border-double border-4 border-gray-400 font-chat">Citizen Since</th>
           <th class="border-double border-4 border-gray-400 font-chat">Status</th>
         </tr>
-        <tr v-for="(citizen, index) in citizens" :key="citizen.id">
+        <tr v-for="(citizen, index) in citizens" :key="citizen.username">
           <td class="border-double border-4 border-gray-400">
             {{ offset + index + 1 }}
           </td>
           <td class="border-double border-4 border-gray-400">
-            <router-link v-if="citizen.homeId" :to="'/home/' + citizen.username">
+            <router-link v-if="citizen.hasHome" :to="'/home/' + citizen.username">
               {{ citizen.username }}
             </router-link>
             <span v-else>{{ citizen.username }}</span>

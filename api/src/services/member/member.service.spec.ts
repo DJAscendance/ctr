@@ -159,7 +159,6 @@ describe('MemberService', () => {
     beforeEach(() => {
       memberRepository.searchDirectory.mockResolvedValue([
         {
-          id: 1,
           username: 'withhome',
           created_at: new Date('2020-01-01'),
           last_activity: new Date(),
@@ -167,7 +166,6 @@ describe('MemberService', () => {
           home_id: 42,
         },
         {
-          id: 2,
           username: 'nohome',
           created_at: new Date('2020-01-01'),
           last_activity: null,
@@ -178,14 +176,24 @@ describe('MemberService', () => {
       memberRepository.getDirectoryTotal.mockResolvedValue([{ count: 2 }]);
     });
 
-    it('returns a non-null homeId for a citizen with a home', async () => {
+    it('returns hasHome: true for a citizen with a joined home', async () => {
       const { citizens } = await service.getDirectory('', 20, 0);
-      expect(citizens.find(c => c.username === 'withhome').homeId).toBe(42);
+      expect(citizens.find(c => c.username === 'withhome').hasHome).toBe(true);
     });
 
-    it('returns a null homeId for a citizen without a home', async () => {
+    it('returns hasHome: false for a citizen without a home', async () => {
       const { citizens } = await service.getDirectory('', 20, 0);
-      expect(citizens.find(c => c.username === 'nohome').homeId).toBeNull();
+      expect(citizens.find(c => c.username === 'nohome').hasHome).toBe(false);
+    });
+
+    it('does not include the internal member id on the public citizen object', async () => {
+      const { citizens } = await service.getDirectory('', 20, 0);
+      citizens.forEach(citizen => expect(citizen).not.toHaveProperty('id'));
+    });
+
+    it('does not include the home place id on the public citizen object', async () => {
+      const { citizens } = await service.getDirectory('', 20, 0);
+      citizens.forEach(citizen => expect(citizen).not.toHaveProperty('homeId'));
     });
 
     it('queries citizens and the total count exactly once each', async () => {
@@ -197,6 +205,19 @@ describe('MemberService', () => {
     it('returns the total citizen count', async () => {
       const { total } = await service.getDirectory('', 20, 0);
       expect(total).toEqual([{ count: 2 }]);
+    });
+
+    it('carries through the role name and immigration date unchanged', async () => {
+      const { citizens } = await service.getDirectory('', 20, 0);
+      const citizen = citizens.find(c => c.username === 'withhome');
+      expect(citizen.primaryRoleName).toBe('Citizen');
+      expect(citizen.immigrationDate).toEqual(new Date('2020-01-01'));
+    });
+
+    it('marks a citizen online only when recently active', async () => {
+      const { citizens } = await service.getDirectory('', 20, 0);
+      expect(citizens.find(c => c.username === 'withhome').online).toBe(true);
+      expect(citizens.find(c => c.username === 'nohome').online).toBe(false);
     });
   });
 });

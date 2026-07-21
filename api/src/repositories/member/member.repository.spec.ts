@@ -1,5 +1,19 @@
 import { Container } from 'typedi';
 
+const mockDirectoryKnex: any = {
+  select: jest.fn().mockReturnThis(),
+  from: jest.fn().mockReturnThis(),
+  leftJoin: jest.fn().mockReturnThis(),
+  where: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
+  limit: jest.fn().mockReturnThis(),
+  offset: jest.fn().mockReturnThis(),
+};
+
+jest.mock('../../db', () => ({
+  knex: mockDirectoryKnex,
+}));
+
 import { mockDb } from '@spec/mocks';
 import { Db } from '../../db/db.class';
 import { Member, Wallet } from 'models';
@@ -64,6 +78,19 @@ describe('MemberRepository', () => {
     it('should return the id of the new member', async () => {
       const id = await repository.create(fakeMember);
       expect(id).toBe(fakeMember.id);
+    });
+  });
+
+  describe('searchDirectory', () => {
+    it('does not select the internal member id', async () => {
+      await repository.searchDirectory('', 20, 0);
+      expect(mockDirectoryKnex.select).toHaveBeenCalledWith(
+        'member.username',
+        'member.created_at',
+        'member.last_activity',
+        'role.name as primary_role_name',
+        'home.id as home_id',
+      );
     });
   });
 });
