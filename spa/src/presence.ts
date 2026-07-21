@@ -65,6 +65,19 @@ export function isPresenceEventForRoom(
   return `${eventRoom}` === `${activeRoom}`;
 }
 
+/**
+ * Builds an AV movement/viewpoint payload with the transform at the TOP LEVEL
+ * (`pos`/`rot`) - the shape the server (`msg.pos`/`msg.rot`) and the client
+ * (`onPresenceMoved` reading `event.pos`/`event.rot`) both consume. Nesting the
+ * transform under `detail` makes it silently ignored by both, which is exactly
+ * what stopped a reconnect viewpoint-resend from restoring a stationary user's
+ * position on peers. Keep viewpoint resends going through here so they stay in
+ * lockstep with the movement watchers.
+ */
+export function avTransformPayload(pos: Position3, rot: Rotation4): { pos: Position3; rot: Rotation4 } {
+  return { pos, rot };
+}
+
 export interface ReconcileResult {
   added: Presence[];
   updated: Presence[];

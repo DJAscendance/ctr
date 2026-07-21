@@ -8,7 +8,7 @@
  */
 import assert from "assert";
 import { EventEmitter } from "events";
-import { PresenceStore, presenceKey, isSelfPresence, isPresenceEventForRoom, Presence } from "../src/presence";
+import { PresenceStore, presenceKey, isSelfPresence, isPresenceEventForRoom, avTransformPayload, Presence } from "../src/presence";
 import { joinRoomOverSocket } from "../src/join-protocol";
 
 type Test = { name: string; run: () => void | Promise<void> };
@@ -299,6 +299,19 @@ describe("isPresenceEventForRoom", () => {
   test("rejects any event when there is no active room", () => {
     assert.strictEqual(isPresenceEventForRoom("room-1", undefined), false);
     assert.strictEqual(isPresenceEventForRoom("room-1", null), false);
+  });
+});
+
+describe("avTransformPayload", () => {
+  test("puts pos/rot at the TOP level (never nested under detail)", () => {
+    const payload = avTransformPayload([1, 2, 3], [0, 1, 0, 0.5]);
+    // The server (msg.pos/msg.rot) and onPresenceMoved (event.pos/event.rot)
+    // read top-level only; a `detail`-wrapped transform is silently dropped and
+    // would break reconnect viewpoint recovery.
+    assert.deepStrictEqual(payload, { pos: [1, 2, 3], rot: [0, 1, 0, 0.5] });
+    assert.strictEqual((payload as any).detail, undefined);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(payload, "pos"), true);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(payload, "rot"), true);
   });
 });
 

@@ -267,6 +267,30 @@ test("a stale old socket cannot delete or announce a presence a newer socket now
   assert.strictEqual(stillThere, true);
 });
 
+test("a top-level-pos viewpoint resend updates a stationary user's position for peers and late joiners", async () => {
+  // Mirrors the reconnect A6 recovery: a stationary user re-announces its
+  // viewpoint (top-level pos/rot, as avTransformPayload produces). Peers must
+  // apply it AND the server must store it, so a peer that reconnects/joins
+  // afterwards sees the real position via ROOM_STATE - not the origin.
+  const room = "room-viewpoint";
+  const peer = await newClient();
+  await join(peer, room, signToken(80, "peer80"), "pres-peer80", "jid-vp1");
+  const subject = await newClient();
+  await join(subject, room, signToken(81, "grace81"), "pres-vp", "jid-vp2");
+
+  // Stationary viewpoint resend (never nested under `detail`).
+  const gotAv = waitFor(peer, "AV", (p) => p.presenceId === "pres-vp");
+  subject.emit("AV", { room, pos: [12, 3, 45], rot: [0, 1, 0, 1.5] });
+  const av = await gotAv;
+  assert.deepStrictEqual(av.pos, [12, 3, 45]); // peer applied the position
+
+  const late = await newClient();
+  const rs = await join(late, room, signToken(82, "late82"), "pres-late", "jid-vp3");
+  const stored = rs.presences.find((p: any) => p.presenceId === "pres-vp");
+  assert.ok(stored, "stationary user present in snapshot");
+  assert.deepStrictEqual(stored.pos, [12, 3, 45]); // server stored it for late joiners
+});
+
 test("a stale old socket cannot broadcast AV under a presence a newer socket owns", async () => {
   const room = "room-staleav";
   const peer = await newClient();

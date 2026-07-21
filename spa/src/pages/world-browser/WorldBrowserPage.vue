@@ -43,7 +43,7 @@ import {
   debugMsg,
   environment,
 } from "@/helpers";
-import { PresenceStore, Presence, presenceKey, isSelfPresence, isPresenceEventForRoom } from "@/presence";
+import { PresenceStore, Presence, presenceKey, isSelfPresence, isPresenceEventForRoom, avTransformPayload } from "@/presence";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -316,21 +316,15 @@ export default Vue.extend({
     sendInitialViewpoint(): void {
       if(this.$store.data.view3d){
         const { viewpointPosition, viewpointOrientation } = X3D.getBrowser(this.browser);
-        this.$socket.sendAv({
-          detail: {
-            pos: [
-              viewpointPosition.x,
-              viewpointPosition.y,
-              viewpointPosition.z,
-            ],
-            rot: [
-              viewpointOrientation.x,
-              viewpointOrientation.y,
-              viewpointOrientation.z,
-              viewpointOrientation.angle,
-            ],
-          },
-        });
+        // Emit the transform TOP-LEVEL (pos/rot), matching the movement watchers
+        // and what the server (`msg.pos`/`msg.rot`) and peers (`onPresenceMoved`)
+        // actually consume. A `detail`-wrapped payload is silently ignored by
+        // both, so a reconnect-driven resend would never restore a stationary
+        // user's position on peers (they'd wait for real movement).
+        this.$socket.sendAv(avTransformPayload(
+          [viewpointPosition.x, viewpointPosition.y, viewpointPosition.z],
+          [viewpointOrientation.x, viewpointOrientation.y, viewpointOrientation.z, viewpointOrientation.angle],
+        ), { reliable: true }); // one-shot recovery packet - must not be dropped
       }
     },
     moveObject(objectId): void {

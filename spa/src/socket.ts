@@ -94,16 +94,23 @@ class SocketManager {
   /**
    * Emits a room-scoped AV (avatar movement/gesture/viewpoint) payload. Dropped
    * entirely while disconnected so nothing is buffered by Socket.IO and flushed
-   * into a later room, and volatile so stale movement is never queued. The
-   * authoritative current room is stamped on so the server can reject any AV
-   * that doesn't match the socket's current room.
+   * into a later room. The authoritative current room is stamped on so the
+   * server can reject any AV that doesn't match the socket's current room.
+   *
+   * High-frequency movement is sent `volatile` (a dropped frame is harmless and
+   * must never queue), but a one-shot critical send (`opts.reliable`) - notably
+   * the post-reconnect viewpoint resend that restores a stationary user's
+   * position on peers - must NOT be volatile, or a busy/backgrounded tab can
+   * silently drop it and peers would keep the user at the origin.
    * @param payload the AV detail to broadcast
+   * @param opts `reliable: true` for a one-shot that must not be dropped
    */
-  public sendAv(payload: Record<string, any>): void {
+  public sendAv(payload: Record<string, any>, opts: { reliable?: boolean } = {}): void {
     if (!this.socket || !this.socket.connected) return; // drop while disconnected
     const room = this.coordinator ? this.coordinator.currentRoom : null;
     if (room == null) return;
-    this.socket.volatile.emit("AV", { ...payload, room });
+    const channel = opts.reliable ? this.socket : this.socket.volatile;
+    channel.emit("AV", { ...payload, room });
   }
 
   /**
