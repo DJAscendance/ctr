@@ -1,6 +1,7 @@
 import * as SocketIO from "socket.io-client";
 
 import { debugMsg } from '@/helpers';
+import { joinRoomOverSocket } from "./join-protocol";
 
 /**
  * Generates a random per-tab presence id. Held only in memory for the
@@ -48,20 +49,16 @@ class SocketManager {
   }
 
   /**
-   * Joins the room with the given room id.
+   * Joins the room with the given room id and waits for the server's
+   * authoritative confirmation (a matching ROOM_STATE) before resolving.
+   * Rejects on JOIN:error or if no response arrives within the timeout -
+   * callers must not treat this as "joined" until it resolves.
    * @param roomId id of room to join
    * @param userToken user's unique token
-   * @returns promise to be resolved on join
+   * @returns promise resolved once the server confirms the join, rejected on error/timeout
    */
   public joinRoom(roomId: string|number, userToken: string): Promise<void> {
-    return new Promise(resolve => {
-      this.socket.emit("JOIN", {
-        room: roomId,
-        token: userToken,
-        presenceId: this.presenceIdValue,
-      });
-      resolve();
-    });
+    return joinRoomOverSocket(this.socket, roomId, userToken, this.presenceIdValue);
   }
 
   /**
@@ -80,6 +77,18 @@ class SocketManager {
    */
   public on(event: string, callback: (...args: any[]) => void): SocketIO.Socket {
     return this.socket.on(event, callback);
+  }
+
+  /**
+   * Removes a previously registered event handler. Needed by any listener
+   * that shouldn't accumulate duplicates across repeated registration
+   * (e.g. component remounts, place navigation).
+   * @param event name of event
+   * @param callback the exact function passed to a prior `on()` call
+   * @returns socket instance
+   */
+  public off(event: string, callback?: (...args: any[]) => void): SocketIO.Socket {
+    return this.socket.off(event, callback);
   }
 
   /**

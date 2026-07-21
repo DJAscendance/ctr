@@ -4,6 +4,8 @@ export interface WorldBrowserData {
     loaded: boolean;
     chatReady: boolean;
     presenceStore: PresenceStore;
+    loadGeneration: number;
+    sharedEventListenerRegistered: boolean;
     worldsData: any;
     avatarsData: any;
     browser: any;

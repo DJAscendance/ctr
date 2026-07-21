@@ -43,7 +43,7 @@ import {
   debugMsg,
   environment,
 } from "@/helpers";
-import { PresenceStore, Presence, presenceKey } from "@/presence";
+import { PresenceStore, Presence, presenceKey, isSelfPresence } from "@/presence";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -54,6 +54,8 @@ export default Vue.extend({
       loaded: false,
       chatReady: false,
       presenceStore: new PresenceStore(),
+      loadGeneration: 0,
+      sharedEventListenerRegistered: false,
       worldsData: worldDataJson,
       avatarsData: avatarsDataJson,
       browser: null,
@@ -223,15 +225,24 @@ export default Vue.extend({
       }
     },
     async loadAndJoinPlace(): Promise<void> {
+      // Bumped once per call, so a load superseded by a later one (rapid
+      // repeated navigation) can tell its own now-stale continuations not
+      // to touch state a newer load already owns.
+      const generation = ++this.loadGeneration;
+
       this.loaded = false;
       this.chatReady = false;
       this.force2d = false;
 
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
-      // Fresh presence state per place - nothing from the previous room's
-      // roster/avatars should leak into the one we're about to join.
+      // Fresh presence state and avatar tracking per place - nothing from
+      // the previous room's roster/avatars should leak into the one we're
+      // about to join, and stale `loading`/`loaded` flags for a presence
+      // key seen in a previous room must not suppress a real render here.
       this.presenceStore = new PresenceStore();
+      this.users = {};
       await this.getPlace();
+      if (this.loadGeneration !== generation) return;
 
       if(this.$store.data.place.slug === "clubdir"){
         this.force2d = true;
@@ -253,11 +264,18 @@ export default Vue.extend({
       // events for this room can now arrive before X_ITE initializes; they
       // flow into presenceStore (see startSocketListeners) and are drained
       // into the scene once it's ready (see startAvatarRenderer).
-      await this.joinPlace();
+      try {
+        await this.joinPlace();
+      } catch (err) {
+        console.error("Failed to join place:", err);
+        return;
+      }
+      if (this.loadGeneration !== generation) return;
       this.chatReady = true;
 
       if(this.$store.data.view3d && !this.force2d) {
         const browser = await this.startX3D();
+        if (this.loadGeneration !== generation) return;
         this.startX3DListeners(browser);
         this.loaded = true;
       } else {
@@ -279,10 +297,14 @@ export default Vue.extend({
       }
     },
     async unloadPlace(): Promise<void> {
+      ++this.loadGeneration;
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
       this.presenceStore = new PresenceStore();
-      const browser = X3D.getBrowser(this.browser);
-      browser.replaceWorld(null);
+      this.users = {};
+      if (this.browser) {
+        const browser = X3D.getBrowser(this.browser);
+        browser.replaceWorld(null);
+      }
     },
     async joinPlace(): Promise<void> {
       await this.$socket.joinRoom(this.$store.data.place.id, this.$store.data.user.token);
@@ -473,6 +495,14 @@ export default Vue.extend({
 
       this.users[key].loading = true;
       loadInlineAsync(browser, avURL).then((avInline) => {
+        // The presence may have left (authoritative reconciliation removed
+        // it) or already been rendered by a racing call while this model
+        // was in flight - in either case `this.users[key]` is no longer the
+        // same "still loading" entry we started with, so the completed
+        // model must never be attached to the scene.
+        if (!this.users[key] || this.users[key].loading !== true) {
+          return;
+        }
         const uniqueID = unique("Av-");
         browser.currentScene.updateImportedNode(avInline, "Avatar", uniqueID);
         const avImport = browser.currentScene.getImportedNode(uniqueID);
@@ -499,6 +529,10 @@ export default Vue.extend({
               new X3D.SFRotation(...this.users[key].transform.rot),
             );
           }
+        }
+      }).catch(() => {
+        if (this.users[key]) {
+          this.users[key].loading = false;
         }
       });
     },
@@ -604,6 +638,10 @@ export default Vue.extend({
      * ROOM_STATE to resync after a drop.
      */
     onRoomState(event: { room: string | number; presences: Presence[] }): void {
+      // A ROOM_STATE for a room we're no longer in (e.g. a stale response
+      // for a load superseded by a later navigation) must never overwrite
+      // the current room's presence state.
+      if (`${event.room}` !== `${this.$store.data.place?.id}`) return;
       this.presenceStore.reconcile(event.presences);
     },
     /** A peer joined the room - renderer-independent, may run before X_ITE exists. */
@@ -823,19 +861,48 @@ export default Vue.extend({
       this.$socket.on("AV:del", event => this.onPresenceLeft(event));
       this.$socket.on("AV", event => this.onPresenceMoved(event));
     },
-    /** SE (shared events) only makes sense once an X_ITE scene exists. */
+    /**
+     * SE (shared events) only makes sense once an X_ITE scene exists, so
+     * its listener registration stays gated behind X_ITE readiness rather
+     * than moving to the renderer-independent `startSocketListeners()`.
+     * Any SE sent by a peer in the narrow window after our own JOIN but
+     * before our X_ITE scene finishes loading is dropped: there is no
+     * `eventNodeMap` yet to resolve it against (that's built from the
+     * scene itself in `startSharedEvents()`), so it can't be meaningfully
+     * buffered - loss here is accepted, matching SE's nature as a
+     * momentary signal rather than durable state.
+     *
+     * This method is called once per 3D place load (from
+     * `startX3DListeners`), so the registration itself is guarded to run
+     * only once per component lifetime - `onSharedEvent` always reads the
+     * live `this.eventNodeMap`, which `startSharedEvents()` does rebuild
+     * per place, so one persistent listener is correct and avoids
+     * accumulating a duplicate "SE" handler on every place visited.
+     */
     start3DSocketListeners(): void {
+      if (this.sharedEventListenerRegistered) return;
+      this.sharedEventListenerRegistered = true;
       this.$socket.on("SE", event => this.onSharedEvent(event));
+    },
+    /** True if `presence` is this page's own local user. */
+    isSelf(presence: Presence): boolean {
+      return isSelfPresence(presence, this.$store.data.user.id, this.$socket.presenceId);
     },
     /**
      * Drains whatever presence state already accumulated in presenceStore
      * before X_ITE was ready, then subscribes for live updates. A presence
      * that both joined and left before this ever ran is simply never
      * rendered - it was removed from the store before `all()` was called.
+     * The local user's own presence (present in the store since ROOM_STATE
+     * includes self) is filtered out here - it must never be rendered as a
+     * remote avatar.
      */
     startAvatarRenderer(): void {
-      this.presenceStore.all().forEach(presence => this.renderPresenceAdded(presence));
+      this.presenceStore.all()
+        .filter(presence => !this.isSelf(presence))
+        .forEach(presence => this.renderPresenceAdded(presence));
       this.presenceStore.subscribe(event => {
+        if (this.isSelf(event.presence)) return;
         if (event.type === "add") this.renderPresenceAdded(event.presence);
         if (event.type === "update") this.renderPresenceUpdated(event.presence);
         if (event.type === "remove") this.renderPresenceRemoved(event.key);

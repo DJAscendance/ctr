@@ -7,12 +7,18 @@
  * change). Compile and run with `npm test` (see package.json / tests/tsconfig.json).
  */
 import assert from "assert";
-import { PresenceStore, presenceKey, Presence } from "../src/presence";
+import { EventEmitter } from "events";
+import { PresenceStore, presenceKey, isSelfPresence, Presence } from "../src/presence";
+import { joinRoomOverSocket } from "../src/join-protocol";
 
-type Test = { name: string; run: () => void };
+type Test = { name: string; run: () => void | Promise<void> };
 const tests: Test[] = [];
-function test(name: string, run: () => void): void {
+function test(name: string, run: () => void | Promise<void>): void {
   tests.push({ name, run });
+}
+/** Purely cosmetic grouping - `test()` collects into one flat list regardless of nesting. */
+function describe(_name: string, run: () => void): void {
+  run();
 }
 
 function makePresence(overrides: Partial<Presence> = {}): Presence {
@@ -173,19 +179,98 @@ test("reconciling twice with the same snapshot produces no duplicates", () => {
   assert.strictEqual(store.all().length, 1);
 });
 
-let failures = 0;
-for (const { name, run } of tests) {
-  try {
-    run();
-    console.log(`  ✓ ${name}`);
-  } catch (err) {
-    failures += 1;
-    console.error(`  ✗ ${name}`);
-    console.error(err instanceof Error ? `    ${err.message}` : err);
+test("isSelfPresence matches the same member and tab", () => {
+  assert.strictEqual(isSelfPresence(makePresence({ memberId: 1, presenceId: "tab-a" }), 1, "tab-a"), true);
+});
+
+test("isSelfPresence does not match a different tab of the same member", () => {
+  assert.strictEqual(isSelfPresence(makePresence({ memberId: 1, presenceId: "tab-a" }), 1, "tab-b"), false);
+});
+
+test("isSelfPresence does not match a different member using the same tab id", () => {
+  assert.strictEqual(isSelfPresence(makePresence({ memberId: 1, presenceId: "tab-a" }), 2, "tab-a"), false);
+});
+
+describe("joinRoomOverSocket", () => {
+  function makeFakeSocket() {
+    const emitter = new EventEmitter();
+    const emitted: any[] = [];
+    const socket = {
+      on: (event: string, cb: (...args: any[]) => void) => emitter.on(event, cb),
+      off: (event: string, cb: (...args: any[]) => void) => emitter.off(event, cb),
+      emit: (event: string, ...args: any[]) => {
+        emitted.push({ event, args });
+        if (event === "JOIN") return; // client->server emit, not looped back automatically
+        emitter.emit(event, ...args);
+      },
+    };
+    return { socket, emitter, emitted };
+  }
+
+  test("resolves once the server confirms with a ROOM_STATE for the requested room", async () => {
+    const { socket, emitter, emitted } = makeFakeSocket();
+    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1");
+
+    assert.strictEqual(emitted[0].event, "JOIN");
+    assert.deepStrictEqual(emitted[0].args[0], { room: "room-1", token: "token", presenceId: "presence-1" });
+
+    emitter.emit("ROOM_STATE", { room: "room-1", presences: [] });
+    await promise;
+  });
+
+  test("ignores a ROOM_STATE for a different room and keeps waiting", async () => {
+    const { socket, emitter } = makeFakeSocket();
+    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1");
+
+    emitter.emit("ROOM_STATE", { room: "some-other-room", presences: [] });
+    emitter.emit("ROOM_STATE", { room: "room-1", presences: [] });
+
+    await promise; // must not hang/reject - the second, matching event resolves it
+  });
+
+  test("rejects on JOIN:error instead of resolving", async () => {
+    const { socket, emitter } = makeFakeSocket();
+    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1");
+
+    emitter.emit("JOIN:error", { reason: "invalid_token" });
+
+    await assert.rejects(promise, /invalid_token/);
+  });
+
+  test("rejects if no response arrives before the timeout", async () => {
+    const { socket } = makeFakeSocket();
+    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1", 20);
+
+    await assert.rejects(promise, /timed out/);
+  });
+
+  test("a late ROOM_STATE after timeout/rejection does not resolve the already-settled promise", async () => {
+    const { socket, emitter } = makeFakeSocket();
+    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1", 20);
+
+    await assert.rejects(promise);
+    // Should not throw or double-resolve - listeners were cleaned up on timeout.
+    emitter.emit("ROOM_STATE", { room: "room-1", presences: [] });
+  });
+});
+
+async function run(): Promise<void> {
+  let failures = 0;
+  for (const { name, run: runTest } of tests) {
+    try {
+      await runTest();
+      console.log(`  ✓ ${name}`);
+    } catch (err) {
+      failures += 1;
+      console.error(`  ✗ ${name}`);
+      console.error(err instanceof Error ? `    ${err.message}` : err);
+    }
+  }
+
+  console.log(`\n${tests.length - failures}/${tests.length} passed`);
+  if (failures > 0) {
+    process.exit(1);
   }
 }
 
-console.log(`\n${tests.length - failures}/${tests.length} passed`);
-if (failures > 0) {
-  process.exit(1);
-}
+run();

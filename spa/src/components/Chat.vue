@@ -253,7 +253,7 @@
 
 import Vue from 'vue';
 import { debugMsg } from '@/helpers';
-import { Presence, presenceKey } from '@/presence';
+import { Presence, presenceKey, isSelfPresence } from '@/presence';
 import UserMenu from './UserMenu.vue';
 
 interface ChatData {
@@ -1065,8 +1065,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
      * the same logical presence key instead of independently tracking ids.
      */
     isSelf(presence: Presence): boolean {
-      return `${presence.memberId}` === `${this.$store.data.user.id}` &&
-        presence.presenceId === this.$socket.presenceId;
+      return isSelfPresence(presence, this.$store.data.user.id, this.$socket.presenceId);
     },
     addRosterEntry(presence: Presence): void {
       if (this.isSelf(presence)) return;
@@ -1109,34 +1108,50 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       });
     },
     startSocketListeners(): void {
-      this.$socket.on("CHAT", data => {
-        this.debugMsg("chat message received...", data);
-        if(this.virtualPet){
-          this.petResponse(data);
+      // Chat remounts fresh on every place load (v-if="chatReady"), so
+      // these handlers must be removable on teardown - bound to named
+      // instance methods rather than anonymous inline callbacks, and
+      // removed in beforeDestroy(), so repeated place navigation doesn't
+      // accumulate one more set of listeners on the shared socket for
+      // every place ever visited this session.
+      this.$socket.on("CHAT", this.onChatMessage);
+      this.$socket.on("disconnect", this.onSocketDisconnect);
+      this.$socket.on("update-object", this.onUpdateObjectEvent);
+      this.$socket.on("moderation_event", this.onModerationEvent);
+    },
+    stopSocketListeners(): void {
+      this.$socket.off("CHAT", this.onChatMessage);
+      this.$socket.off("disconnect", this.onSocketDisconnect);
+      this.$socket.off("update-object", this.onUpdateObjectEvent);
+      this.$socket.off("moderation_event", this.onModerationEvent);
+    },
+    onChatMessage(data): void {
+      this.debugMsg("chat message received...", data);
+      if(this.virtualPet){
+        this.petResponse(data);
+      }
+      if(this.blockedMembers.includes(data.username) === false){
+        this.messages.push(data);
+        if(this.tts){
+          this.textToSpeech(data);
         }
-        if(this.blockedMembers.includes(data.username) === false){
-          this.messages.push(data);
-          if(this.tts){
-            this.textToSpeech(data);
-          }
-        }
-      });
-      this.$socket.on("disconnect", () => {
-        this.systemMessage("Chat server disconnected. Please refresh to reconnect.");
-        this.setTimers(false);
-        this.chatEnabled = false;
-      });
-      this.$socket.on("update-object", (object) => {
-        if([object.member_username, object.buyer_username].includes(this.$store.data.user.username) || 
-          [object.member_username, object.buyer_username].includes(this.username)){
-          this.updateObjectLists(object);
-        }
-      });
-      this.$socket.on("moderation_event", data => {
-        if(data.data.event === 'delete-message') {
-          this.deleteMessageFromLive(data.data.messageID);
-        }
-      });
+      }
+    },
+    onSocketDisconnect(): void {
+      this.systemMessage("Chat server disconnected. Please refresh to reconnect.");
+      this.setTimers(false);
+      this.chatEnabled = false;
+    },
+    onUpdateObjectEvent(object): void {
+      if([object.member_username, object.buyer_username].includes(this.$store.data.user.username) ||
+        [object.member_username, object.buyer_username].includes(this.username)){
+        this.updateObjectLists(object);
+      }
+    },
+    onModerationEvent(data): void {
+      if(data.data.event === 'delete-message') {
+        this.deleteMessageFromLive(data.data.messageID);
+      }
     },
     dropObject() {
       this.$emit("drop-object", this.objectId);
@@ -1243,6 +1258,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
   beforeDestroy() {
     this.setTimers(false);
     if (this.unsubscribePresence) this.unsubscribePresence();
+    this.stopSocketListeners();
   },
   mounted() {
     this.debugMsg("starting chat page...");

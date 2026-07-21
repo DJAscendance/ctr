@@ -32,6 +32,23 @@ export function presenceKey(memberId: number | string, presenceId: string): stri
   return `${memberId}:${presenceId}`;
 }
 
+/**
+ * True if `presence` is the local user's own (same member, same tab).
+ * Used to keep the local user out of the remote-avatar renderer and out of
+ * Chat's roster, matching CTR's established behavior of never showing
+ * yourself as a "remote" entry - self identity must be compared by logical
+ * key, never by socket id (which changes on every reconnect).
+ */
+export function isSelfPresence(
+  presence: { memberId: number | string; presenceId: string },
+  myMemberId: number | string,
+  myPresenceId: string,
+): boolean {
+  const theirKey = presenceKey(presence.memberId, presence.presenceId);
+  const myKey = presenceKey(myMemberId, myPresenceId);
+  return theirKey === myKey;
+}
+
 export interface ReconcileResult {
   added: Presence[];
   updated: Presence[];
