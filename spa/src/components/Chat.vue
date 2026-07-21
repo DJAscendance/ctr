@@ -742,7 +742,14 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
     },
     startNewChat(): void {
       this.messages = [];
-      this.users = [];
+      // Deliberately does NOT reset `this.users`: the roster is owned
+      // exclusively by the presenceStore subscription (subscribeToPresence),
+      // which drains the authoritative ROOM_STATE snapshot at mount and stays
+      // reconciled via live add/update/remove events. Chat remounts fresh per
+      // place load (v-if="chatReady"), so `users` already starts empty for a
+      // new room - there is nothing to clear here. Clearing it wiped the
+      // just-drained roster, so a stationary pre-existing occupant vanished
+      // until they moved or someone new joined.
       this.canInteractWithObject = false;
       if(this.$store.data.place.member_id === this.$store.data.user.id) {
         this.canModify = true;
