@@ -306,6 +306,7 @@ interface ChatData {
   pingIntervalId: any;
   worldMembers: any[];
   chatEnabled: boolean;
+  unsubscribeLifecycle: (() => void) | null;
   showRole: boolean;
   showXP: boolean;
   tts: boolean;
@@ -403,6 +404,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       pingIntervalId: null,
       worldMembers: [],
       chatEnabled: false,
+      unsubscribeLifecycle: null,
       showRole: true,
       showXP: true,
       tts: false,
@@ -497,7 +499,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
           }
         }
 
-        if (this.message !== "" && this.connected && this.numberOfPosts < maxPosts) {
+        if (this.message !== "" && this.chatEnabled && this.numberOfPosts < maxPosts) {
         let msgID = null;
         await this.$http
           .post("/message/place/" + this.$store.data.place.id, {
@@ -834,7 +836,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       }
     },
     sendGesture(gestureIndex): void {
-      this.$socket.emit("AV", {
+      this.$socket.sendAv({
         gesture: gestureIndex + 1, // Gestures in ssts start at 1 for some reason.
       });
     },
@@ -1122,15 +1124,23 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       // accumulate one more set of listeners on the shared socket for
       // every place ever visited this session.
       this.$socket.on("CHAT", this.onChatMessage);
-      this.$socket.on("disconnect", this.onSocketDisconnect);
       this.$socket.on("update-object", this.onUpdateObjectEvent);
       this.$socket.on("moderation_event", this.onModerationEvent);
+      // Chat input liveness is driven by the room-readiness lifecycle, not the
+      // raw transport `disconnect` event: a reconnected-but-not-yet-resynced
+      // socket must keep input disabled until the authoritative ROOM_STATE
+      // arrives. The returned unsubscribe is stored so it can't accumulate
+      // across the remounts Chat undergoes on every place navigation.
+      this.unsubscribeLifecycle = this.$socket.onLifecycle(this.onSocketLifecycle);
     },
     stopSocketListeners(): void {
       this.$socket.off("CHAT", this.onChatMessage);
-      this.$socket.off("disconnect", this.onSocketDisconnect);
       this.$socket.off("update-object", this.onUpdateObjectEvent);
       this.$socket.off("moderation_event", this.onModerationEvent);
+      if (this.unsubscribeLifecycle) {
+        this.unsubscribeLifecycle();
+        this.unsubscribeLifecycle = null;
+      }
     },
     onChatMessage(data): void {
       this.debugMsg("chat message received...", data);
@@ -1144,10 +1154,26 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
         }
       }
     },
-    onSocketDisconnect(): void {
-      this.systemMessage("Chat server disconnected. Please refresh to reconnect.");
-      this.setTimers(false);
-      this.chatEnabled = false;
+    /**
+     * Reacts to room-readiness transitions from the socket lifecycle. A
+     * transport drop disables input once and starts an automatic-reconnect
+     * message; input is re-enabled only after a successful resync (a matching
+     * authoritative ROOM_STATE), never on mere transport reconnect. Each
+     * transition fires once per outage/recovery, so there are no duplicate
+     * "disconnected"/"reconnected" messages and timers start/stop once.
+     */
+    onSocketLifecycle(event: string): void {
+      if (event === "disconnected") {
+        if (!this.chatEnabled) return; // already down - don't repeat
+        this.chatEnabled = false;
+        this.setTimers(false);
+        this.systemMessage("Reconnecting to chat server...");
+      } else if (event === "resynced") {
+        if (this.chatEnabled) return; // already up - don't repeat
+        this.chatEnabled = true;
+        this.setTimers(true);
+        this.systemMessage("Reconnected to chat server.");
+      }
     },
     onUpdateObjectEvent(object): void {
       if([object.member_username, object.buyer_username].includes(this.$store.data.user.username) ||
@@ -1271,7 +1297,11 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
     this.debugMsg("starting chat page...");
     this.startSocketListeners();
     this.subscribeToPresence();
-    if (this.$store.data.place && this.connected) {
+    // Gate on authoritative room readiness, not raw transport connectivity: a
+    // Chat mounted while the socket is connected but still resyncing must stay
+    // disabled until the room is confirmed. `onSocketLifecycle` flips it on the
+    // "resynced" transition if we mounted mid-resync.
+    if (this.$store.data.place && this.$socket.roomReady) {
       this.chatEnabled = true;
       this.startNewChat();
       this.canAdmin();
