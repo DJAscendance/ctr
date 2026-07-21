@@ -292,6 +292,18 @@ test("lifecycle unsubscribe stops delivery and subscriptions do not accumulate",
   void p;
 });
 
+test("a redundant disconnect while already disconnected does not re-emit disconnected", async () => {
+  const s = setup();
+  const p = track(s.coord.requestRoom("room-A", "token"));
+  s.roomState("room-A", s.lastJoin().joinId);
+  await tick();
+
+  s.coord.handleDisconnect();
+  s.coord.handleDisconnect(); // redundant - must not double-fire
+  assert.strictEqual(s.events.filter(e => e === "disconnected").length, 1);
+  void p;
+});
+
 async function run(): Promise<void> {
   let failures = 0;
   for (const { name, run: runTest } of tests) {

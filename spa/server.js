@@ -109,7 +109,9 @@ io.on("connection", async function(socket) {
         // a stale/superseded reply can never settle a newer client attempt.
         if (typeof joinId !== "string" || joinId.length === 0 || joinId.length > MAX_ID_LENGTH) {
             console.error("JOIN has invalid joinId!");
-            socket.emit("JOIN:error", { room, joinId: undefined, reason: "invalid_join_id" });
+            // Echo the client's raw joinId back (not undefined) so the client can
+            // still correlate and fail this attempt fast instead of timing out.
+            socket.emit("JOIN:error", { room, joinId: data.joinId, reason: "invalid_join_id" });
             return;
         }
         if (room === undefined || room === null || `${room}`.length === 0) {

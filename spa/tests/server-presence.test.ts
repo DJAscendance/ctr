@@ -177,6 +177,16 @@ test("a malformed JOIN payload is rejected without crashing the server", async (
   assert.strictEqual(rs.room, "room-alive");
 });
 
+test("an invalid joinId JOIN:error echoes the client's raw joinId so it stays correlatable", async () => {
+  const sock = await newClient();
+  const token = signToken(70, "grace");
+  const err = waitFor(sock, "JOIN:error", (p) => p.reason === "invalid_join_id");
+  sock.emit("JOIN", { room: "room-jid", token, presenceId: "pres-j", joinId: "" }); // empty => invalid
+  const payload = await err;
+  assert.strictEqual(payload.joinId, ""); // echoed back, not undefined
+  assert.strictEqual(payload.room, "room-jid");
+});
+
 test("a duplicate same-room JOIN does not re-announce the presence to peers", async () => {
   const room = "room-dup";
   const peer = await newClient();

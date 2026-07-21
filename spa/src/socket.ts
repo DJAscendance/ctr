@@ -129,6 +129,7 @@ class SocketManager {
    * @param roomId id of room to leave
    */
   public leaveRoom(roomId: string|number): void {
+    if (!this.coordinator) return; // never started - nothing to leave
     const wasConnected = this.connected;
     this.coordinator.clearRoomIntent(roomId);
     if (wasConnected) this.socket.emit("unsubscribe", { room: roomId });

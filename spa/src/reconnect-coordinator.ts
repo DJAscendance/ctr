@@ -202,6 +202,7 @@ export class ReconnectCoordinator {
 
   /** The transport dropped. Keep the logical intent pending for auto-rejoin. */
   public handleDisconnect(): void {
+    const wasDisconnected = this.phaseValue === "disconnected";
     // Abort the in-flight attempt WITHOUT rejecting the logical intent - the
     // reconnect will start a fresh attempt for the same desired room.
     this.abortCurrentAttempt("disconnected");
@@ -211,7 +212,9 @@ export class ReconnectCoordinator {
     } else {
       this.phaseValue = "idle";
     }
-    this.emitLifecycle("disconnected");
+    // Exactly one "disconnected" per outage: a redundant disconnect while
+    // already disconnected must not re-emit to lifecycle consumers.
+    if (!wasDisconnected) this.emitLifecycle("disconnected");
   }
 
   // ---- internals ----
