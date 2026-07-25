@@ -7,7 +7,7 @@
       <span class="sr-only">Citizen Directory</span>
       <img
         src="/assets/img/citizen-directory.jpg"
-        alt=""
+        alt="Citizens Directory Banner"
         class="max-w-full h-auto"
       />
     </h1>
