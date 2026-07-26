@@ -49,6 +49,35 @@ export function isSelfPresence(
   return theirKey === myKey;
 }
 
+/**
+ * True only when a room-scoped presence event (AV / AV:new / AV:del) is tagged
+ * with, and matches, the room the client is currently in. A missing or
+ * mismatched room tag is rejected rather than accepted ambiguously - this is
+ * what stops an in-flight event from a room we've navigated away from (or a
+ * legacy untagged event) from mutating the current room's presence store.
+ */
+export function isPresenceEventForRoom(
+  eventRoom: string | number | null | undefined,
+  activeRoom: string | number | null | undefined,
+): boolean {
+  if (eventRoom === null || eventRoom === undefined) return false;
+  if (activeRoom === null || activeRoom === undefined) return false;
+  return `${eventRoom}` === `${activeRoom}`;
+}
+
+/**
+ * Builds an AV movement/viewpoint payload with the transform at the TOP LEVEL
+ * (`pos`/`rot`) - the shape the server (`msg.pos`/`msg.rot`) and the client
+ * (`onPresenceMoved` reading `event.pos`/`event.rot`) both consume. Nesting the
+ * transform under `detail` makes it silently ignored by both, which is exactly
+ * what stopped a reconnect viewpoint-resend from restoring a stationary user's
+ * position on peers. Keep viewpoint resends going through here so they stay in
+ * lockstep with the movement watchers.
+ */
+export function avTransformPayload(pos: Position3, rot: Rotation4): { pos: Position3; rot: Rotation4 } {
+  return { pos, rot };
+}
+
 export interface ReconcileResult {
   added: Presence[];
   updated: Presence[];
