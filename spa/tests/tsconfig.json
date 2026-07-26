@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "es2019",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./.compiled",
+    "types": ["node"]
+  },
+  "include": ["*.ts", "../src/presence.ts"]
+}
