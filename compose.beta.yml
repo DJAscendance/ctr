@@ -1,0 +1,65 @@
+version: "3"
+services:
+    nginx:
+        image: nginx:alpine
+        expose:
+            - "80"
+        depends_on:
+            - "ct-api"
+            - "ct-socket"
+        volumes:
+            - ./:/var/www/cybertown
+            - ./docker/nginx/vhost.conf:/etc/nginx/conf.d/cybertown.conf
+        working_dir: /var/www/cybertown
+
+    db:
+        image: mysql:5.7
+        expose:
+            - "3306"
+        volumes:
+            - data:/var/lib/mysql
+        environment:
+            MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+            MYSQL_DATABASE: cybertown
+
+    ct-api:
+        image: node:14
+        depends_on:
+            - "db"
+        volumes:
+            - ./api:/usr/src/app
+            - ./spa:/usr/src/spa
+        working_dir: /usr/src/app
+        environment:
+            NODE_ENV: production
+            DB_HOST: db
+            DB_PORT: 3306
+            DB_USER: root
+            DB_PASS: ${DB_ROOT_PASSWORD}
+            DB_DATABASE: cybertown
+            JWT_SECRET: ${JWT_SECRET}
+            ASSETS_DIR: /usr/src/spa/assets
+            CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL}
+        command: bash -c "npm install && node -r ts-node/register -r dotenv/config src/api.ts"
+
+    ct-socket:
+        image: node:14
+        depends_on:
+            - "db"
+        volumes:
+            - ./spa:/usr/src/app
+        working_dir: /usr/src/app
+        environment:
+            NODE_ENV: production
+            JWT_SECRET: ${JWT_SECRET}
+            WEBSOCKET_PORT: 8000
+            CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL}
+        command: bash -c "npm install && npm run build -- --mode production && node server.js"
+
+    mailhog:
+        image: mailhog/mailhog:latest
+        logging:
+            driver: "none"
+
+volumes:
+    data:
