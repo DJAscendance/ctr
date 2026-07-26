@@ -30,7 +30,11 @@
 			>
 				Update
 			</router-link>
-			<span class="btn-ui" title="Check Images">Check</span>
+      <span
+        class="btn-ui"
+        title="Check Images"
+        v-on:click="opener('#/home/image-check')"
+      >Check</span>
 			<router-link
 				:to="{ name: 'blockaccessrights' }"
 				class="btn-ui"

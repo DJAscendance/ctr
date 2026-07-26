@@ -10,6 +10,14 @@ import { homeController } from '../controllers';
 const homeRoutes = Router();
 homeRoutes.get('',
   (request, response) => homeController.getHome(request, response));
+homeRoutes.get('/moderation/queue',
+  (request, response) => homeController.getImageModerationQueue(request, response));
+homeRoutes.get('/moderation/:placeId/image',
+  (request, response, next) => homeController.previewImage(request, response, next));
+homeRoutes.post('/moderation/:placeId/approve',
+  (request, response) => homeController.approveImage(request, response));
+homeRoutes.post('/moderation/:placeId/reject',
+  (request, response) => homeController.rejectImage(request, response));
 homeRoutes.get('/:username',
   (request, response) => homeController.getHome(request, response));
 homeRoutes.post('/settle',
@@ -18,4 +26,8 @@ homeRoutes.post('/move',
   (request, response) => homeController.moveHome(request, response));
 homeRoutes.post('/update',
   (request, response) => homeController.updateHome(request, response));
+homeRoutes.post('/upload-image',
+  (request, response) => homeController.uploadImage(request, response));
+homeRoutes.post('/remove-image',
+  (request, response) => homeController.removeImage(request, response));
 export { homeRoutes };
