@@ -1,0 +1,284 @@
+<template>
+  <div class="w-full h-full overflow-y-auto flex flex-col items-center px-8">
+    <div class="hero-banner w-full flex flex-row items-center mb-6">
+      <img
+        src="/assets/img/howdoi/mina-hero.webp"
+        alt="Mina, your Cybertown guide"
+        class="hero-img"
+      />
+      <div class="px-6">
+        <h1 class="text-2xl font-semibold">How Do I?</h1>
+        <p class="text-sm">Ask Mina &mdash; your guide to getting around Cybertown.</p>
+      </div>
+    </div>
+
+    <div class="w-2/3 mb-8">
+      <p class="mb-2">Jump to a topic:</p>
+      <ul class="list-disc list-inside">
+        <li>
+          <a href="#become-a-member" @click.prevent="scrollToSection('become-a-member')">
+            Become a Member</a>
+        </li>
+        <li>
+          <a href="#get-into-3d" @click.prevent="scrollToSection('get-into-3d')">Get Into 3D</a>
+        </li>
+        <li>
+          <a href="#chat" @click.prevent="scrollToSection('chat')">Chat in 2D &amp; 3D</a>
+        </li>
+        <li>
+          <a href="#ignore-a-citizen" @click.prevent="scrollToSection('ignore-a-citizen')">
+            Ignore a Citizen</a>
+        </li>
+        <li>
+          <a href="#visit-a-home" @click.prevent="scrollToSection('visit-a-home')">Visit a Home</a>
+        </li>
+        <li>
+          <a href="#furnish-my-home" @click.prevent="scrollToSection('furnish-my-home')">
+            Furnish My Home</a>
+        </li>
+        <li>
+          <a href="#placing-objects" @click.prevent="scrollToSection('placing-objects')">
+            Placing Objects</a>
+        </li>
+        <li>
+          <a href="#clubs" @click.prevent="scrollToSection('clubs')">Join / Start / Visit a Club</a>
+        </li>
+        <li>
+          <a href="#message-boards" @click.prevent="scrollToSection('message-boards')">
+            Use the Message Boards</a>
+        </li>
+        <li>
+          <a href="#give-feedback" @click.prevent="scrollToSection('give-feedback')">
+            Give Feedback</a>
+        </li>
+        <li>
+          <a href="#get-a-job" @click.prevent="scrollToSection('get-a-job')">Get a Job</a>
+        </li>
+        <li>
+          <a href="#alert-security" @click.prevent="scrollToSection('alert-security')">
+            Alert Security</a>
+        </li>
+        <li>
+          <a href="#privacy-policy" @click.prevent="scrollToSection('privacy-policy')">
+            Privacy Policy</a>
+        </li>
+      </ul>
+    </div>
+
+    <div class="w-2/3 text-left">
+      <section id="become-a-member" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Become a Member</span></div>
+        <h2 class="text-xl font-semibold mb-2">Become a Member</h2>
+        <p>
+          Cybertown is free to join. Once you're a member you can access 2D and 3D chat and
+          message boards, buy or trade objects, and invite friends to your very own 3D home to
+          hang out or party.
+        </p>
+      </section>
+
+      <section id="get-into-3d" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Get Into 3D</span></div>
+        <h2 class="text-xl font-semibold mb-2">Get Into 3D</h2>
+        <p>
+          The Cybertown 3D VR environment lets you move through the 3D city and homes using an
+          avatar &mdash; a 3D representation of yourself. As a member you can chat, use message
+          boards, buy and trade objects, and interact with other avatars, plus invite friends
+          over to your 3D home to hang out.
+        </p>
+      </section>
+
+      <section id="chat" class="mb-8">
+        <div class="flex flex-row flex-wrap mb-2">
+          <span class="btn-ui-inline">Chat in 2D</span>
+          <span class="btn-ui-inline">Chat in 3D</span>
+        </div>
+        <h2 class="text-xl font-semibold mb-2">Chat in 2D &amp; 3D</h2>
+        <p>
+          2D chat is great if you just want to talk to someone quickly. 3D chat lets you move
+          your avatar around and interact with the world while you talk &mdash; text-based, no
+          plugin or download required. You can choose your default chat mode from your Personal
+          Info page.
+        </p>
+      </section>
+
+      <section id="ignore-a-citizen" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Ignore</span></div>
+        <h2 class="text-xl font-semibold mb-2">Ignore a Citizen</h2>
+        <p>
+          Right click a nickname in the People list and choose <b>Ignore</b> to block their chat
+          messages. Ignored citizens show a muted icon next to their name; right click and
+          choose Ignore again to unblock them.
+        </p>
+      </section>
+
+      <section id="visit-a-home" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Visit a Home</span></div>
+        <h2 class="text-xl font-semibold mb-2">Visit a Home</h2>
+        <p>
+          Find a citizen through the
+          <a href="#" @click.prevent="openDirectory">Citizen Directory</a>
+          and click their name to visit their home, if they have one set up.
+        </p>
+      </section>
+
+      <section id="furnish-my-home" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Furnish My Home</span></div>
+        <h2 class="text-xl font-semibold mb-2">Furnish My Home</h2>
+        <p class="mb-2">
+          Before you go shopping, check how much City Cash (CC) you have on your Personal Info
+          page &mdash; shops only accept City Cash. You can have a maximum of 32 objects in your
+          home at once.
+        </p>
+        <p>
+          Use the Jump Gate or the City Map to get to the Mall, browse the stores, and buy
+          objects for your backpack. From there, see Placing Objects below to decorate your
+          home with them.
+        </p>
+      </section>
+
+      <section id="placing-objects" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Placing Objects</span></div>
+        <h2 class="text-xl font-semibold mb-2">Placing Objects</h2>
+        <p class="mb-2">
+          Remember: you can only have a maximum of 32 objects in your home. Go to your 3D home
+          via My House on the Control Panel, then click the <b>Next</b> button above the chat
+          panel to cycle through to your Backpack and see what you own.
+        </p>
+        <p>
+          Right-clicking an item in your backpack gives you options to Drop it into the room
+          you're currently in, Destroy it, or view its Properties. Once dropped, it moves from
+          your backpack list to your home's objects list.
+        </p>
+      </section>
+
+      <section id="clubs" class="mb-8">
+        <div class="flex flex-row flex-wrap mb-2">
+          <span class="btn-ui-inline">Join a Club</span>
+          <span class="btn-ui-inline">Start a Club</span>
+          <span class="btn-ui-inline">Visit a Club</span>
+        </div>
+        <h2 class="text-xl font-semibold mb-2">Join / Start / Visit a Club</h2>
+        <p class="mb-2">
+          Browse the <router-link to="/clublist/directory">Club Directory</router-link> to see
+          what clubs are currently available, filterable by name, keyword, creation date, or
+          member count.
+        </p>
+        <p>
+          To join, find a club you like in the directory and follow its join instructions. To
+          start your own club, use Create a Club from the club tools. To visit a club, click
+          through to its page from the directory.
+        </p>
+      </section>
+
+      <section id="message-boards" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Use Message Boards</span></div>
+        <h2 class="text-xl font-semibold mb-2">Use the Message Boards</h2>
+        <p class="mb-2">
+          As you move through Cybertown, most locations have a message board associated with
+          them, with posts and announcements shared by other citizens &mdash; a great way to see
+          what's going on in that area.
+        </p>
+        <p>
+          To add your own comment or reply, click Post and fill in the form. Please keep your
+          comments appropriate to the location you're posting in.
+        </p>
+      </section>
+
+      <section id="give-feedback" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Give Feedback</span></div>
+        <h2 class="text-xl font-semibold mb-2">Give Feedback</h2>
+        <p>
+          Have a question, comment, or suggestion? Click Feedback on the Control Panel to open
+          the City Hall inbox, or reach out through the
+          <a
+            href="https://github.com/CybertownRevival/ctr/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            issue tracker</a> for site-wide feedback.
+        </p>
+      </section>
+
+      <section id="get-a-job" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Get a Job</span></div>
+        <h2 class="text-xl font-semibold mb-2">Get a Job</h2>
+        <p class="mb-2">
+          Want more City Cash? Check the Employment Office (reachable from the City Map) for
+          current job postings.
+        </p>
+        <p>
+          If you find a listing you like, apply directly to the poster's home rather than
+          replying on the message board &mdash; find their name in the
+          <a href="#" @click.prevent="openDirectory">Citizen Directory</a> and visit their home to
+          apply.
+        </p>
+      </section>
+
+      <section id="alert-security" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Alert Security</span></div>
+        <h2 class="text-xl font-semibold mb-2">Alert Security</h2>
+        <p>
+          Open <b>Citizens Online</b> and choose the option to leave Security a message &mdash;
+          it sends a message straight to the Jail inbox for security staff to review. All
+          reports are taken seriously; please only use this for real issues.
+        </p>
+      </section>
+
+      <section id="privacy-policy" class="mb-8">
+        <div class="mb-2"><span class="btn-ui-inline">Privacy Policy</span></div>
+        <h2 class="text-xl font-semibold mb-2">Privacy Policy</h2>
+        <p class="mb-2">
+          Cybertown Revival is a non-commercial, community-run revival of the original
+          Cybertown. We only use account information (like your email and IP address) to run
+          and secure the service &mdash; not for advertising or to sell to third parties.
+        </p>
+        <p>
+          Questions about your data? Reach out via the
+          <a
+            href="https://github.com/CybertownRevival/ctr/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            issue tracker</a>.
+        </p>
+      </section>
+    </div>
+  </div>
+</template>
+
+<script>
+import Vue from 'vue';
+
+import ModalService from './../components/modals/services/ModalService.vue';
+import DirectoryModal from './../components/modals/DirectoryModal.vue';
+
+export default Vue.extend({
+  name: 'HowDoIPage',
+  methods: {
+    scrollToSection(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    },
+    openDirectory() {
+      ModalService.open(DirectoryModal);
+    },
+  },
+});
+</script>
+
+<style scoped>
+.hero-banner {
+  background: linear-gradient(90deg, #001829 0%, #04304f 60%, #0a4a73 100%);
+  border: 1px solid #8f9bb6;
+  border-radius: 5px;
+  color: #d0dbf7;
+  padding: 12px;
+}
+.hero-img {
+  height: 120px;
+  width: auto;
+  flex-shrink: 0;
+}
+</style>

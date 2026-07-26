@@ -95,6 +95,7 @@ import ClubDoor from "@/pages/club/ClubDoor.vue";
 import ClubUpdate from "@/pages/club/ClubUpdate.vue";
 
 import DirectoryPage from "@/pages/directory/Directory.vue";
+import HowDoIPage from '@/pages/HowDoI.vue';
 
 import MayorElection from '@/pages/MayorElection.vue';
 
@@ -834,6 +835,14 @@ export default [
       default: DirectoryPage,
     },
     name: "citizen-directory",
+    meta: { wrapper: true },
+  },
+  {
+    path: '/howdoi',
+    components: {
+      default: HowDoIPage,
+    },
+    name: 'how-do-i',
     meta: { wrapper: true },
   },
   {
