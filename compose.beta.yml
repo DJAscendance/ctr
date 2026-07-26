@@ -11,6 +11,22 @@ services:
             - ./:/var/www/cybertown
             - ./docker/nginx/vhost.conf:/etc/nginx/conf.d/cybertown.conf
         working_dir: /var/www/cybertown
+        networks:
+            - default
+            - coolify
+        labels:
+            - traefik.enable=true
+            - traefik.docker.network=coolify
+            - traefik.http.routers.ctrbeta-http.rule=Host(`beta.cybertown.dev`)
+            - traefik.http.routers.ctrbeta-http.entrypoints=http
+            - traefik.http.routers.ctrbeta-http.middlewares=ctrbeta-redirect
+            - traefik.http.middlewares.ctrbeta-redirect.redirectscheme.scheme=https
+            - traefik.http.routers.ctrbeta-https.rule=Host(`beta.cybertown.dev`)
+            - traefik.http.routers.ctrbeta-https.entrypoints=https
+            - traefik.http.routers.ctrbeta-https.tls=true
+            - traefik.http.routers.ctrbeta-https.tls.certresolver=letsencrypt
+            - traefik.http.routers.ctrbeta-https.service=ctrbeta-svc
+            - traefik.http.services.ctrbeta-svc.loadbalancer.server.port=80
 
     db:
         image: mysql:5.7
@@ -40,7 +56,7 @@ services:
             JWT_SECRET: ${JWT_SECRET}
             ASSETS_DIR: /usr/src/spa/assets
             CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL}
-        command: bash -c "npm install && node -r ts-node/register -r dotenv/config src/api.ts"
+        command: bash -c "NPM_CONFIG_PRODUCTION=false npm install && node -r ts-node/register -r dotenv/config src/api.ts"
 
     ct-socket:
         image: node:14
@@ -54,7 +70,7 @@ services:
             JWT_SECRET: ${JWT_SECRET}
             WEBSOCKET_PORT: 8000
             CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL}
-        command: bash -c "npm install && npm run build -- --mode production && node server.js"
+        command: bash -c "NPM_CONFIG_PRODUCTION=false npm install && npm run build -- --mode production && node server.js"
 
     mailhog:
         image: mailhog/mailhog:latest
@@ -63,3 +79,8 @@ services:
 
 volumes:
     data:
+
+networks:
+    default:
+    coolify:
+        external: true
