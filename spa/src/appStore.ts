@@ -26,7 +26,7 @@ export interface Place {
     created_at?: string;
     description?: string;
     id?: number | string;
-    map_background_index?: string;
+    map_background_index?: number | null;
     map_icon_index?: string;
     member_id?: number;
     name?: string;

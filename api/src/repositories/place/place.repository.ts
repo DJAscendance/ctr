@@ -43,7 +43,7 @@ export class PlaceRepository {
   public async findByUserId(userId: number): Promise<any> {
     return await this.db.place
       .select('place.id', 'place.type')
-      .where({ member_id: userId })
+      .where({ member_id: userId });
   }
 
   public async findAllStores(orderBy: string): Promise<Store[]> {
@@ -109,6 +109,12 @@ export class PlaceRepository {
     return returning
       ? this.findHomeByMemberId(memberId)
       : undefined;
+  }
+
+  public async updateMapBackgroundIndex(placeId: number, index: number | null): Promise<void> {
+    await this.db.place
+      .where({ id: placeId })
+      .update({ map_background_index: index });
   }
 
   public async updatePlaces(placeinfo: any): Promise<void> {

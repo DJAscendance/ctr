@@ -47,6 +47,13 @@ import Vue from "vue";
 
 import { colonyDataHelper } from '@/helpers';
 
+function mapBackgroundFilename(index: number | null | undefined): string {
+  if (!Number.isInteger(index) || (index as number) <= 0) {
+    return "Pimg2D000.gif";
+  }
+  return "Pimg2D" + (index as number).toString().padStart(3, "0") + ".gif";
+}
+
 export default Vue.extend({
   name: "BlockMapPage",
   props: [
@@ -85,8 +92,15 @@ export default Vue.extend({
   },
   computed: {
     mapBackground(): string {
-      return "url('/assets/img/map_themes/" + colonyDataHelper[this.colony.slug].map_theme +
-        "/block/Pimg2D000.gif')";
+      const theme = colonyDataHelper[this.colony.slug].map_theme;
+      const defaultUrl = "/assets/img/map_themes/" + theme + "/block/Pimg2D000.gif";
+      const selectedFilename = mapBackgroundFilename(this.block.map_background_index);
+      if (selectedFilename === "Pimg2D000.gif") {
+        return "url('" + defaultUrl + "')";
+      }
+      const selectedUrl = "/assets/img/map_themes/" + theme + "/block/" + selectedFilename;
+      // Layered so a missing/failed selected file falls back to the default underneath it.
+      return "url('" + selectedUrl + "'), url('" + defaultUrl + "')";
     },
     freeImage(): string {
       return "/assets/img/map_themes/" + colonyDataHelper[this.colony.slug].map_theme +

@@ -16,4 +16,10 @@ hoodRoutes.get('/:id/getAccessInfo', (request, response) =>
 hoodRoutes.post('/:id/postAccessInfo', (request, response) =>
   hoodController.postAccessInfo(request, response),
 );
+hoodRoutes.get('/:id/map-background-options', (request, response) =>
+  hoodController.getMapBackgroundOptions(request, response),
+);
+hoodRoutes.put('/:id/map-background-selection', (request, response) =>
+  hoodController.putMapBackgroundSelection(request, response),
+);
 export { hoodRoutes };
