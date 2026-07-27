@@ -13,6 +13,7 @@ const SUITES = [
   "tests/.compiled/tests/information-render.test.js",
   "tests/.compiled/tests/chat-access.test.js",
   "tests/.compiled/tests/block-lot-map.test.js",
+  "tests/.compiled/tests/chat-access-presentation.test.js",
 ];
 
 let failed = false;
