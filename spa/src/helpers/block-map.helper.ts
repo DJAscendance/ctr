@@ -98,6 +98,36 @@ export function blockBackgroundStyle(
   return `url('${root}/${filename}'), url('${defaultUrl}')`;
 }
 
+/**
+ * CSS `background-image` value built from URLs the SERVER produced, layered so a
+ * missing or failed candidate falls back to the default underneath it.
+ *
+ * The background-options endpoint already returns fully-formed, validated URLs
+ * (MapBackgroundService.listOptions). Preferring those over rebuilding a path
+ * client-side keeps the server authoritative about which files exist and where
+ * they live, which is the whole point of that endpoint.
+ */
+export function backgroundStyleFromUrls(
+  candidateUrl: string,
+  defaultUrl: string,
+): string {
+  if (!candidateUrl || candidateUrl === defaultUrl) {
+    return `url('${defaultUrl}')`;
+  }
+  return `url('${candidateUrl}'), url('${defaultUrl}')`;
+}
+
+/**
+ * Recovers the map theme from a server-issued background URL of the form
+ * `/assets/img/map_themes/<theme>/<level>/Pimg2D<NNN>.gif`. Returns an empty
+ * string if the URL does not have that shape, so callers can degrade to
+ * icon-free rendering rather than requesting a nonsense path.
+ */
+export function themeFromBackgroundUrl(url: string): string {
+  const match = /\/img\/map_themes\/([^/]+)\//.exec(url || "");
+  return match ? match[1] : "";
+}
+
 /** URL of the "Free" lot marker for a theme. */
 export function blockFreeIconUrl(theme: string): string {
   return `${blockThemeRoot(theme)}/Ficon2D000.gif`;

@@ -29,6 +29,10 @@ const SPA_SRC = path.resolve(__dirname, "../../../src");
 const BLOCK_LOT_MAP = path.join(SPA_SRC, "components/block/BlockLotMap.vue");
 const BLOCK_MAP_PAGE = path.join(SPA_SRC, "pages/block/BlockMapPage.vue");
 const BLOCK_WIZARD_PAGE = path.join(SPA_SRC, "pages/block/BlockWizardPage.vue");
+const BACKGROUND_SELECTOR = path.join(
+  SPA_SRC,
+  "components/PlaceMapBackgroundSelector.vue",
+);
 
 import {
   BLOCK_MAP_CELL_SIZE,
@@ -37,11 +41,13 @@ import {
   BLOCK_MAP_LOT_COUNT,
   BLOCK_MAP_ROWS,
   BLOCK_MAP_WIDTH,
+  backgroundStyleFromUrls,
   blockBackgroundFilename,
   blockBackgroundStyle,
   blockFreeIconUrl,
   blockHouseIconUrl,
   locationToRowColumn,
+  themeFromBackgroundUrl,
 } from "../src/helpers/block-map.helper";
 
 type Test = { name: string; run: () => void };
@@ -246,6 +252,125 @@ test("the update wizard now shows the block's real background", () => {
   assert.ok(
     !/Pimg2D000/.test(source),
     "the wizard must not name the default background directly",
+  );
+});
+
+// -------------------------------------------- background preview overlay
+
+test("background URLs from the server layer over the default", () => {
+  assert.strictEqual(
+    backgroundStyleFromUrls("/a/Pimg2D000.gif", "/a/Pimg2D000.gif"),
+    "url('/a/Pimg2D000.gif')",
+    "the default previewing itself must not be layered twice",
+  );
+  assert.strictEqual(
+    backgroundStyleFromUrls("", "/a/Pimg2D000.gif"),
+    "url('/a/Pimg2D000.gif')",
+    "an unresolved candidate falls back to the default",
+  );
+  assert.strictEqual(
+    backgroundStyleFromUrls("/a/Pimg2D007.gif", "/a/Pimg2D000.gif"),
+    "url('/a/Pimg2D007.gif'), url('/a/Pimg2D000.gif')",
+  );
+});
+
+test("the map theme is recovered from the server-issued URL, not guessed", () => {
+  assert.strictEqual(
+    themeFromBackgroundUrl("/assets/img/map_themes/desert/block/Pimg2D002.gif"),
+    "desert",
+  );
+  assert.strictEqual(
+    themeFromBackgroundUrl("/assets/img/map_themes/cyberhood/hood/Pimg2D000.gif"),
+    "cyberhood",
+  );
+  assert.strictEqual(themeFromBackgroundUrl("nonsense"), "");
+  assert.strictEqual(themeFromBackgroundUrl(""), "");
+});
+
+test("the background selector previews through the shared lot renderer", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  assert.ok(
+    /<block-lot-map/.test(source),
+    "the block preview must render through BlockLotMap",
+  );
+  assert.ok(
+    !/grid-cols-12/.test(source),
+    "the selector must not restate the grid",
+  );
+  assert.ok(
+    /:background="previewBackground"/.test(source),
+    "the overlay must sit on the CANDIDATE background, not the stored one",
+  );
+  assert.ok(
+    /showsLotOverlay/.test(source) &&
+      /placeType === "block"/.test(source),
+    "only blocks have a lot occupancy model to overlay",
+  );
+});
+
+test("previewing is local and never persists", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  // The only mutating call in the component is submit(), and it is reachable
+  // solely from apply() and restoreDefault(). Selecting a radio or pressing
+  // Cancel must not reach it.
+  const httpMutations = source.match(/this\.\$http\.(put|post|delete)\(/g) || [];
+  assert.strictEqual(
+    httpMutations.length,
+    1,
+    "expected exactly one mutating request in the selector",
+  );
+  assert.ok(
+    /submit\(this\.pendingIndex\)/.test(source),
+    "Apply persists the previewed index",
+  );
+  assert.ok(
+    /submit\(null\)/.test(source),
+    "Restore Default clears the stored selection",
+  );
+  assert.ok(
+    /cancel\(\): void \{\s*this\.pendingIndex = this\.selectedIndex \?\? 0;/m.test(
+      source,
+    ),
+    "Cancel reverts the preview locally without a request",
+  );
+  assert.ok(
+    /v-model\.number="pendingIndex"/.test(source),
+    "choosing a background only moves local state",
+  );
+});
+
+test("the preview shows occupied homes and free lots without offering settlement", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  const overlay = source.slice(
+    source.indexOf("<block-lot-map"),
+    source.indexOf("</block-lot-map>"),
+  );
+  assert.ok(overlay.length > 0, "expected a lot overlay block");
+  assert.ok(
+    /houseIcon\(lot\.map_icon_index\)/.test(overlay),
+    "occupied lots render their house icon",
+  );
+  assert.ok(/freeImage/.test(overlay), "free lots are visible");
+  assert.ok(
+    !/router-link/.test(overlay),
+    "the preview must not link anywhere - it is not the settlement map",
+  );
+  assert.ok(
+    !/type="checkbox"/.test(overlay),
+    "the preview must not offer lots for settlement",
+  );
+});
+
+test("Restore Default and the authorization handling survive", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  assert.ok(/Restore Default/.test(source), "Restore Default must remain");
+  assert.ok(
+    /map-background-selection/.test(source),
+    "Apply still goes through the existing selection endpoint",
+  );
+  assert.ok(
+    /status === 403/.test(source),
+    "a server-side authorization refusal is still surfaced",
   );
 });
 
