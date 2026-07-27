@@ -593,6 +593,28 @@ Access Rights is labelled and described as assigning **leaders and deputies**, n
 chat — a test pins that too, because conflating the Owner axis with the chat Write axis is
 exactly the error the evidence report §2.2 warns against in the other direction.
 
+### 6.5a Owner/Access Rights is NOT Chat Access — the Colony Deputy case
+
+Two different things share the word "access", and conflating them would quietly cancel a
+product requirement. Stated explicitly so it survives review:
+
+| | **Owner / Access Rights** (`manage_access_rights`) | **Chat Access** (deferred) |
+|---|---|---|
+| Classic axis | **Owner** axis — `common/updownerrights`, `OWN` + `AS1`–`AS8` | **Write** axis on a *separate* chat object — `common/updwriterights` with `cht=1`, `DTY=I` |
+| What it does | Assigns the place's leader and deputies | Says who may speak in the place's chat |
+| In CTR today | Implemented, shipped, gated by `<tier>Service.canManageAccess` | **Not implemented** |
+
+**The Colony Deputy is excluded from `manage_access_rights` only.** That is CTR's existing
+`ColonyService.canManageAccess` contract — a Deputy may not appoint the colony's leadership —
+and this lane did not introduce it; it merely stopped drawing a button whose POST was already
+being refused.
+
+**It says nothing about Chat Access.** Ryan's requirement that Colony Deputies eventually be
+able to manage **Colony Chat Access** is unaffected and still stands. When the place-chat lane
+is built it must decide its own permission set from scratch, and the expected answer there is
+that Colony Deputies **are** included. Do not derive the chat permission set from
+`canManageAccess`, and do not reuse `manage_access_rights` to model it.
+
 ### 6.6 Colony map structure — enforced by absence
 
 There is no structural colony endpoint, so there is nothing to gate and no
@@ -606,7 +628,47 @@ for a missing button:
 > The colony map's layout is fixed. Adding, removing or repositioning a neighborhood is
 > not done from this page.
 
-### 6.7 Behavior change worth reviewing
+### 6.7 Final capability matrix
+
+Rows are CTR role names with their scope. "own" = the assignment's `place_id` is the place
+being acted on; "parent"/"ancestor" = scoped to a superior place on the same chain.
+
+`Not implemented — deferred` means the capability is a real product intention with no code
+yet — **not** a denial. `Unavailable` means it will not be built for anyone.
+
+Note the **Security roles** column: they are a global *moderation* authority, not place
+administrators. They get the four message/inbox capabilities everywhere and nothing else —
+no Information, no Owner/Access Rights, no lots, no background, no image check, no child
+listing. Pinned by `place-update-hub.service.spec.ts`.
+
+| Capability | Admin (global) | Security roles (global) | Colony Leader (own colony) | Colony Deputy (own colony) | Neighborhood Leader (own hood) | Neighborhood Deputy (own hood) | Block Leader (own block) | Block Deputy (own block) | Member / unrelated staff | Anonymous |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **open Update hub** | Yes | Yes | Yes (colony, + descendants) | Yes (colony, + descendants) | Yes (hood, + its blocks) | Yes (hood, + its blocks) | Yes (block) | Yes (block) | No | No |
+| **update Information** | Yes | No | Yes | Yes | Yes | Yes | Yes | Yes | No | No |
+| **manage Owner/Access Rights** | Yes | No | Yes | **No** (see §6.5a — unrelated to Chat Access) | Yes | **No** at own hood; Yes at blocks beneath it | Yes | **No** | No | No |
+| **use Message to All** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | No | No |
+| **use Inbox to All** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | No | No |
+| **check images** | Yes (block) | **No** | Yes (blocks beneath) | Yes (blocks beneath) | Yes (blocks beneath) | Yes (blocks beneath) | Yes | Yes | No | No |
+| **list subordinate places** | Yes | No | Yes (neighborhoods) | Yes (neighborhoods) | Yes (blocks) | Yes (blocks) | n/a — a block has none | n/a | No | No |
+| **change lots** | Yes (block) | No | Yes (blocks beneath) | Yes (blocks beneath) | Yes (blocks beneath) | Yes (blocks beneath) | Yes | Yes | No | No |
+| **change background** | Yes (hood, block) | No | Yes (beneath) | Yes (beneath) | Yes (own hood + blocks) | Yes (own hood + blocks) | Yes | Yes | No | No |
+| **create neighborhoods** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** |
+| **create blocks** | *Not implemented — deferred* | *Not implemented — deferred* | *Not implemented — deferred* (intended: **Yes**) | *Not implemented — deferred* (intended: **Yes**) | *Not implemented — deferred* (intended: **Yes**) | *Not implemented — deferred* (intended: **No**) | *Not implemented — deferred* (intended: No) | *Not implemented — deferred* (intended: No) | No | No |
+| **manage Chat Access** | *Not implemented — deferred* | *Not implemented — deferred* | *Not implemented — deferred* (colony: future lane) | *Not implemented — deferred* (colony: future lane, **Ryan requires Deputies included**) | *Not implemented — deferred* (hood: future lane) | *Not implemented — deferred* (hood: future lane) | **Not planned** — blocks have no chat | **Not planned** — blocks have no chat | No | No |
+
+**Explicit product record:**
+
+- **Colony Chat Access** — future lane. Colony Deputies are required to be included; §6.5a
+  explains why the Owner-axis exclusion does not carry over.
+- **Neighborhood Chat Access** — future lane.
+- **Block Chat Access** — **intentionally not planned.** You cannot chat in a block (§6.5).
+- **Block creation** — future lane. Colony Leader **yes**, Colony Deputy **yes**,
+  Neighborhood Leader **yes**, Neighborhood Deputy **no** (§6.4).
+- **Colony structural map editing** — **unavailable** to every role including Admin (§6.6).
+- **`ColonyRepresentative` latent authorization clause** — separate security-cleanup lane
+  (§2.3). Fails closed today; do not seed a role with that name.
+
+### 6.8 Behavior change worth reviewing
 
 The scoped tool bars previously showed Message to All, Inbox to All and Access Rights as
 separate buttons beside Update. Those buttons are **gone from the tool bars** and now live
