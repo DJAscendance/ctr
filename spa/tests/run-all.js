@@ -11,6 +11,7 @@ const SUITES = [
   "tests/.compiled/tests/reconnect-coordinator.test.js",
   "tests/.compiled/tests/server-presence.test.js",
   "tests/.compiled/tests/information-render.test.js",
+  "tests/.compiled/tests/chat-access.test.js",
 ];
 
 let failed = false;
