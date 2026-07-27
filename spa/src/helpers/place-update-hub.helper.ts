@@ -48,6 +48,13 @@ export interface HubTile {
   /** Stable key, matching the server capability. Used for :key and for tests. */
   key: UpdateCapability;
   label: string;
+  /**
+   * Tile art, from the classic Update Wizard set the home Update page already
+   * uses (assets/img/homes/upd*.jpg - the originals recovered in updall.gif).
+   * Places reuse that vocabulary rather than inventing a second one, so a Place
+   * Update page reads as the same screen as Update your Home.
+   */
+  image: string;
   /** One line shown under the label. Says what the tool does, not who may use it. */
   description: string;
   /** Place types this tile can appear on at all. */
@@ -76,6 +83,7 @@ export interface HubTile {
 export const HUB_TILES: HubTile[] = [
   {
     key: "update_information",
+    image: "/assets/img/homes/updinfo.jpg",
     label: "Update Information",
     description: "Edit the staff notice shown on this place's Information window.",
     types: ["colony", "hood", "block"],
@@ -92,6 +100,7 @@ export const HUB_TILES: HubTile[] = [
   },
   {
     key: "manage_access_rights",
+    image: "/assets/img/homes/updright.jpg",
     // Named for what it actually does. The classic Owner Access axis assigns the
     // place's leader and up to eight deputies. It is NOT chat access, and must not
     // be labelled as such - see the matrix section 2.6.
@@ -110,6 +119,7 @@ export const HUB_TILES: HubTile[] = [
   },
   {
     key: "message_to_all",
+    image: "/assets/img/homes/updpers.jpg",
     label: "Message to All",
     description: "Post one message to every place beneath this one.",
     types: ["colony", "hood", "block"],
@@ -124,6 +134,7 @@ export const HUB_TILES: HubTile[] = [
   },
   {
     key: "inbox_to_all",
+    image: "/assets/img/homes/updpers.jpg",
     label: "Inbox to All",
     description: "Send one inbox message to every place beneath this one.",
     types: ["colony", "hood", "block"],
@@ -138,6 +149,7 @@ export const HUB_TILES: HubTile[] = [
   },
   {
     key: "moderate_messageboard",
+    image: "/assets/img/homes/updinfo.jpg",
     label: "Moderate Messages",
     description: "Read this place's message board and remove messages.",
     types: ["colony", "hood", "block"],
@@ -147,6 +159,7 @@ export const HUB_TILES: HubTile[] = [
   },
   {
     key: "moderate_inbox",
+    image: "/assets/img/homes/updinfo.jpg",
     label: "Moderate Inbox",
     description: "Read this place's inbox and remove messages.",
     types: ["colony", "hood", "block"],
@@ -156,6 +169,7 @@ export const HUB_TILES: HubTile[] = [
   },
   {
     key: "manage_lots",
+    image: "/assets/img/homes/updhome.jpg",
     label: "Lot Availability",
     description: "Choose which lots on this block members may settle on.",
     types: ["block"],
@@ -168,6 +182,7 @@ export const HUB_TILES: HubTile[] = [
   },
   {
     key: "manage_background",
+    image: "/assets/img/homes/updimage.jpg",
     label: "Map Background",
     description: "Choose the scenery drawn behind this place's map.",
     types: ["hood", "block"],
@@ -183,6 +198,7 @@ export const HUB_TILES: HubTile[] = [
   },
   {
     key: "check_images",
+    image: "/assets/img/homes/updimage.jpg",
     label: "Check Images",
     description: "Review the home images displayed on this block.",
     types: ["block"],

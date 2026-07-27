@@ -8,9 +8,21 @@
     </template>
 
     <template v-else>
+      <!--
+        Deliberately the same screen as "Update your Home"
+        (pages/home/HomeUpdatePage.vue): a heading, a one-line lead, then a
+        three-column grid of the classic Update Wizard icons with a bold label
+        under each. Only the subject differs - a colony, neighborhood or block
+        instead of a citizen's home. The original made the same choice: CS 4.0's
+        place wizards reused the property wizard's furniture rather than
+        inventing a second look.
+      -->
       <div class="text-center mb-3">
-        <p><strong>Update Wizard for {{ hub.name }}</strong></p>
-        <small>Only the tools you may use are shown.</small>
+        <h3>Update the {{ tierNoun }} '{{ hub.name }}'</h3>
+        <p>
+          Here you can change this {{ tierNoun }}'s information, access rights and
+          more ...!
+        </p>
       </div>
 
       <!--
@@ -23,31 +35,24 @@
         draw.
       -->
       <div
-        class="grid gap-2 justify-center"
-        style="grid-template-columns: repeat(auto-fit, minmax(11rem, 14rem))"
+        class="mx-auto max-w-2xl grid grid-cols-3 gap-4"
         data-testid="update-hub-tiles"
       >
-        <router-link
-          v-for="tile in routeTiles"
+        <div
+          v-for="tile in tiles"
           :key="tile.key"
-          :to="targetFor(tile)"
           :data-capability="tile.key"
-          class="block border border-green-700 p-2 text-center no-underline hover:border-green-400"
+          class="text-center"
         >
-          <span class="block font-bold">{{ tile.label }}</span>
-          <small class="block">{{ tile.description }}</small>
-        </router-link>
-        <a
-          v-for="tile in windowTiles"
-          :key="tile.key"
-          :href="hrefFor(tile)"
-          :data-capability="tile.key"
-          class="block border border-green-700 p-2 text-center no-underline hover:border-green-400"
-          @click="openWindow($event, tile)"
-        >
-          <span class="block font-bold">{{ tile.label }}</span>
-          <small class="block">{{ tile.description }}</small>
-        </a>
+          <router-link v-if="tile.kind === 'route'" :to="targetFor(tile)">
+            <img :src="tile.image" :alt="tile.label" />
+            <br /><strong>{{ tile.label }}</strong>
+          </router-link>
+          <a v-else :href="hrefFor(tile)" @click="openWindow($event, tile)">
+            <img :src="tile.image" :alt="tile.label" />
+            <br /><strong>{{ tile.label }}</strong>
+          </a>
+        </div>
       </div>
 
       <!--
@@ -146,11 +151,12 @@ export default Vue.extend({
       if (!this.hub) return [];
       return visibleTiles(this.hub.type, this.hub.capabilities);
     },
-    routeTiles(): any[] {
-      return this.tiles.filter((tile) => tile.kind === "route");
-    },
-    windowTiles(): any[] {
-      return this.tiles.filter((tile) => tile.kind === "window");
+    /** What this tier is called in the heading and lead. */
+    tierNoun(): string {
+      if (!this.hub) return "place";
+      if (this.hub.type === "colony") return "colony";
+      if (this.hub.type === "hood") return "neighborhood";
+      return "block";
     },
     showsChildren(): boolean {
       if (!this.hub) return false;
