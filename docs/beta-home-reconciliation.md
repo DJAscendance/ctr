@@ -336,3 +336,87 @@ general fix belongs with whoever owns the economy.
 5. Client-only chat gating (`Chat.vue` hiding the input) as the *only* enforcement.
 6. Unconditional refund on every reset request.
 7. `main2d.vue` / `Chat.vue` historical edits — beta's versions carry later PR #411/#412 work.
+
+## Deployment to beta (2026-07-27)
+
+Deployed as `1eeaf5e` — fast-forward of `beta` from `5d3e828`, no merge commit, no history
+rewrite. Coolify application `r11tggcohedq05k1hiofoitj`, deployment queue id 3, `finished`.
+Ryan triggered the deploy from the Coolify UI: the instance has `is_api_enabled = false`
+with no API tokens, and that hardened posture was left exactly as found.
+
+### Pre-deploy backups
+
+Taken before any change, gzip-tested, and checksum-matched between the server
+(`/root/beta-backups/2026-07-27-predeploy-reconciliation/`) and the workstation
+(`~/Projects/cybertown/.backups/ctr-beta/2026-07-27-predeploy-reconciliation/`):
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `cybertown-predeploy.sql.gz` | `71bea2ab88dd06edebba5a23baeaef8d6cb8b03ce766670bbf23fecbc1b3be04` |
+| `home-images.tar.gz` | `7820bf2536009e14b9af662813f62935ee2cc6ed8b4dd8f0ea981fbd7d2096ca` |
+| `private-uploads.tar.gz` | `8a4e70e2b5a8b7e2c0902b3ab72c0cafe5bffd1ded8a6dfc5e66a003c73e2962` |
+
+### Migration 40
+
+`migrate:list` showed 39 applied and exactly one pending. The restored
+`20260717120000_dedupe_role_rows.ts` listed as *completed* and knex ran normally, confirming
+the Phase 2 repair holds on the live database. `migrate:latest` logged
+`dedupe_seeded_places: removing 71 duplicate place rows` — the same 71 as the QA rehearsal.
+
+| Count | Before | After |
+| --- | --- | --- |
+| migrations | 39 | **40** |
+| place | 909 | **838** |
+| place (public) | 67 | **23** |
+| place (shop) | 54 | **27** |
+| duplicate public/shop slugs | 50 | **0** |
+| place (block / hood / colony) | 681 / 92 / 12 | 681 / 92 / 12 |
+| member / home / wallet | 9 / 2 / 9 | 9 / 2 / 9 |
+| message / map_location / role_assignment | 10 / 780 / 14 | 10 / 780 / 14 |
+| Plaza (id 1) messages | 6 | 6 |
+| Mall (id 7) role assignments | 2 | 2 |
+
+`UNIQUE(place.slug)` is present as `place_slug_unique`. Orphaned `map_location` and
+`message` rows: 0 and 0. `Home Chat Guest` remains a single row at id 192 — the seed did not
+duplicate it, and nothing in the running code depends on that id.
+
+### Live verification
+
+Exercised against the deployed containers, in-process, over the real HTTP and Socket.IO
+protocols — not a rebuild and not a browser mock. Browser QA through the public URL was not
+possible unattended because Cloudflare Access gates `beta.cybertown.dev` (302).
+
+| Suite | Result |
+| --- | --- |
+| Information (read/write/limits/authorization/XSS-shape) | 25/25 |
+| Chat access over real Socket.IO | 10/10 |
+| Home reset (incl. rollback + exactly-once refund) | 13/13 |
+| PR #410 image moderation | 22/22 |
+| PR #412 presence + PR #5 reconnect | 13/13 |
+
+The refund invariant was measured, not asserted: **two** resets produced **one**
+`home-refund` ledger row of 160 CC, wallet 890 → 1050. A reset onto an occupied lot returned
+400 and left the guest list intact, proving the transaction rolls back whole. A stale
+revision was refused with 409 on both approve and reject, and a pending image was never
+readable from the public directory.
+
+### Mutations made during QA, and their restoration
+
+All QA used test account `BassMekanik2000` (member 4, place 1694). Member 1's home 857 and
+its approved image were never touched — same file, same revision, same `image_checked_by`.
+
+The reset test genuinely cleared home 1694 and refunded 160 CC. It was restored through the
+application's own endpoints (`/home/move`, `/home/update`, `/home/update-information`) rather
+than by editing rows, so the wallet and the ledger stay mutually consistent: the ledger now
+records the QA refund (`+160`, id 15) answered by a real re-purchase (`-160`, id 16), netting
+to the original 890 balance and design `005`. Deleting the refund row was deliberately
+avoided — a ledger that disagrees with a balance is worse than one that records what
+happened. Two QA chat messages were deleted; `message` is back to 10.
+
+### Post-restart
+
+`docker compose restart` of all five services: all returned healthy, the socket rebuild took
+~40s, and every count above persisted unchanged. The only log noise is `connection refused`
+from nginx to `ct-socket` during that rebuild window, which stops the moment the socket
+listens; zero errors in the following minute. Cloudflare Access still returns 302 for both
+the app and `/assets/`.
