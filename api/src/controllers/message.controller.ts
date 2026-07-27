@@ -2,7 +2,7 @@ import { Request, Response} from 'express';
 import validator from 'validator';
 import { Container } from 'typedi';
 
-import { MemberService, MessageService } from '../services';
+import { MemberService, MessageService, HomeService } from '../services';
 
 const badwords = require('badwords-list');
 
@@ -17,6 +17,7 @@ class MessageController {
   constructor(
     private memberService: MemberService,
     private messageService: MessageService,
+    private homeService: HomeService,
   ) {}
 
   /** Handles storing a user message to the database */
@@ -43,6 +44,25 @@ class MessageController {
       });
       return;
     }
+    // Home chat access, enforced at the persistence boundary. The subject is the token's
+    // member id, so a caller cannot post into a restricted home by supplying someone else's
+    // username, replaying a socket event, or calling this endpoint directly.
+    try {
+      const placeId = Number.parseInt(request.params.placeId);
+      if (!(await this.homeService.canChatInPlace(placeId, session.id))) {
+        response.status(403).json({
+          error: 'You don\'t have chat access at this home.',
+        });
+        return;
+      }
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({
+        error: 'A problem occurred creating message.',
+      });
+      return;
+    }
+
     const bannedwords = badwords.regex;
     if (bannedwords.test(request.body.body)) {
       try {
@@ -168,4 +188,9 @@ public async removeAllMessages(request: Request, response: Response):  Promise<v
 }
 const memberService = Container.get(MemberService);
 const messageService = Container.get(MessageService);
-export const messageController = new MessageController(memberService, messageService);
+const homeService = Container.get(HomeService);
+export const messageController = new MessageController(
+  memberService,
+  messageService,
+  homeService,
+);

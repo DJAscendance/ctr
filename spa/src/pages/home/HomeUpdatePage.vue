@@ -84,7 +84,7 @@ export default Vue.extend({
         },{
           img: '/assets/img/homes/updright.jpg',
           label: 'Chat Access Rights',
-          link: '',
+          link: '/home/chat-access',
         },
         {
           img: '/assets/img/homes/updpet.jpg',

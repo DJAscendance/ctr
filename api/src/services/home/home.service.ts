@@ -168,6 +168,162 @@ export class HomeService {
 
   }
 
+  /** Maximum number of citizens a homeowner may grant chat access to. */
+  public static readonly MAX_CHAT_GUESTS = 8;
+
+  /** Exact role name backing a home's chat guest list. The id is never hardcoded. */
+  public static readonly CHAT_GUEST_ROLE = 'Home Chat Guest';
+
+  /**
+   * Resolves the Home Chat Guest role id by name, never by a stored constant.
+   * Throws rather than returning undefined, so a missing seed row can never cause an
+   * assignment to be written with a null role or an access check to silently pass.
+   */
+  private async chatGuestRoleId(): Promise<number> {
+    const roleId = await this.roleRepository.findIdByName(HomeService.CHAT_GUEST_ROLE);
+    if (typeof roleId !== 'number') {
+      throw new Error('Home chat access is unavailable.');
+    }
+    return roleId;
+  }
+
+  /**
+   * Gets the citizens the authenticated owner has granted chat access to at their own home.
+   * An empty list means the home is unrestricted - everyone may chat there.
+   *
+   * Owner-scoped by construction: the home is resolved from the member id, so this can only
+   * ever return the caller's own guest list.
+   * @param memberId id of the home's owner, from the authenticated session
+   */
+  public async getChatAccess(memberId: number): Promise<{ guests: string[] }> {
+    const home = await this.placeRepository.findHomeByMemberId(memberId);
+    if (!home) {
+      throw new Error('You don\'t have a home yet.');
+    }
+
+    const roleId = await this.chatGuestRoleId();
+    const guests = await this.roleAssignmentRepository.getUsernamesByRoleAndPlace(
+      home.id,
+      roleId,
+    );
+
+    return { guests: guests.map(guest => guest.username) };
+  }
+
+  /**
+   * Replaces the guest list for the authenticated owner's home. The submitted list becomes
+   * the complete authoritative list; passing an empty list removes the restriction entirely.
+   *
+   * The clear and the re-insert run in ONE transaction, so there is no intermediate moment
+   * where the home reads as unrestricted - which would otherwise be a window in which
+   * anyone present could chat.
+   *
+   * Blank entries are discarded and duplicates removed case-insensitively before the cap is
+   * applied, so eight distinct guests always means eight distinct people. Unknown usernames
+   * are ignored rather than rejected, matching the block/hood access-rights behaviour this
+   * feature was modelled on - the owner is not told which names failed to resolve.
+   *
+   * The owner is never stored: their permission comes from owning the place.
+   * @param memberId id of the home's owner, from the authenticated session
+   * @param guestUsernames up to MAX_CHAT_GUESTS usernames
+   */
+  public async updateChatAccess(memberId: number, guestUsernames: string[]): Promise<void> {
+    const home = await this.placeRepository.findHomeByMemberId(memberId);
+    if (!home) {
+      throw new Error('You don\'t have a home yet.');
+    }
+
+    const roleId = await this.chatGuestRoleId();
+
+    // Normalize before resolving: trim, drop blanks, and de-duplicate case-insensitively
+    // while keeping the owner's original spelling for each retained name.
+    const seen = new Set<string>();
+    const uniqueUsernames: string[] = [];
+    for (const raw of guestUsernames || []) {
+      if (typeof raw !== 'string') {
+        continue;
+      }
+      const username = raw.trim();
+      if (username.length === 0) {
+        continue;
+      }
+      const key = username.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      uniqueUsernames.push(username);
+    }
+
+    if (uniqueUsernames.length > HomeService.MAX_CHAT_GUESTS) {
+      throw new Error(
+        `You can grant chat access to at most ${HomeService.MAX_CHAT_GUESTS} citizens.`,
+      );
+    }
+
+    // Resolve outside the transaction so the lookups do not hold row locks; the resolved
+    // ids are then applied atomically.
+    const memberIds: number[] = [];
+    for (const username of uniqueUsernames) {
+      const matches = await this.memberRepository.findIdByUsername(username);
+      if (Array.isArray(matches) && matches.length > 0 && matches[0].id) {
+        // The owner's permission is implicit - storing it would be redundant, and would
+        // also consume one of the eight slots.
+        if (matches[0].id === memberId) {
+          continue;
+        }
+        if (!memberIds.includes(matches[0].id)) {
+          memberIds.push(matches[0].id);
+        }
+      }
+    }
+
+    await this.homeRepository.runInTransaction(async trx => {
+      await this.roleAssignmentRepository.removeAllForPlaceAndRoleWithin(trx, home.id, roleId);
+      for (const guestId of memberIds) {
+        await this.roleAssignmentRepository.addIdToAssignmentWithin(
+          trx,
+          home.id,
+          guestId,
+          roleId,
+        );
+      }
+    });
+  }
+
+  /**
+   * The authoritative answer to "may this member chat in this place?", used by the realtime
+   * socket server before it relays a message.
+   *
+   * Returns true for anywhere that is not a home, and for a home with no guest list, so the
+   * restriction only ever narrows chat at homes that opted in. The owner is allowed by
+   * virtue of owning the place; everyone else must hold a Home Chat Guest assignment scoped
+   * to that exact home.
+   *
+   * Takes a member id derived from a verified token - never a username or socket id - and
+   * returns a boolean rather than the guest list, so no caller learns who is on it.
+   * @param placeId place the message would be sent in
+   * @param memberId id of the member attempting to chat
+   */
+  public async canChatInPlace(placeId: number, memberId: number): Promise<boolean> {
+    const place = await this.placeRepository.findById(placeId);
+    if (!place || place.type !== 'home') {
+      return true;
+    }
+
+    const roleId = await this.chatGuestRoleId();
+    const guests = await this.roleAssignmentRepository.findByPlaceAndRole(place.id, roleId);
+    if (guests.length === 0) {
+      return true;
+    }
+
+    if (place.member_id === memberId) {
+      return true;
+    }
+
+    return guests.some(guest => guest.member_id === memberId);
+  }
+
   /** 2D map icon a home returns to when it is reset. */
   public static readonly DEFAULT_MAP_ICON_INDEX = 1;
 
@@ -219,6 +375,9 @@ export class HomeService {
     // back. Identical rule to updateHome, deliberately - the two refund paths must agree.
     const donor = await this.memberService.getDonorLevel(memberId);
     const donorLevel = donor ? Object.values(donor).toString() : null;
+
+    // Resolved before the transaction so the lookup does not run while row locks are held.
+    const chatGuestRoleId = await this.chatGuestRoleId();
 
     let clearedRevision: string | undefined;
 
@@ -281,6 +440,15 @@ export class HomeService {
         image_checked_by: null,
         image_checked_at: null,
       });
+
+      // Clear the chat guest list, scoped to BOTH this home and the guest role, so no other
+      // home's guests and no other role at this home can be touched. Inside the same
+      // transaction as everything else, so a failed reset leaves the list intact.
+      await this.roleAssignmentRepository.removeAllForPlaceAndRoleWithin(
+        trx,
+        home.id,
+        chatGuestRoleId,
+      );
 
       // 3. wallet - last in the lock order, and only when a design was actually cleared.
       if (lockedHome.home_design_id) {

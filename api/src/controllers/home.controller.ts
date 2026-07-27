@@ -333,6 +333,77 @@ export class HomeController {
   }
 
   /**
+   * Returns the authenticated owner's own chat guest list. The home is resolved from the
+   * session, so there is no place id a caller could pass to read someone else's list.
+   */
+  public async getChatAccess(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    try {
+      const chatAccess = await this.homeService.getChatAccess(session.id);
+      response.status(200).json(chatAccess);
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
+   * Replaces the authenticated owner's own chat guest list. The body carries usernames
+   * only - the target home comes from the session - and the replacement is applied
+   * atomically inside HomeService.
+   */
+  public async updateChatAccess(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { guests } = request.body;
+
+    try {
+      if (!Array.isArray(guests)) {
+        throw new Error('guests must be a list of usernames.');
+      }
+
+      await this.homeService.updateChatAccess(session.id, guests);
+
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
+   * Answers whether the AUTHENTICATED caller may chat in a given place. Used by the realtime
+   * socket server before it relays a message.
+   *
+   * This deliberately replaces the historical unauthenticated
+   * GET /home/chat-access/status/:placeId, which published any home's guest list to anyone
+   * who asked. Here the subject is the token holder - never a supplied username or socket
+   * id - and the response is a boolean, so no caller learns who is on the list, including
+   * the caller themselves.
+   */
+  public async getChatAccessForSelf(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { placeId } = request.params;
+
+    try {
+      if (!validator.isInt(placeId)) {
+        throw new Error('placeId must be passed');
+      }
+
+      const allowed = await this.homeService.canChatInPlace(parseInt(placeId), session.id);
+      response.status(200).json({ allowed });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
    * Resets the authenticated member's own home: moves it to a chosen free lot and clears
    * its customisations, refunding a paid 3D design.
    *

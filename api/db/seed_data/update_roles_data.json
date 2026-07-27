@@ -186,6 +186,12 @@
     "income_cc": "250"
   },
   {
+    "name": "Home Chat Guest",
+    "required_xp": "0",
+    "income_xp": "0",
+    "income_cc": "0"
+  },
+  {
     "name": "Flea Market Chief",
     "required_xp": "500",
     "income_xp": "26",

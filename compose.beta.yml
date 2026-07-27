@@ -70,6 +70,9 @@ services:
             JWT_SECRET: ${JWT_SECRET}
             WEBSOCKET_PORT: 8000
             CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL}
+            # Internal Docker-network address of ct-api, used by the home chat-access check.
+            # Never reaches a browser: Traefik only routes to nginx.
+            API_URL: http://ct-api:3000/api
         command: bash -c "NPM_CONFIG_PRODUCTION=false npm install && npm run build -- --mode production && node server.js"
 
     mailhog:

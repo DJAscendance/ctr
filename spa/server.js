@@ -8,9 +8,60 @@ const io = require("socket.io")(http, {
     });
 const path = require("path");
 const jwt = require("jsonwebtoken");
+const axios = require("axios");
 const package = require("./package.json");
 const badwords = require("badwords-list");
 const USERS = new Map();
+
+const API_URL = process.env.API_URL || "http://ct-api:3000/api";
+
+/**
+ * How long one member's chat permission for one room is reused before being re-checked.
+ *
+ * Bounded staleness rather than a cache needing invalidation: when a homeowner changes their
+ * guest list, it takes effect for everyone already standing in the home within this window -
+ * no server restart, and nobody has to leave and re-enter. Kept short for that reason.
+ */
+const CHAT_ACCESS_TTL_MS = 5000;
+
+/** key `${room}:${memberId}` -> { allowed, checkedAt } */
+const CHAT_ACCESS = new Map();
+
+/**
+ * Asks the API whether THIS member may chat in THIS room. The subject is the member's own
+ * verified token and the answer is a boolean, so the guest list itself never reaches the
+ * socket server and a bug here cannot leak who is on it.
+ *
+ * Fails CLOSED. The socket relay is what makes a message visible to the room, so treating an
+ * unknown answer as "allowed" would let an unauthorized visitor be heard live during an API
+ * blip - and the message would not persist in that case either.
+ */
+async function canChat(room, memberId, token) {
+    const key = `${room}:${memberId}`;
+    const cached = CHAT_ACCESS.get(key);
+    if (cached && Date.now() - cached.checkedAt < CHAT_ACCESS_TTL_MS) {
+        return cached.allowed;
+    }
+
+    let allowed = false;
+    try {
+        const response = await axios.get(
+            `${API_URL}/home/chat-access/can-chat/${room}`,
+            { headers: { apitoken: token } }
+        );
+        allowed = response.data && response.data.allowed === true;
+    } catch (err) {
+        console.error(
+            `chat access check failed for member ${memberId} in room ${room}:`,
+            err.message
+        );
+        // Not cached - the next message retries rather than staying muted.
+        return false;
+    }
+
+    CHAT_ACCESS.set(key, { allowed, checkedAt: Date.now() });
+    return allowed;
+}
 
 // Authoritative presence state, keyed by the logical presence key
 // `memberId:presenceId` - never by socket id, which is replaceable
@@ -183,6 +234,8 @@ io.on("connection", async function(socket) {
         user.room = room;
         user.username = tokenData.username;
         user.presenceKey = key;
+        // Kept so the chat-access check can be made AS this member. Already verified above.
+        user.token = data.token;
 
         PRESENCE.set(key, {
             memberId,
@@ -296,7 +349,7 @@ io.on("connection", async function(socket) {
     });
 
     //handle chat messages
-    socket.on("CHAT", (chatData) => {
+    socket.on("CHAT", async (chatData) => {
         console.log("chat message...");
         if (!chatData || !chatData.msg || typeof chatData.msg !== "string")
             return;
@@ -307,6 +360,23 @@ io.on("connection", async function(socket) {
             return;
         } else {
             if (user?.room) {
+                // Identity comes from the logical presence record, derived from the verified
+                // JWT at JOIN - never from the socket id, never from this payload. Only the
+                // socket that currently OWNS the presence may speak under it, matching the
+                // guard the AV handler applies, so a replaced or stale socket cannot talk in
+                // a room a newer one now holds.
+                const presence = user.presenceKey ? PRESENCE.get(user.presenceKey) : null;
+                if (!presence || presence.socketId !== socket.id) return;
+
+                if (!(await canChat(user.room, presence.memberId, user.token))) {
+                    console.log(`${user.username} is not permitted to chat in ${user.room}`);
+                    socket.emit("CHAT", {
+                        type: "system",
+                        msg: "You don't have chat access at this home.",
+                    });
+                    return;
+                }
+
                 io.to(user.room).emit("CHAT", {
                     username: user.username,
                     id: chatData.msg_id,

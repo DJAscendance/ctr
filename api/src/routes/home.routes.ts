@@ -19,9 +19,16 @@ homeRoutes.post('/moderation/:placeId/approve',
 homeRoutes.post('/moderation/:placeId/reject',
   (request, response) => homeController.rejectImage(request, response));
 // Must stay above the '/:username' catch-all below, which would otherwise match
-// 'information' as a username.
+// 'information' or 'chat-access' as a username.
 homeRoutes.get('/information/:placeId',
   (request, response) => homeController.getHomeInformation(request, response));
+homeRoutes.get('/chat-access',
+  (request, response) => homeController.getChatAccess(request, response));
+// Answers only for the AUTHENTICATED caller, and only with a boolean. This replaces the
+// historical unauthenticated '/chat-access/status/:placeId', which published any home's
+// guest list to anyone who asked - that endpoint is deliberately not restored.
+homeRoutes.get('/chat-access/can-chat/:placeId',
+  (request, response) => homeController.getChatAccessForSelf(request, response));
 homeRoutes.get('/:username',
   (request, response) => homeController.getHome(request, response));
 homeRoutes.post('/settle',
@@ -32,6 +39,8 @@ homeRoutes.post('/update',
   (request, response) => homeController.updateHome(request, response));
 homeRoutes.post('/update-information',
   (request, response) => homeController.updateHomeInformation(request, response));
+homeRoutes.post('/chat-access',
+  (request, response) => homeController.updateChatAccess(request, response));
 // POST-only: reset is destructive, so it must never be reachable by a GET or a navigation.
 homeRoutes.post('/reset',
   (request, response) => homeController.resetHome(request, response));

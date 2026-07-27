@@ -32,6 +32,7 @@ import HomeUpdatePage from "@/pages/home/HomeUpdatePage.vue";
 import HomeUpdateHomePage from "@/pages/home/HomeUpdateHomePage.vue";
 import HomeUpdateInformationPage from "@/pages/home/HomeUpdateInformationPage.vue";
 import HomeResetPage from "@/pages/home/HomeResetPage.vue";
+import HomeChatAccessPage from "@/pages/home/HomeChatAccessPage.vue";
 import HomeUpdateImagePage from "@/pages/home/HomeUpdateImagePage.vue";
 import HomeImageCheckPage from "@/pages/home/HomeImageCheckPage.vue";
 import HomeVirtualPet from "./pages/home/HomeVirtualPet.vue";
@@ -364,6 +365,15 @@ export default [
       tools: HomeTools,
     },
     name: "home-update-information",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/home/chat-access",
+    components: {
+      default: HomeChatAccessPage,
+      tools: HomeTools,
+    },
+    name: "home-chat-access",
     meta: { wrapper: true },
   },
   {
