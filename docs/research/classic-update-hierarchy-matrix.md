@@ -447,8 +447,150 @@ enhancement rather than a restoration.
   archived URL supports one.
 
 **Open / unresolved:**
-- Whether Neighborhood Deputies could create blocks — **not answerable from evidence**;
-  needs product decision (§1.3, §4.1).
-- CTR block create/withdraw transaction semantics (§4.1).
-- Place-tier chat access model (§4.3).
+- CTR block create/withdraw transaction semantics (§6.4).
+- Place-tier chat access model (§6.5).
 - The `ColonyRepresentative` dead clause (§2.3).
+
+*(Resolved since first writing: whether Neighborhood Deputies may create blocks. Ryan's
+product decision is recorded in §6.4 — they may not.)*
+
+---
+
+## 6. Implemented — the scoped Update hubs
+
+Built on this branch after Ryan approved the hubs on 2026-07-27. Everything below has a
+real backend, a server-authoritative scoped check, and a test.
+
+### 6.1 What was built, and what it is
+
+| Tier | Route | Component | Restoration or composition? |
+|---|---|---|---|
+| Colony | `/place/:slug/update` (`colonyUpdate`) | `PlaceUpdatePage` → `PlaceUpdateHub` | **Modern composition.** Stock CS 4.0's colony action bar had no Update button and `community.exe` no wizard dispatch (§0.1). The *tools* inside are authentic; the screen is new. |
+| Neighborhood | `/neighborhood/:id/update` (`neighborhoodUpdate`) | same | **Restoration.** `neighbor/action.tmpl:43-44` → `ac=wizardplace`. |
+| Block | `/block/:id/update` (`blockUpdate`) | same | **Restoration.** `block/action.tmpl:37-41` → `ac=wizardplace`; archived in production. |
+
+One component serves all three. The tool list is data, in
+`spa/src/helpers/place-update-hub.helper.ts`, so the tiers cannot drift into three
+near-copies — the same property the original got by building its wizard and its public
+map from one frameset.
+
+### 6.2 Authorization
+
+`GET /place/:placeId/update-hub` → `PlaceUpdateHubService.getHub`
+(`api/src/services/place/place-update-hub.service.ts`).
+
+- The **only** client input is the place id. Type, slug and the parent chain are read
+  from the stored row, so no client-supplied type, slug, colony, hood or block id can
+  steer which scoped check runs.
+- Capabilities are resolved **individually**, not from one `canAdmin` boolean.
+- "Unsupported place type" and "no capability here" return an identical `403` with an
+  identical body, so an unauthorized caller cannot enumerate which places have scoped
+  administration.
+- The endpoint is **advisory, for rendering only.** Every tool it advertises is
+  independently authorized by its own endpoint. Hiding a tile is never the access control.
+
+Capability → server-side decision:
+
+| Capability | Decided by | Colony | Hood | Block |
+|---|---|---|---|---|
+| `update_information` | `PlaceInformationService.canEdit` (same method that gates the `PUT`) | ✓ | ✓ | ✓ |
+| `manage_access_rights` | `<tier>Service.canManageAccess` | ✓ | ✓ | ✓ |
+| `message_to_all`, `inbox_to_all`, `moderate_messageboard`, `moderate_inbox` | `<tier>Service.canAdmin` **or** `MemberService.getAccessLevel` includes `security` | ✓ | ✓ | ✓ |
+| `list_neighborhoods` | `ColonyService.canAdmin` | ✓ | — | — |
+| `list_blocks`, `manage_background` | `HoodService.canAdmin` | — | ✓ | — |
+| `manage_lots`, `manage_background`, `check_images` | `BlockService.canAdmin` | — | — | ✓ |
+
+**`canManageAccess` is not an alias for `canAdmin`.** At every tier it admits the same
+superiors but excludes *that tier's own deputy*. So a Colony Deputy opens the hub and
+edits Information, but does not see Access Rights. "May open the Update page" genuinely
+does not grant every action within it.
+
+`security` is a real global moderation authority in CTR — the messageboard and inbox
+controllers already honour it on every scoped path (`MessageboardController.adminCheck`).
+It is modelled here so the tile list and the endpoint behind it agree. It deliberately
+does **not** confer the place-shaping tools.
+
+### 6.3 Tile inventory
+
+Every tile, as required. None is a placeholder; a tool without an authoritative backend
+is not listed at all.
+
+| Label | Capability | Route / target | Backend endpoint | Server-side authorization | Place types | Origin |
+|---|---|---|---|---|---|---|
+| Update Information | `update_information` | `place-update-information` | `GET/PUT /place/:placeId/information` | `PlaceInformationService.canEdit` (type from stored row) | colony, hood, block | **classic** — `place/updateinfo.{cfg,tmpl}` |
+| Access Rights | `manage_access_rights` | `worldAccessRights` / `neighborhoodAccessRights` / `blockaccessrights` | `GET /<tier>/:id/getAccessInfo`, `POST /<tier>/:id/postAccessInfo` | `<tier>Service.canManageAccess` on the POST | colony, hood, block | **classic** — `common/updownerrights` (`OWN` + `AS1`–`AS8`) |
+| Message to All | `message_to_all` | `colonyMessageToAll` / `neighborhoodMessageToAll` / `blockMessageToAll` | `POST /messageboard/postmessageall` | `MessageboardController.adminCheck` → `<tier>Service.canAdmin` or security | colony, hood, block | **classic** — Group Message, `msb?ac=writegroup&DTY=C\|N\|B` |
+| Inbox to All | `inbox_to_all` | `colonyInboxToAll` / `neighborhoodInboxToAll` / `blockInboxToAll` | `POST /inbox/postinboxall` | `InboxController.adminCheck` → same scoped set | colony, hood, block | **modern** — the original's group tool posted to boards only |
+| Moderate Messages | `moderate_messageboard` | popup `#/messageboard/<placeId>` | `POST /messageboard/deletemessage` | `adminCheck` → `<tier>Service.canAdmin` or security | colony, hood, block | **classic** |
+| Moderate Inbox | `moderate_inbox` | popup `#/inbox/<placeId>` | `POST /inbox/deletemessage` | `adminCheck` → same | colony, hood, block | **classic** |
+| Lot Availability | `manage_lots` | `blockwizard` | `GET/POST /block/:id/locations` | `BlockService.canAdmin` | block | **classic** — `block/wizard/present.tmpl`, 72 checkboxes |
+| Map Background | `manage_background` | `neighborhoodmapbackground` / `blockmapbackground` | `GET/PUT /<tier>/:id/map-background-*` | `<tier>Service.canAdmin` (PR #411) | hood, block | **classic** — `wizard/image.tmpl`; the live-overlay preview is a CTR enhancement |
+| Check Images | `check_images` | popup `#/home/image-check` | existing home image-check page | `BlockService.canAdmin` for the tile | block | **classic** — `block/action.tmpl` `TPL=block/plist` |
+
+Children are listed for **navigation only** (`GET /colony/:slug/hoods`,
+`GET /hood/:id/blocks`). Listing a child confers no authority over it; each child's own
+Update page re-checks the actor.
+
+"Moderation" is not used as a category anywhere — the four moderation-ish tools are named
+individually, and each maps to a specific endpoint above.
+
+### 6.4 Block creation — decided, deliberately not built
+
+**Ryan's product decision, 2026-07-27**, recorded here for the future lane:
+
+| Role | May create a block in a neighborhood? |
+|---|---|
+| Colony Leader, scoped to that colony | **Yes** |
+| Colony Deputy, scoped to that colony | **Yes** |
+| Neighborhood Leader, scoped to that neighborhood | **Yes** |
+| **Neighborhood Deputy** | **No** |
+| Leadership scoped elsewhere | No |
+| Ordinary member | No |
+
+This resolves the question §1.3 showed to be unanswerable from evidence — the original's
+gate was a single `owneraccess` bit whose value lived in per-place ACL data that survives
+in no artifact.
+
+**Not implemented on this branch.** No `create_block`, `remove_block` or `delete_block`
+capability exists, and `place-update-hub.service.spec.ts` asserts the granted set against
+an allowlist so that adding one later fails a test rather than shipping silently. Still
+open before it can be built: slug generation, seeding the new block's 72 child
+`map_location` lot rows, background and icon defaults, and rollback. Note
+`map_location(parent_place_id, location, place_id, available)` already models the fixed
+slot and `place.map_icon_index` the classic `IC2` icon, so the schema is closer than the
+gap suggests.
+
+### 6.5 Chat Access — still deferred, and still absent
+
+No Chat Access tile exists at any tier, and a test asserts no tile's key or label
+contains "chat". `HomeService.canChatInPlace` is home-scoped by construction (§2.5);
+a place-tier tile would be a button with nothing behind it.
+
+Access Rights is labelled and described as assigning **leaders and deputies**, never as
+chat — a test pins that too, because conflating the Owner axis with the chat Write axis is
+exactly the error the evidence report §2.2 warns against in the other direction.
+
+### 6.6 Colony map structure — enforced by absence
+
+There is no structural colony endpoint, so there is nothing to gate and no
+technical-role check was invented. `Founder` and `Com tech` exist as role rows and remain
+unreferenced by any service (§2.4). `ColonyRepresentative` was left exactly as found —
+dead, failing closed — for a separate security cleanup.
+
+The hub states the restriction in the UI rather than only in these docs, so nobody hunts
+for a missing button:
+
+> The colony map's layout is fixed. Adding, removing or repositioning a neighborhood is
+> not done from this page.
+
+### 6.7 Behavior change worth reviewing
+
+The scoped tool bars previously showed Message to All, Inbox to All and Access Rights as
+separate buttons beside Update. Those buttons are **gone from the tool bars** and now live
+inside the hub, leaving one Update entry per place — which is both what the brief asked
+for and the original's shape. Their routes are unchanged and still directly reachable.
+
+One user-visible tightening falls out of using the real capability: a Colony Deputy
+previously saw an Access Rights button that would have been refused on POST
+(`canManageAccess` excludes them). They no longer see it. Nothing they could actually do
+has been removed.

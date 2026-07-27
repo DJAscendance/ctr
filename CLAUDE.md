@@ -46,6 +46,21 @@ Five commits (`git log origin/beta..HEAD`):
    no migration). Supported: `block`, `hood`, `colony`, `public` (incl. Mall). Type is
    read from the stored row, so a client cannot steer which scoped check runs.
 5. **`2c6c179`** the follow-ups doc above.
+6. **`15ef35c`** the Update-hierarchy trace and permission matrix. Retracts the
+   follow-ups doc's colony-wizard claim.
+7. **Scoped place Update hubs.** `GET /place/:placeId/update-hub` +
+   `PlaceUpdateHubService` decide capabilities server-side from the **stored** place
+   row; `spa/src/helpers/place-update-hub.helper.ts` holds the tool list as data and
+   `PlaceUpdateHub.vue` renders all three tiers. **Colony/Neighborhood/Block tool bars
+   now expose one Update entry each** — Message to All, Inbox to All and Access Rights
+   moved inside the hub. Inventory and rationale: matrix §6.
+
+**Three things in the hub that look like omissions but are decisions:** there is no
+colony structural-map capability *for anyone including Admin* (the original's map was
+hard-coded template geometry); there is no block create/remove capability (deferred,
+with the permission table already decided in matrix §6.4); and there is no Chat Access
+tile outside homes (no place-tier backend exists). Tests assert each absence, so
+adding one fails rather than ships.
 
 **Sanitizer:** the allowlist previously duplicated in `MessageboardService` and
 `InboxService` now lives once in `api/src/libs/sanitize-user-html.ts`, unchanged.
@@ -75,11 +90,17 @@ templates; colony neighborhood placement was hand-authored `<AREA>` coordinates 
 
 ### Verification state
 
-- SPA `npm test`: **106/106** across 8 suites.
-- API `NODE_ENV=development npx jest`: **267 passed, 5 failed** — those 5 across 4 suites
-  are **identical to the `origin/beta` baseline** (environment-dependent bcrypt/knex),
-  not caused by this lane. Re-check the baseline by stashing before blaming a change.
-- Zero new lint errors. SPA production build succeeds.
+- SPA `npm test`: **123/123** across 9 suites.
+- API `NODE_ENV=development npx jest`: **298 passed, 5 failed** — those 5 across 4 suites
+  (`wallet`, `role.repository`, `member.service`, `club.service`) all fail with
+  `ECONNREFUSED 127.0.0.1:3306` and are **identical to the `origin/beta` baseline**, not
+  caused by this lane. Start MySQL, or re-check the baseline by stashing, before blaming
+  a change.
+- Lint: use `--no-fix`. Zero errors in new files; `BlockTools.vue` 27→14 and
+  `NeighborhoodTools.vue` 20→15 as tab-indented blocks were replaced. **These two files
+  are tab-indented and the config sets `no-tabs: error`** — write new lines with spaces
+  or you will add errors back.
+- SPA production build succeeds (Node 14).
 
 ### Local preview (Node 14 required)
 

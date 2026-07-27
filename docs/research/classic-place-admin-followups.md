@@ -36,6 +36,11 @@ wizard  wizarderror002  wizarderror003  wizardimage  wizardimagesubmit
 wizardinfo  wizardplace  wizardpresent  wizardpresentsubmit  wizardsubmit
 ```
 
+> **Partly addressed 2026-07-27.** The Update *button* and its hub are now built for all
+> three tiers — see
+> [`classic-update-hierarchy-matrix.md`](./classic-update-hierarchy-matrix.md) §6. What
+> remains deferred is only the **child-place management** described in §1a below.
+
 ### 1a. Neighborhood wizard — add / edit / remove blocks
 
 `neighbor?ac=wizardplace` → `neighbor/wizard/place.tmpl` frameset →
@@ -61,6 +66,17 @@ wizardinfo  wizardplace  wizardpresent  wizardpresentsubmit  wizardsubmit
 
 **CTR gap:** there is no way for a Neighborhood Leader or Deputy to create, rename,
 re-icon, reassign or withdraw a block. The hood map is read-only apart from the background.
+
+**Product decision recorded 2026-07-27** (the matrix §6.4 carries the full table): scoped
+Colony Leaders, scoped Colony Deputies and Neighborhood Leaders may create a block;
+**Neighborhood Deputies may not.** This settles the authorization question the RE corpus
+could not answer — the original's gate was a single `owneraccess` bit whose value lived in
+per-place ACL data that survives in no artifact.
+
+Still to be designed before any code: slug generation, seeding the new block's 72 child
+`map_location` lot rows, background and icon defaults, and rollback. `map_location(
+parent_place_id, location, place_id, available)` already models the fixed slot and
+`place.map_icon_index` the classic `IC2` icon.
 
 ### 1b. Colony wizard — **RETRACTED: no colony wizard existed**
 
