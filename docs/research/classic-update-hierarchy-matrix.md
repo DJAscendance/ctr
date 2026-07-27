@@ -566,6 +566,29 @@ No Chat Access tile exists at any tier, and a test asserts no tile's key or labe
 contains "chat". `HomeService.canChatInPlace` is home-scoped by construction (§2.5);
 a place-tier tile would be a button with nothing behind it.
 
+**Product constraint for that future lane, from Ryan, 2026-07-27:** in the homesteading
+hierarchy **you cannot chat in a block.** Chat exists at the **colony** and
+**neighborhood** tiers only. A block is a map of lots you pass through to reach a home,
+not a room.
+
+This narrows the deferred work usefully, and the block half is corroborated by the stock
+action bars. Verified directly:
+
+| Template | Chat entry |
+|---|---|
+| `community/action.tmpl:31-34` | **2D Chat** (`b2dchat.gif` → `ac=place&force=s`) under `#ifdef chataccess` |
+| `neighbor/action.tmpl` | **none** |
+| `block/action.tmpl` | **none** |
+
+So stock CS 4.0 gave a chat entry at the **colony tier only** of the three. That the
+*neighborhood* also had chat is Ryan's product knowledge of Cybertown's own build, not a
+stock behavior — recorded as such rather than claimed from the corpus. The generic ACL
+machinery would have supported any tier (`common/chatrights.tmpl` takes `DTY` as a
+parameter), so stock code alone cannot settle where chat was meaningful.
+
+When place-tier chat is built: **colony and neighborhood only; a block gets no
+chat-access surface at all.**
+
 Access Rights is labelled and described as assigning **leaders and deputies**, never as
 chat — a test pins that too, because conflating the Owner axis with the chat Write axis is
 exactly the error the evidence report §2.2 warns against in the other direction.

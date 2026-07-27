@@ -148,7 +148,16 @@ homes. CTR currently has server-authoritative chat access for homes only.
   'Members' — this includes ALL other jobs, but not visitors."*
 - **Chat Read Access** — the `RI1`–`RI8` + `RRO` axis. CTR has no "may see the chat but not
   speak" concept; adding one is a product decision, not a restoration defect.
-- **Chat access on non-home places** — the item above.
+- **Chat access on non-home places** — the item above. **Scope decided by Ryan
+  2026-07-27: colony and neighborhood tiers only. You cannot chat in a block.** A block
+  is a map of lots you pass through to reach a home, not a room, so it must get no
+  chat-access surface at all. The block half is corroborated by the stock action bars —
+  `community/action.tmpl:31-34` carries a 2D Chat button under `#ifdef chataccess` while
+  `neighbor/action.tmpl` and `block/action.tmpl` carry none. That the *neighborhood* also
+  had chat is Ryan's knowledge of Cybertown's own build rather than a stock behavior:
+  stock CS 4.0 shows a chat entry at the colony tier only, and the generic ACL machinery
+  (`common/chatrights.tmpl`, `DTY` as a parameter) would have supported any tier, so the
+  corpus alone cannot settle where chat was meaningful.
 
 Each is a new authorization surface and interacts with the scoped-role work landed in the
 beta reconciliation lane. They want their own lane, with the same evidence standard.
