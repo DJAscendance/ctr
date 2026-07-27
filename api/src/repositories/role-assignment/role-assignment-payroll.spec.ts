@@ -7,19 +7,23 @@ import { RoleAssignmentRepository } from './role-assignment.repository';
  * Guards the predicate that keeps non-earning roles out of the weekly payroll.
  *
  * getMembersDueRoleCredit's inner join was there only to test "does this member hold a
- * job", with no income filter - so ANY role_assignment row qualified, including roles
- * seeded with income_cc = 0 (Admin is one; place-scoped Home Chat Guest assignments are
- * another). Those members reached giveWeeklyRoleCredit unconditionally, which writes a
- * 0-CityCash `weekly-role-credit` row and stamps last_weekly_role_credit - and, because the
- * batch is capped by `limit`, displaced members who had actually earned pay.
+ * job", with no income filter - so ANY role_assignment row qualified, including roles that
+ * pay nothing (Admin is one; place-scoped Home Chat Guest assignments are another). Those
+ * members reached giveWeeklyRoleCredit unconditionally, which writes a 0-CityCash
+ * `weekly-role-credit` row and stamps last_weekly_role_credit - and, because the batch is
+ * capped by `limit`, displaced members who had actually earned pay.
  *
- * Home chat access would have multiplied that: up to eight assignments per home. Rather
- * than model chat guests as something payroll cannot see, the query now says what its own
- * comment always claimed - only income-bearing roles count as holding a job.
+ * Home chat access would have multiplied that: up to eight assignments per home.
  *
- * Asserted against a recording query builder rather than a live database: what matters is
- * that the income predicate is applied to BOTH the eligibility query and the
- * highest-paying-role lookup, which is exactly what the builder calls express.
+ * The predicate is "pays CityCash OR pays XP", not "pays CityCash". The two are independent
+ * columns, so filtering on CityCash alone would silently stop an XP-only role accruing XP.
+ * No seeded role is XP-only today, which is exactly why that would have gone unnoticed -
+ * hence the explicit test below.
+ *
+ * Asserted against a recording query builder rather than a live database: what matters here
+ * is that the predicate reaches BOTH the eligibility query and the highest-paying-role
+ * lookup. Behaviour against real MySQL is covered by the fixture run recorded in
+ * docs/beta-home-reconciliation.md.
  */
 describe('RoleAssignmentRepository payroll eligibility', () => {
   let calls: Array<{ method: string; args: any[] }>;
@@ -35,7 +39,25 @@ describe('RoleAssignmentRepository payroll eligibility', () => {
       select: record('select'),
       from: record('from'),
       innerJoin: record('innerJoin'),
-      where: record('where'),
+      where: (...args: any[]) => {
+        calls.push({ method: 'where', args });
+        // knex passes a callback for a grouped OR; run it against a nested recorder so the
+        // branches inside the group are captured too.
+        if (typeof args[0] === 'function') {
+          const group: any = {
+            where: (...a: any[]) => {
+              calls.push({ method: 'group.where', args: a });
+              return group;
+            },
+            orWhere: (...a: any[]) => {
+              calls.push({ method: 'group.orWhere', args: a });
+              return group;
+            },
+          };
+          args[0](group);
+        }
+        return builder;
+      },
       whereRaw: record('whereRaw'),
       limit: record('limit'),
       distinct: record('distinct'),
@@ -77,10 +99,28 @@ describe('RoleAssignmentRepository payroll eligibility', () => {
     );
     expect(joinedRole).toBe(true);
 
-    const incomeFilter = whereCalls().some(
-      call => call.args[0] === 'role.income_cc' && call.args[1] === '>' && call.args[2] === 0,
+    // The predicate is a grouped OR: pays CityCash OR pays XP.
+    const ccBranch = calls.some(
+      c => c.method === 'group.where'
+        && c.args[0] === 'role.income_cc' && c.args[1] === '>' && c.args[2] === 0,
     );
-    expect(incomeFilter).toBe(true);
+    const xpBranch = calls.some(
+      c => c.method === 'group.orWhere'
+        && c.args[0] === 'role.income_xp' && c.args[1] === '>' && c.args[2] === 0,
+    );
+    expect(ccBranch).toBe(true);
+    expect(xpBranch).toBe(true);
+  });
+
+  it('does not filter on CityCash alone, which would drop XP-only roles', async () => {
+    await service.getMembersDueRoleCredit(20);
+
+    // A bare .where('role.income_cc','>',0) outside the OR group would silently stop an
+    // XP-only role from ever accruing XP.
+    const bareCcFilter = whereCalls().some(
+      call => call.args[0] === 'role.income_cc',
+    );
+    expect(bareCcFilter).toBe(false);
   });
 
   it('still restricts eligibility to active members', async () => {
@@ -111,10 +151,14 @@ describe('RoleAssignmentRepository payroll eligibility', () => {
 
     await service.getMembersDueRoleCredit(20);
 
-    const incomeFilters = whereCalls().filter(
-      call => call.args[0] === 'role.income_cc' && call.args[1] === '>' && call.args[2] === 0,
+    const ccBranches = calls.filter(
+      c => c.method === 'group.where' && c.args[0] === 'role.income_cc',
     );
-    // One on the eligibility query, one on the per-member role lookup.
-    expect(incomeFilters.length).toBeGreaterThanOrEqual(2);
+    const xpBranches = calls.filter(
+      c => c.method === 'group.orWhere' && c.args[0] === 'role.income_xp',
+    );
+    // One group on the eligibility query, one on the per-member role lookup.
+    expect(ccBranches.length).toBeGreaterThanOrEqual(2);
+    expect(xpBranches.length).toBeGreaterThanOrEqual(2);
   });
 });

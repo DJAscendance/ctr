@@ -158,13 +158,18 @@ export class RoleAssignmentRepository {
    * then the for function will gather the highest paying role information per user
    * the for function also packages all the information for the return
    *
-   * "Holding a job" means holding an INCOME-BEARING role. Without that predicate ANY
-   * role_assignment row qualified a member for payroll, including roles seeded with
-   * income_cc = 0 - Admin is one, and place-scoped Home Chat Guest assignments are another.
+   * "Holding a job" means holding a role that PAYS SOMETHING. Without that predicate ANY
+   * role_assignment row qualified a member for payroll, including roles seeded with no
+   * income at all - Admin is one, and place-scoped Home Chat Guest assignments are another.
    * Such a member reached giveWeeklyRoleCredit unconditionally, which wrote a 0-CityCash
    * `weekly-role-credit` row and stamped last_weekly_role_credit. The batch is capped
    * (`limit`), so those rows also displaced members who had actually earned pay. Filtering
    * on income makes this query do what its own comment always claimed.
+   *
+   * "Pays something" is deliberately income_cc OR income_xp, not income_cc alone. The two
+   * are independent columns, so a role could reward XP without CityCash; filtering on
+   * CityCash alone would silently stop such a role accruing XP. No seeded role is XP-only
+   * today, which is exactly why the narrower predicate would have gone unnoticed.
    * @param limit
    * @returns list of users with jobs that earned pay
    */
@@ -179,7 +184,9 @@ export class RoleAssignmentRepository {
       .innerJoin('role_assignment', 'member.id', 'role_assignment.member_id')
       .innerJoin('role', 'role_assignment.role_id', 'role.id')
       .where('member.status', 1)
-      .where('role.income_cc', '>', 0)
+      .where(builder => builder
+        .where('role.income_cc', '>', 0)
+        .orWhere('role.income_xp', '>', 0))
       .whereRaw('DATE(member.last_weekly_role_credit) != DATE(NOW())')
       .whereRaw('DATE(member.last_daily_login_credit) >= DATE(NOW() - INTERVAL 7 DAY)')
       .limit(limit)
@@ -197,8 +204,13 @@ export class RoleAssignmentRepository {
         .from('role_assignment')
         .innerJoin('role', 'role_assignment.role_id', 'role.id')
         .where('role_assignment.member_id', member_info.id)
-        .where('role.income_cc', '>', 0)
+        .where(builder => builder
+          .where('role.income_cc', '>', 0)
+          .orWhere('role.income_xp', '>', 0))
+        // Secondary sort so that among roles paying the same CityCash - including several
+        // paying none - the one granting the most XP wins, rather than an arbitrary row.
         .orderBy('role.income_cc','desc')
+        .orderBy('role.income_xp','desc')
         .first();
       if (role_info) {
         results[index] = {
