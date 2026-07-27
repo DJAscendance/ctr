@@ -4,48 +4,88 @@ import { Container } from 'typedi';
 
 import * as badwords from 'badwords-list';
 import { Place } from 'models';
+import { SessionInfo } from 'session-info.interface';
 
-class PlaceController {
+export class PlaceController {
   constructor(
     private placeService: PlaceService, 
     private memberService: MemberService,
     private homeService: HomeService,
   ) {}
 
-  /** Get Admin status for the specific place's slug */
+  /**
+   * Get Admin status for the specific place's slug.
+   *
+   * The response contract, by condition:
+   *   missing / malformed / expired token -> 401 { error }
+   *   missing or non-string slug          -> 400 { error }
+   *   non-numeric explicit place id       -> 400 { error }
+   *   slug matches no place               -> 404 { error }
+   *   authenticated, not an admin         -> 200 { result: false }
+   *   authenticated administrator         -> 200 { result: true }
+   *   repository / database failure       -> 500 { error }
+   *
+   * Three things this deliberately does NOT do. It does not answer 400 for an
+   * authentication problem - that is a 401, and the two are not interchangeable to a
+   * caller deciding whether to re-authenticate. It does not collapse an internal failure
+   * into `result: false`, which would silently present an outage as "you are not an
+   * admin" and hide it from monitoring. And it does not put the caught error in the body:
+   * the previous `json({ error })` serialized whatever was thrown, which for a knex
+   * failure can carry the SQL and connection details.
+   *
+   * Only the HTTP contract changes here. Who counts as an admin is decided entirely by
+   * PlaceService.canAdmin, which is untouched, so Block, Neighborhood, Colony, Mall,
+   * security and home scoping all behave exactly as before.
+   */
   public async canAdmin(request: Request, response: Response): Promise<void> {
     const { apitoken } = request.headers;
-    const { slug} = request.params;
-    const { id } = request.params;
+    const { slug, id } = request.params;
+
+    // Authenticate first: a missing or bad token is an authentication failure regardless of
+    // whether the rest of the request is well-formed, and nothing about the token is echoed.
+    if (!apitoken || typeof apitoken !== 'string') {
+      response.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    let session: SessionInfo;
+    try {
+      session = this.memberService.decodeMemberToken(apitoken);
+    } catch (error) {
+      response.status(401).json({ error: 'Invalid or expired token.' });
+      return;
+    }
+    if (!session) {
+      response.status(401).json({ error: 'Invalid or expired token.' });
+      return;
+    }
 
     if (!slug || typeof slug !== 'string') {
       response.status(400).json({ error: 'invalid or missing place slug' });
-    }
-
-    // the following is needed to make sure shops find the mall's place id
-    let place_id = 0;
-    if (id === undefined) {
-      const place = await this.placeService.findBySlug(slug);
-      place_id = place.id;
-    } else {
-      place_id = Number.parseInt(id);
+      return;
     }
 
     try {
-      const session = this.memberService.decodeMemberToken(<string>apitoken);
-      if (!session) {
-        response.status(400).json({
-          error: 'Invalid or missing token.',
-        });
-        return;
+      // the following is needed to make sure shops find the mall's place id
+      let place_id: number;
+      if (id === undefined) {
+        const place = await this.placeService.findBySlug(slug);
+        if (!place) {
+          response.status(404).json({ error: 'Place not found.' });
+          return;
+        }
+        place_id = place.id;
+      } else {
+        place_id = Number.parseInt(id);
+        if (Number.isNaN(place_id)) {
+          response.status(400).json({ error: 'invalid place id' });
+          return;
+        }
       }
       const result = await this.placeService.canAdmin(slug, place_id, session.id);
-      console.log(result);
       response.status(200).json({ result });
-      return;
     } catch (error) {
-      console.error(error);
-      response.status(400).json({ error });
+      console.error('place.canAdmin failed', error);
+      response.status(500).json({ error: 'Unable to determine admin status.' });
     }
   }
 
