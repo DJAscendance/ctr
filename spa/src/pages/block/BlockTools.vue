@@ -19,27 +19,20 @@
 		</router-link>
 		<br />
 		<br />
-		<div v-if="canAdmin && this.$store.data.place.block">
-			<router-link :to="{ name: 'blockMessageToAll' }" class="btn-ui">
-        Message to All</router-link>
-      <router-link :to="{ name: 'blockInboxToAll'}"
-         class="btn-ui">Inbox to All</router-link>
-			<router-link
-				:to="'/block/' + this.$store.data.place.block.id + '/wizard'"
-				class="btn-ui"
-			>
-				Update
-			</router-link>
-      <span
-        class="btn-ui"
-        title="Check Images"
-        v-on:click="opener('#/home/image-check')"
-      >Check</span>
-			<router-link
-				:to="{ name: 'blockaccessrights' }"
-				class="btn-ui"
-				>Access Rights</router-link>
-		</div>
+    <!--
+      One Update entry, drawn only when the server grants at least one capability
+      at this block. Message to All, Inbox to All, Access Rights, Information, lot
+      availability, the map background and Check Images now live inside the hub
+      rather than as separate buttons here. This restores the original shape:
+      blaxxun CS 4.0 templates/block/action.tmpl:37-41 put a single Update button
+      behind #ifdef owneraccess, opening the block wizard. Archived in production
+      as block?ac=wizardplace.
+    -->
+    <div v-if="hubAvailable && this.$store.data.place.block">
+      <router-link :to="{ name: 'blockUpdate' }" class="btn-ui">
+        Update
+      </router-link>
+    </div>
 		<br />
 	</div>
 </template>
@@ -51,19 +44,24 @@ export default Vue.extend({
   name: "BlockTools",
   data: () => {
     return {
-      canAdmin: false,
+      hubAvailable: false,
       loaded: false,
     };
   },
   methods: {
-    async checkAdmin() {
+    /**
+     * Whether this block offers an Update hub to this member. 200 means at least
+     * one capability was granted; 403 means none, and no entry is drawn.
+     * Presentational only - the hub and every tool inside it re-check server-side.
+     */
+    async checkHub() {
       try {
-        const adminCheck = await this.$http.get(
-          `/block/${  this.$store.data.place.block.id  }/can_admin`,
+        await this.$http.get(
+          `/place/${this.$store.data.place.block.id}/update-hub`,
         );
-        this.canAdmin = adminCheck;
+        this.hubAvailable = true;
       } catch (e) {
-        console.log(e);
+        this.hubAvailable = false;
       }
     },
     async opener(link) {
@@ -71,14 +69,18 @@ export default Vue.extend({
     },
   },
   mounted() {
-    this.checkAdmin();
+    // BlockPage populates the store asynchronously, so on first mount there may
+    // be no block yet; the watcher below runs the check once there is one.
+    if (this.$store.data.place.block) {
+      this.checkHub();
+    }
   },
   watch: {
     "$store.data.place.block": {
       handler() {
         if (this.$store.data.place.block) {
           this.loaded = true;
-          this.checkAdmin();
+          this.checkHub();
         }
       },
     },
