@@ -17,7 +17,8 @@ Branched from `origin/beta` @ `76cb514`. Worktree:
 | Document | What it is |
 |---|---|
 | [`docs/research/classic-place-admin-re-evidence.md`](docs/research/classic-place-admin-re-evidence.md) | The approved reverse-engineering evidence report. CS 4.0 / 5.1 / 7.0 traced against the Wayback scrape. **This is the behavioral specification** for the three features below — do not re-derive it. |
-| [`docs/research/classic-place-admin-followups.md`](docs/research/classic-place-admin-followups.md) | Deferred work, with the same evidence standard. Read before proposing anything in this area. |
+| [`docs/research/classic-place-admin-followups.md`](docs/research/classic-place-admin-followups.md) | Deferred work, with the same evidence standard. Read before proposing anything in this area. **§1b is retracted** — see the matrix below. |
+| [`docs/research/classic-update-hierarchy-matrix.md`](docs/research/classic-update-hierarchy-matrix.md) | The Colony → Neighborhood → Block Update hierarchy trace, the full permission matrix, and the CTR authorization audit. Corrects the follow-ups doc's colony-wizard claim. |
 | `~/Projects/cybertown/.qa/ctr/classic-place-admin-fidelity/` | Ten review screenshots (not in git). |
 
 The single most load-bearing finding: **Cybertown ran the CS 4.0-lineage web/CGI
@@ -59,10 +60,18 @@ a *place* description is staff-written, server-sanitized, and renders as HTML in
 ### Deliberately deferred — recorded, not forgotten
 
 See the follow-ups doc for evidence. In short: the place **UPDATE button** was an
-umbrella Update Wizard (add/edit/remove blocks and neighborhoods, colony tier included —
-`community.exe` carries the handlers); **chat access for non-home places**; **job-wide
-`WRO` chat grants**; **Chat Read Access**. Also unsupported by design: place information
-for shops, clubs, homes and storage.
+umbrella Update Wizard at the **neighborhood and block tiers only**; **chat access for
+non-home places**; **job-wide `WRO` chat grants**; **Chat Read Access**. Also unsupported
+by design: place information for shops, clubs, homes and storage.
+
+**Corrected 2026-07-27 —** the follow-ups doc previously claimed a *colony* wizard existed
+because `community.exe` carries `ccgi_home_wizard*` symbols. It does not: those symbols are
+a shared linked module present identically in `property.exe`, which has no wizard. Stock
+CS 4.0 has no colony Update button, no colony wizard dispatch and no colony wizard
+templates; colony neighborhood placement was hand-authored `<AREA>` coordinates in
+`community/present.tmpl`. Full trace in
+[`docs/research/classic-update-hierarchy-matrix.md`](docs/research/classic-update-hierarchy-matrix.md).
+**Colony structural editing is intentionally unavailable, not deferred.**
 
 ### Verification state
 

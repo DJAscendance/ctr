@@ -62,35 +62,47 @@ wizardinfo  wizardplace  wizardpresent  wizardpresentsubmit  wizardsubmit
 **CTR gap:** there is no way for a Neighborhood Leader or Deputy to create, rename,
 re-icon, reassign or withdraw a block. The hood map is read-only apart from the background.
 
-### 1b. Colony wizard — add / edit / remove neighborhoods
+### 1b. Colony wizard — **RETRACTED: no colony wizard existed**
 
-Ryan's recollection that colony leaders and deputies could add neighborhoods to a colony is
-**confirmed by the binary**, even though this 4.0 install ships no colony wizard templates
-(`install-4.0/csbin/community/templates/community/` has `action`, `error`, `index`, `info`,
-`mapinfo`, `place`, `present`, `rolem` — no `wizard/` directory; Cybertown supplied its own):
+> **This section previously claimed the colony wizard was "confirmed by the binary". That
+> was wrong.** The claim rested on `ccgi_home_wizard*` symbols appearing in
+> `community.exe`. Those symbols are a statically linked shared module present
+> byte-identically in *every* CGI in the family — including `property.exe`, which
+> unambiguously has no wizard. Symbol presence proves link-time inclusion, nothing more.
+>
+> Corrected and re-traced in
+> [`classic-update-hierarchy-matrix.md`](./classic-update-hierarchy-matrix.md) §0.1–§0.3.
+> Retained here so the retraction is visible rather than silently overwritten.
+
+The real dispatch evidence is the **tier-specific** `<cgi>_wizard*` strings and the
+`<tier>/wizard/*.tmpl` template references. Colony has neither:
 
 ```
-$ strings install-4.0/csbin/community/community.exe | grep -i 'ccgi_home_'
-ccgi_home_action        ccgi_home_checkread   ccgi_home_imageput
-ccgi_home_present       ccgi_home_printmedia  ccgi_home_wizard
-ccgi_home_wizardloop    ccgi_home_wizardpresent  ccgi_home_wizardsubmit
-
-$ strings install-4.0/csbin/community/community.exe | grep -i neighbor
-list neighborhood keys: id=%s
+$ strings install-4.0/csbin/community/community.exe | grep -o './log/[a-z_0-9]*\.log'
+./log/ccgi_home_imageput.log  ./log/comm_action.log   ./log/comm_place.log
+./log/community.log           ./log/comm_uplins.log   ./log/comm_uplinssubmit.log
+./log/comm_upllist.log
 ```
 
-So `community.exe` — the colony/community CGI — carries the same
-`wizard` / `wizardpresent` / `wizardsubmit` handler family as `neighbor.exe` and
-`block.exe`, and enumerates neighborhood keys. The colony tier of the same wizard existed;
-only its templates are absent from this corpus.
+No `comm_wizard*`; no `community/wizard/*.tmpl` referenced anywhere in the binary. Nor is
+there an Update button to reach one — `community/action.tmpl`'s entire `#ifdef owneraccess`
+branch is a single Group Message link, where `neighbor/action.tmpl:43-44` and
+`block/action.tmpl:37-41` both carry `bupdate.gif` → `ac=wizardplace`.
 
-**Follow-up needed:** recover the colony wizard's template shape, either from a Cybertown
-Wayback capture of `/cgi-bin/cybertown/community?ac=wizard*` (the CDX index in
-`wb-ct-scrape/manifests/` is the place to look) or by decompiling `ccgi_home_wizard` /
-`ccgi_home_wizardpresent` in `community.exe`. Do not implement from the neighborhood
-template by analogy without checking — the colony map geometry differs.
+The colony CGI's only mutating family is `uplins` / `upload` / `upldel` — an asset upload
+manager (`community/upl2di.tmpl`, `upl2dw`, `upl3di`, `upl3dw`) that stocks the media
+library feeding the icon and background pickers. It is not a map editor.
 
-**CTR gap:** no colony-level management of neighborhoods at all.
+Colony neighborhood placement was a **hard-coded HTML image map**: literal, hand-tuned
+pixel coordinates in `community/present.tmpl` over a per-colony `community.jpg`. Changing
+a colony's layout meant editing that template and the JPEG on the server — a filesystem
+operation, not a product feature available to any role.
+
+**No follow-up lane is needed.** Colony structural editing is not deferred work; it is
+correctly classified *intentionally unavailable*, and this independently confirms Ryan's
+product rule that Colony Leaders and Deputies must not alter colony map structure.
+
+**CTR gap:** none. Colony-level neighborhood management should not be built.
 
 ---
 
