@@ -1,7 +1,7 @@
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
-import { knex } from 'knex';
+import { Knex } from 'knex';
 import { RoleAssignment } from '../../types/models';
 
 /** Repository for fetching/interacting with role assignment data in the database. */
@@ -157,6 +157,14 @@ export class RoleAssignmentRepository {
    * the inner join is just there to check for holding a job
    * then the for function will gather the highest paying role information per user
    * the for function also packages all the information for the return
+   *
+   * "Holding a job" means holding an INCOME-BEARING role. Without that predicate ANY
+   * role_assignment row qualified a member for payroll, including roles seeded with
+   * income_cc = 0 - Admin is one, and place-scoped Home Chat Guest assignments are another.
+   * Such a member reached giveWeeklyRoleCredit unconditionally, which wrote a 0-CityCash
+   * `weekly-role-credit` row and stamped last_weekly_role_credit. The batch is capped
+   * (`limit`), so those rows also displaced members who had actually earned pay. Filtering
+   * on income makes this query do what its own comment always claimed.
    * @param limit
    * @returns list of users with jobs that earned pay
    */
@@ -169,7 +177,9 @@ export class RoleAssignmentRepository {
       )
       .from('member')
       .innerJoin('role_assignment', 'member.id', 'role_assignment.member_id')
+      .innerJoin('role', 'role_assignment.role_id', 'role.id')
       .where('member.status', 1)
+      .where('role.income_cc', '>', 0)
       .whereRaw('DATE(member.last_weekly_role_credit) != DATE(NOW())')
       .whereRaw('DATE(member.last_daily_login_credit) >= DATE(NOW() - INTERVAL 7 DAY)')
       .limit(limit)
@@ -187,6 +197,7 @@ export class RoleAssignmentRepository {
         .from('role_assignment')
         .innerJoin('role', 'role_assignment.role_id', 'role.id')
         .where('role_assignment.member_id', member_info.id)
+        .where('role.income_cc', '>', 0)
         .orderBy('role.income_cc','desc')
         .first();
       if (role_info) {
@@ -213,6 +224,77 @@ export class RoleAssignmentRepository {
       .where('member_id', memberId)
       .where('role_id', roleId)
       .del();
+  }
+
+  /**
+   * Lists the usernames holding a given role AT a given place. Used for a home's chat guest
+   * list, where the (place, role) pair is the whole scope - a guest of one home is never
+   * returned for another.
+   * @param placeId place the role is scoped to
+   * @param roleId role to list holders of
+   */
+  public async getUsernamesByRoleAndPlace(placeId: number, roleId: number): Promise<any[]> {
+    return this.db.knex('role_assignment')
+      .select('member.username')
+      .where('role_assignment.place_id', placeId)
+      .where('role_assignment.role_id', roleId)
+      .innerJoin('member', 'role_assignment.member_id', 'member.id');
+  }
+
+  /**
+   * Lists the raw assignments of a role at a place. Returns member ids rather than
+   * usernames, so an access check can compare against a token-derived member id without
+   * ever resolving - or exposing - who else is on the list.
+   * @param placeId place the role is scoped to
+   * @param roleId role to list
+   */
+  public async findByPlaceAndRole(placeId: number, roleId: number): Promise<any[]> {
+    return this.db.knex('role_assignment')
+      .select('member_id')
+      .where('place_id', placeId)
+      .where('role_id', roleId);
+  }
+
+  /**
+   * Removes every assignment of one role at one place, inside an existing transaction.
+   *
+   * Scoped to BOTH place and role on purpose: it must never touch a different home's guest
+   * list, and never a different role at the same place. Used to replace a guest list
+   * atomically (clear then insert in one transaction, so there is no moment where the home
+   * is unrestricted) and by home reset.
+   * @param trx transaction handle
+   * @param placeId place the role is scoped to
+   * @param roleId role to clear
+   */
+  public async removeAllForPlaceAndRoleWithin(
+    trx: Knex.Transaction,
+    placeId: number,
+    roleId: number,
+  ): Promise<void> {
+    await trx('role_assignment')
+      .where('place_id', placeId)
+      .where('role_id', roleId)
+      .del();
+  }
+
+  /**
+   * Adds a place-scoped role assignment inside an existing transaction.
+   * @param trx transaction handle
+   * @param placeId place to scope the assignment to
+   * @param memberId member receiving it
+   * @param roleId role being assigned
+   */
+  public async addIdToAssignmentWithin(
+    trx: Knex.Transaction,
+    placeId: number,
+    memberId: number,
+    roleId: number,
+  ): Promise<void> {
+    await trx('role_assignment').insert({
+      role_id: roleId,
+      member_id: memberId,
+      place_id: placeId,
+    });
   }
 
   public async countByAssigned(id: number): Promise<any> {
