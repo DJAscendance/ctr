@@ -719,6 +719,11 @@ proposed.
 - The 7.0 rights decompile applying to 5.1 — same engine generation and template family,
   but the decompile itself was run on 7.0 binaries.
 
+**Deferred to follow-up lanes:** recorded with evidence in
+[`classic-place-admin-followups.md`](./classic-place-admin-followups.md) — the place
+Update Wizard (add/edit/remove blocks and neighborhoods, colony tier included), chat access
+for non-home places, job-wide chat grants, and Chat Read Access.
+
 **Open / not resolved:**
 - Whether shops and clubs rendered `TXT` in their info pages under the 4.0 lineage (§4.5).
 - The exact admin-override predicate inside `edit_docfg` (§1.3) — flagged as un-line-traced
