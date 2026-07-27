@@ -164,6 +164,48 @@ export class HomeService {
 
   }
 
+  /**
+   * Maximum length of the description a member may set for their home. Enforced
+   * server-side; the SPA's textarea maxlength is a convenience, not the boundary.
+   */
+  public static readonly INFORMATION_MAX_LENGTH = 1000;
+
+  /**
+   * Gets the description a home's owner has set, for display to visitors through the
+   * "Information" tool. Returns an empty string for a place that does not exist or is not
+   * a home, so a caller can never use this endpoint to read a club's or block's
+   * description through the home route.
+   * @param placeId id of the home's place record
+   */
+  public async getHomeInformation(placeId: number): Promise<string> {
+    const place = await this.placeRepository.findById(placeId);
+    if (!place || place.type !== 'home') {
+      return '';
+    }
+    return place.description || '';
+  }
+
+  /**
+   * Updates the description shown on a member's home page. The home is resolved from the
+   * authenticated member id - never from a client-supplied place or member id - so a
+   * caller can only ever edit their own home, and a member without a home is rejected
+   * rather than silently updating nothing.
+   * @param memberId id of the home's owner
+   * @param houseDescription new description text (an empty string is a valid, intentional
+   *   value that clears the description)
+   */
+  public async updateHomeInformation(memberId: number, houseDescription: string): Promise<void> {
+    const home = await this.placeRepository.findHomeByMemberId(memberId);
+    if (!home) {
+      throw new Error('You don\'t have a home yet.');
+    }
+
+    await this.placeRepository.updateHomeByMemberId(
+      memberId,
+      { description: houseDescription },
+    );
+  }
+
   /** Uploaded home images are normalized to at most this many pixels per side. */
   public static readonly IMAGE_MAX_DIMENSION = 200;
 

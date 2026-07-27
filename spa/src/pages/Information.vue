@@ -17,6 +17,16 @@
         </div>
       </div>
     </div>
+    <!--
+      A home's Information is the free text its owner wrote. It is rendered through Vue's
+      text interpolation (never v-html), so any markup a citizen types is escaped and
+      displayed literally rather than executed. pre-wrap preserves the owner's line breaks.
+    -->
+    <div
+      class="h-full w-full bg-black flex flex-col"
+      style="padding: 10px; white-space: pre-wrap;"
+      v-else-if="$route.params.type === 'home'"
+    >{{ homeDescription || 'This citizen has not added any information yet.' }}</div>
     <div class="h-full w-full bg-black flex flex-col" style="padding: 10px" v-else>
       <div>
         Leader<br/>
@@ -48,12 +58,20 @@ export default Vue.extend({
       owner: null,
       deputies: [],
       securityInfo: {},
+      homeDescription: null,
     };
   },
   methods: {
     async getData(): Promise<void> {
       let infopoint = null;
       switch (this.$route.params.type) {
+      case "home":
+        // Homes have no leader/deputy structure - the Information tool shows the owner's
+        // own description instead, so this branch returns before the access-info fetch.
+        this.$http.get(`/home/information/${this.$route.params.id}`).then((response) => {
+          this.homeDescription = response.data.description;
+        });
+        return;
       case "block":
         infopoint = `/block/${
           this.$route.params.id

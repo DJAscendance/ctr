@@ -332,6 +332,77 @@ export class HomeController {
     }
   }
 
+  /**
+   * Returns the description a home's owner has published, for the Information popup. Any
+   * authenticated citizen may read it - it is content the owner chose to publish on their
+   * own home page. A non-home place resolves to an empty description rather than leaking
+   * another place type's data through this route.
+   */
+  public async getHomeInformation(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { placeId } = request.params;
+
+    try {
+      if (!validator.isInt(placeId)) {
+        throw new Error('placeId must be passed');
+      }
+
+      const description = await this.homeService.getHomeInformation(parseInt(placeId));
+      response.status(200).json({ description });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
+   * Updates the authenticated member's own home description. The home is resolved from the
+   * session inside HomeService - the request body carries only the text, so there is no
+   * member id, home id or username a caller could substitute to edit someone else's home.
+   * An empty description is allowed and intentionally clears the text.
+   */
+  public async updateHomeInformation(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { houseDescription } = request.body;
+
+    try {
+      // Accept only a string or an omitted value. Without this an array or object body
+      // would reach .match()/the database as a non-string and fail confusingly (or, for an
+      // array, bypass the length check entirely).
+      if (
+        typeof houseDescription !== 'undefined'
+        && houseDescription !== null
+        && typeof houseDescription !== 'string'
+      ) {
+        throw new Error('Description must be text.');
+      }
+
+      const description = houseDescription || '';
+
+      if (description.length > HomeService.INFORMATION_MAX_LENGTH) {
+        throw new Error(
+          `Description must be ${HomeService.INFORMATION_MAX_LENGTH} characters or fewer.`,
+        );
+      }
+
+      const bannedwords = badwords.regex;
+      if (description.match(bannedwords)) {
+        throw new Error('This language can not be used on CTR!');
+      }
+
+      await this.homeService.updateHomeInformation(session.id, description);
+
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
   public async uploadImage(request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;

@@ -70,7 +70,7 @@ export default Vue.extend({
         {
           img: '/assets/img/homes/updinfo.jpg',
           label: 'Information',
-          link: '',
+          link: '/home/update/information',
         },
         {
           img: '/assets/img/homes/updimage.jpg',

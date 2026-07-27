@@ -18,6 +18,10 @@ homeRoutes.post('/moderation/:placeId/approve',
   (request, response) => homeController.approveImage(request, response));
 homeRoutes.post('/moderation/:placeId/reject',
   (request, response) => homeController.rejectImage(request, response));
+// Must stay above the '/:username' catch-all below, which would otherwise match
+// 'information' as a username.
+homeRoutes.get('/information/:placeId',
+  (request, response) => homeController.getHomeInformation(request, response));
 homeRoutes.get('/:username',
   (request, response) => homeController.getHome(request, response));
 homeRoutes.post('/settle',
@@ -26,6 +30,8 @@ homeRoutes.post('/move',
   (request, response) => homeController.moveHome(request, response));
 homeRoutes.post('/update',
   (request, response) => homeController.updateHome(request, response));
+homeRoutes.post('/update-information',
+  (request, response) => homeController.updateHomeInformation(request, response));
 homeRoutes.post('/upload-image',
   (request, response) => homeController.uploadImage(request, response));
 homeRoutes.post('/remove-image',
