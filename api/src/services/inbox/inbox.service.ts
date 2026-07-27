@@ -1,7 +1,7 @@
 import { Service } from 'typedi';
 
 import { InboxRepository } from '../../repositories';
-import sanitizeHtml from 'sanitize-html';
+import { sanitizeUserHtml } from '../../libs';
 
 /** Service for dealing with messages on message boards */
 @Service()
@@ -79,97 +79,15 @@ export class InboxService {
     );
   }
 
+  /**
+   * Cleans a message body against the shared user-HTML allowlist.
+   *
+   * The policy itself now lives in libs/sanitize-user-html.ts, where
+   * MessageboardService reads it from too. The allowlist is unchanged by that
+   * move.
+   */
   public async sanitize(uncleanInfo: string): Promise<any> {
-    const cleanInfo = sanitizeHtml(uncleanInfo, {
-      allowedTags: [
-        'address',
-        'article',
-        'aside',
-        'footer',
-        'header',
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'h5',
-        'h6',
-        'hgroup',
-        'main',
-        'nav',
-        'section',
-        'blockquote',
-        'dd',
-        'div',
-        'dl',
-        'dt',
-        'figcaption',
-        'figure',
-        'hr',
-        'li',
-        'main',
-        'ol',
-        'p',
-        'pre',
-        'ul',
-        'a',
-        'abbr',
-        'b',
-        'bdi',
-        'bdo',
-        'br',
-        'cite',
-        'code',
-        'data',
-        'dfn',
-        'em',
-        'i',
-        'kbd',
-        'mark',
-        'marquee',
-        'q',
-        'rb',
-        'rp',
-        'rt',
-        'rtc',
-        'ruby',
-        's',
-        'samp',
-        'small',
-        'span',
-        'strong',
-        'sub',
-        'sup',
-        'time',
-        'u',
-        'var',
-        'wbr',
-        'caption',
-        'col',
-        'colgroup',
-        'table',
-        'tbody',
-        'td',
-        'tfoot',
-        'th',
-        'thead',
-        'tr',
-        'img',
-        'font',
-        'center',
-        'map',
-        'area',
-      ],
-      disallowedTagsMode: 'discard',
-      allowedAttributes: {
-        a: ['href', 'name', 'target'],
-        img: ['src', 'srcset', 'alt', 'title', 'width', 'height', 'usemap'],
-        font: ['color', 'size'],
-        map: ['name'],
-        area: ['alt', 'title', 'href', 'coords', 'shape', 'target', 'class'],
-        marquee: ['width', 'height', 'direction'],
-      },
-    });
-    return cleanInfo;
+    return sanitizeUserHtml(uncleanInfo);
   }
   public async getMessage(messageId: number): Promise<any> {
     return await this.inboxRepository.getMessage(messageId);

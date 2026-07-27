@@ -4,7 +4,7 @@ import {
   MessageboardRepository,
   ColonyRepository,
 } from '../../repositories';
-import sanitizeHtml from 'sanitize-html';
+import { sanitizeUserHtml } from '../../libs';
 import {forEach} from "lodash";
 
 /** Service for dealing with messages on message boards */
@@ -92,31 +92,17 @@ export class MessageboardService {
       .postMessageboardReply(memberId, placeId, subject, message, parentId);
   }
   
+  /**
+   * Cleans a post body against the shared user-HTML allowlist.
+   *
+   * The policy itself now lives in libs/sanitize-user-html.ts. It used to be
+   * restated here and, character for character, again in InboxService - two
+   * copies of one security decision. The allowlist is unchanged by that move.
+   */
   public async sanitize(
     uncleanInfo: string,
   ): Promise<any>{
-    const cleanInfo = sanitizeHtml(uncleanInfo, {
-      allowedTags: [
-        'address', 'article', 'aside', 'footer', 'header', 'h1', 'h2', 'h3', 'h4',
-        'h5', 'h6', 'hgroup', 'main', 'nav', 'section', 'blockquote', 'dd', 'div',
-        'dl', 'dt', 'figcaption', 'figure', 'hr', 'li', 'main', 'marquee', 'ol', 'p', 'pre',
-        'ul', 'a', 'abbr', 'b', 'bdi', 'bdo', 'br', 'cite', 'code', 'data', 'dfn',
-        'em', 'i', 'kbd', 'mark', 'q', 'rb', 'rp', 'rt', 'rtc', 'ruby', 's', 'samp',
-        'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var', 'wbr', 'caption',
-        'col', 'colgroup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'img',
-        'font', 'center', 'map', 'area',
-      ],
-      disallowedTagsMode: 'discard',
-      allowedAttributes: {
-        a: [ 'href', 'name', 'target' ],
-        img: [ 'src', 'srcset', 'alt', 'title', 'width', 'height', 'usemap' ],
-        font: [ 'color', 'size' ],
-        map: [ 'name' ],
-        area: [ 'alt', 'title', 'href', 'coords', 'shape', 'target', 'class' ],
-        marquee: ['width', 'height', 'direction'],
-      },
-    });
-    return cleanInfo;
+    return sanitizeUserHtml(uncleanInfo);
   }
   public async getMessage(
     messageId: number,

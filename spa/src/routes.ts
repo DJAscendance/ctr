@@ -13,6 +13,7 @@ import WorldPage from "@/pages/world-browser/WorldPage.vue";
 import WorldBrowserPage from "./pages/world-browser/WorldBrowserPage.vue";
 import WorldBrowserTools from "./pages/world-browser/WorldBrowserTools.vue";
 import CityMapPage from "./pages/CityMapPage.vue";
+import PlaceUpdateInformationPage from "@/pages/place/PlaceUpdateInformationPage.vue";
 import InformationPage from "./pages/Information.vue";
 import NeighborhoodPage from "./pages/neighborhood/NeighborhoodPage.vue";
 import NeighborhoodMapPage from "./pages/neighborhood/NeighborhoodMapPage.vue";
@@ -450,6 +451,18 @@ export default [
     },
     name: "inbox",
     meta: { wrapper: false },
+  },
+  {
+    // Staff-managed place information. The place id is the only route input; the
+    // server reads the place TYPE from the stored row to decide which scoped
+    // staff check applies, so a client cannot steer authorization from here.
+    path: "/place/:placeId/information/update",
+    component: PlaceUpdateInformationPage,
+    name: "place-update-information",
+    meta: {
+      title: "Update Information",
+      wrapper: false,
+    },
   },
   {
     path: "/information/:type/:id/:slug?",

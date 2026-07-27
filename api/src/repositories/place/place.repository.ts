@@ -136,6 +136,16 @@ export class PlaceRepository {
       .update({ map_background_index: index });
   }
 
+  /**
+   * Writes a place's staff-authored information text. The value must already be
+   * sanitized - this layer stores exactly what it is given.
+   */
+  public async updateDescription(placeId: number, description: string): Promise<void> {
+    await this.db.place
+      .where({ id: placeId })
+      .update({ description });
+  }
+
   public async updatePlaces(placeinfo: any): Promise<void> {
     const { id, created_at, updated_at, ...updateData } = placeinfo;
 

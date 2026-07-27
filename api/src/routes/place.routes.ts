@@ -11,6 +11,12 @@ placeRoutes.get('/can_manage_access/:slug/:id?',
   (request, response) => placeController.canManageAccess(request, response));
 placeRoutes.get('/getAccessInfo/:slug/:id?',
   (request, response) => placeController.getAccessInfoByUsername(request, response));
+placeRoutes.get('/:placeId/information',
+  (request, response) => placeController.getInformation(request, response));
+placeRoutes.get('/:placeId/information/can_edit',
+  (request, response) => placeController.canEditInformation(request, response));
+placeRoutes.put('/:placeId/information',
+  (request, response) => placeController.updateInformation(request, response));
 placeRoutes.get('/getSecurityInfo',
   (request, response) => placeController.getSecurityInfo(request, response));
 placeRoutes.get('/:placeId/object_instance',
