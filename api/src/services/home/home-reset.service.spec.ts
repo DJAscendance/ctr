@@ -48,6 +48,8 @@ describe('HomeService reset', () => {
   const WALLET_ID = 77;
   const BLOCK_ID = 1369;
   const NEW_LOT = 31;
+  // Intentionally NOT 192 - the guest role must be resolved by name.
+  const GUEST_ROLE_ID = 4711;
 
   /** The home row as the transaction's FOR UPDATE read sees it. */
   let lockedHome: any;
@@ -94,6 +96,8 @@ describe('HomeService reset', () => {
       { id: MEMBER_ID, username: 'Citizen', wallet_id: WALLET_ID } as any,
     );
     memberService.getDonorLevel.mockResolvedValue(null as any);
+    roleRepository.findIdByName.mockResolvedValue(GUEST_ROLE_ID);
+    roleAssignmentRepository.removeAllForPlaceAndRoleWithin.mockResolvedValue(undefined);
     homeRepository.runInTransaction.mockImplementation((work: any) => work({}));
     homeRepository.lockHome.mockImplementation(async () => lockedHome);
     mapLocationRepository.findPlaceLocationWithin.mockImplementation(
@@ -345,6 +349,52 @@ describe('HomeService reset', () => {
 
       await expect(reset()).rejects.toThrow('deadlock');
       expect(unlinked).toEqual([]);
+    });
+  });
+
+  describe('chat guest cleanup', () => {
+    it('clears the guest list scoped to this home and the guest role', async () => {
+      await reset();
+
+      expect(roleAssignmentRepository.removeAllForPlaceAndRoleWithin)
+        .toHaveBeenCalledWith({}, HOME_PLACE_ID, GUEST_ROLE_ID);
+    });
+
+    it('resolves the guest role by name, not a hardcoded id', async () => {
+      await reset();
+
+      expect(roleRepository.findIdByName).toHaveBeenCalledWith('Home Chat Guest');
+    });
+
+    it('clears the list inside the reset transaction', async () => {
+      await reset();
+
+      const clearTrx =
+        roleAssignmentRepository.removeAllForPlaceAndRoleWithin.mock.calls[0][0];
+      expect(clearTrx).toBe(homeRepository.lockHome.mock.calls[0][0]);
+    });
+
+    it('preserves the guest list when the reset fails', async () => {
+      homeRepository.runInTransaction.mockRejectedValue(new Error('deadlock'));
+
+      await expect(reset()).rejects.toThrow('deadlock');
+      expect(roleAssignmentRepository.removeAllForPlaceAndRoleWithin).not.toHaveBeenCalled();
+    });
+
+    it('preserves the guest list when the lot claim is lost', async () => {
+      mapLocationRepository.claimLocationWithin.mockResolvedValue(false);
+
+      await expect(reset()).rejects.toThrow('Location already taken.');
+      // The throw aborts before the clear, and the transaction rolls back regardless.
+      expect(roleAssignmentRepository.removeAllForPlaceAndRoleWithin).not.toHaveBeenCalled();
+    });
+
+    it('never touches another home\'s guests', async () => {
+      await reset();
+
+      const placeIds = roleAssignmentRepository.removeAllForPlaceAndRoleWithin.mock.calls
+        .map(call => call[1]);
+      expect(placeIds).toEqual([HOME_PLACE_ID]);
     });
   });
 
