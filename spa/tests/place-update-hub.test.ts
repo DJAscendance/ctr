@@ -195,6 +195,25 @@ test("every tile records whether it is classic or a modern composition", () => {
   }
 });
 
+test("every tile uses the classic Update Wizard art the home page uses", () => {
+  // The place hub is deliberately the same screen as "Update your Home", so it
+  // draws from the same icon set rather than inventing a second vocabulary.
+  const CLASSIC_ART = [
+    "/assets/img/homes/updinfo.jpg",
+    "/assets/img/homes/updright.jpg",
+    "/assets/img/homes/updimage.jpg",
+    "/assets/img/homes/updhome.jpg",
+    "/assets/img/homes/updpers.jpg",
+    "/assets/img/homes/updpet.jpg",
+  ];
+  for (const tile of HUB_TILES) {
+    assert.ok(
+      CLASSIC_ART.includes(tile.image),
+      `${tile.key} uses '${tile.image}', which is not part of the classic set`,
+    );
+  }
+});
+
 test("child listing is offered at colony and neighborhood only", () => {
   assert.strictEqual(childListCapability("colony"), "list_neighborhoods");
   assert.strictEqual(childListCapability("hood"), "list_blocks");
@@ -242,18 +261,77 @@ test("the hub never renders a raw description as HTML", () => {
   assert.ok(!/v-html/.test(source), "the hub must not use v-html");
 });
 
-test("each tool bar decides its Update entry from the capability endpoint", () => {
+test("each tool bar decides its buttons from the capability endpoint", () => {
   for (const file of TOOLS) {
     const source = read(file);
     assert.ok(
       source.includes("/update-hub"),
-      `${path.basename(file)} must ask the server whether a hub exists`,
+      `${path.basename(file)} must ask the server which tools apply`,
     );
     assert.ok(
       source.includes("hubAvailable"),
-      `${path.basename(file)} must gate the Update entry on that answer`,
+      `${path.basename(file)} must gate its admin cluster on that answer`,
+    );
+    assert.ok(
+      source.includes("can('") || source.includes('can("'),
+      `${path.basename(file)} must gate each button on its own capability`,
     );
   }
+});
+
+test("the tool bars keep Message to All, Inbox to All and Access Rights", () => {
+  // These stay on the bar where they have always been. The hub carries them too,
+  // so either route reaches them - but moving them off the bar is a regression.
+  const expected: Array<[string, string[]]> = [
+    [
+      path.join(SPA_SRC, "pages/world-browser/WorldBrowserTools.vue"),
+      ["colonyMessageToAll", "colonyInboxToAll", "worldAccessRights"],
+    ],
+    [
+      path.join(SPA_SRC, "pages/neighborhood/NeighborhoodTools.vue"),
+      ["neighborhoodMessageToAll", "neighborhoodInboxToAll", "neighborhoodAccessRights"],
+    ],
+    [
+      path.join(SPA_SRC, "pages/block/BlockTools.vue"),
+      ["blockMessageToAll", "blockInboxToAll", "blockaccessrights"],
+    ],
+  ];
+  for (const [file, routes] of expected) {
+    const source = read(file);
+    for (const route of routes) {
+      assert.ok(
+        source.includes(route),
+        `${path.basename(file)} must still link ${route} from the tool bar`,
+      );
+    }
+  }
+});
+
+test("the block tool bar keeps its Check Images button", () => {
+  const source = read(path.join(SPA_SRC, "pages/block/BlockTools.vue"));
+  assert.ok(
+    source.includes("#/home/image-check"),
+    "Check Images must stay on the block tool bar",
+  );
+});
+
+test("the hub is presented as the home Update page is", () => {
+  const hub = read(HUB_COMPONENT);
+  const home = read(path.join(SPA_SRC, "pages/home/HomeUpdatePage.vue"));
+  for (const marker of ["mx-auto max-w-2xl grid grid-cols-3 gap-4", "<strong>"]) {
+    assert.ok(
+      home.includes(marker),
+      `the home Update page should still use '${marker}' - update this test if it changed`,
+    );
+    assert.ok(
+      hub.includes(marker),
+      `the place hub must match the home Update page's '${marker}'`,
+    );
+  }
+  assert.ok(
+    hub.includes(":src=\"tile.image\""),
+    "the hub must render the classic tile art, like the home Update page",
+  );
 });
 
 test("the three Update routes are registered and carry their tier", () => {

@@ -21,16 +21,34 @@
 		<br />
 		<br />
     <!--
-      One Update entry, drawn only when the server grants at least one capability
-      at this neighborhood. Message to All, Inbox to All, Access Rights,
-      Information and the map background now live inside the hub rather than as
-      separate buttons here. This restores the original shape: blaxxun CS 4.0
-      templates/neighbor/action.tmpl:43-44 put a single Update button behind
-      #ifdef owneraccess, opening a per-place wizard.
+      The tool bar keeps every button it had, in the order it had them. Update now
+      opens the scoped hub instead of jumping straight to the map background,
+      which is the original shape: blaxxun CS 4.0 templates/neighbor/action.tmpl
+      :43-44 put a single Update button behind #ifdef owneraccess opening a
+      per-place wizard. The hub also carries these same tools as tiles, so either
+      route reaches them.
+
+      Each button is drawn from its own capability rather than one broad admin
+      flag, so a button is shown only when the server would actually honour it.
     -->
     <div v-if="hubAvailable && this.$store.data.place.hood">
+      <router-link
+        v-if="can('message_to_all')"
+        :to="{ name: 'neighborhoodMessageToAll' }"
+        class="btn-ui"
+      >Message to All</router-link>
+      <router-link
+        v-if="can('inbox_to_all')"
+        :to="{ name: 'neighborhoodInboxToAll' }"
+        class="btn-ui"
+      >Inbox to All</router-link>
       <router-link :to="{ name: 'neighborhoodUpdate' }" class="btn-ui">
         Update</router-link>
+      <router-link
+        v-if="can('manage_access_rights')"
+        :to="{ name: 'neighborhoodAccessRights' }"
+        class="btn-ui"
+      >Access Rights</router-link>
     </div>
 		<br />
 	</div>
@@ -44,22 +62,29 @@ export default Vue.extend({
   data: () => {
     return {
       hubAvailable: false,
+      capabilities: [],
       loaded: false,
     };
   },
   methods: {
+    /** Whether the server granted this capability at this neighborhood. */
+    can(capability) {
+      return this.capabilities.indexOf(capability) !== -1;
+    },
     /**
-     * Whether this neighborhood offers an Update hub to this member. 200 means at
-     * least one capability was granted; 403 means none, and no entry is drawn.
-     * Presentational only - the hub and every tool inside it re-check server-side.
+     * Which tools this member may use at this neighborhood. 200 means at least
+     * one capability was granted; 403 means none, and no admin button is drawn.
+     * Presentational only - every tool re-checks server-side when used.
      */
     async checkHub() {
       try {
-        await this.$http.get(
+        const response = await this.$http.get(
           `/place/${this.$store.data.place.hood.id}/update-hub`,
         );
+        this.capabilities = response.data.hub.capabilities || [];
         this.hubAvailable = true;
       } catch (e) {
+        this.capabilities = [];
         this.hubAvailable = false;
       }
     },

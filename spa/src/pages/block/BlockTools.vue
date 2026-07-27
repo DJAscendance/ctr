@@ -20,18 +20,41 @@
 		<br />
 		<br />
     <!--
-      One Update entry, drawn only when the server grants at least one capability
-      at this block. Message to All, Inbox to All, Access Rights, Information, lot
-      availability, the map background and Check Images now live inside the hub
-      rather than as separate buttons here. This restores the original shape:
-      blaxxun CS 4.0 templates/block/action.tmpl:37-41 put a single Update button
-      behind #ifdef owneraccess, opening the block wizard. Archived in production
-      as block?ac=wizardplace.
+      The tool bar keeps every button it had, in the order it had them. Update now
+      opens the scoped hub instead of jumping straight to the lot wizard, which is
+      the original shape: blaxxun CS 4.0 templates/block/action.tmpl:37-41 put a
+      single Update button behind #ifdef owneraccess opening the block wizard,
+      archived in production as block?ac=wizardplace. The hub also carries these
+      same tools as tiles, so either route reaches them.
+
+      Each button is drawn from its own capability rather than one broad admin
+      flag, so a button is shown only when the server would actually honour it.
     -->
     <div v-if="hubAvailable && this.$store.data.place.block">
+      <router-link
+        v-if="can('message_to_all')"
+        :to="{ name: 'blockMessageToAll' }"
+        class="btn-ui"
+      >Message to All</router-link>
+      <router-link
+        v-if="can('inbox_to_all')"
+        :to="{ name: 'blockInboxToAll' }"
+        class="btn-ui"
+      >Inbox to All</router-link>
       <router-link :to="{ name: 'blockUpdate' }" class="btn-ui">
         Update
       </router-link>
+      <span
+        v-if="can('check_images')"
+        class="btn-ui"
+        title="Check Images"
+        v-on:click="opener('#/home/image-check')"
+      >Check</span>
+      <router-link
+        v-if="can('manage_access_rights')"
+        :to="{ name: 'blockaccessrights' }"
+        class="btn-ui"
+      >Access Rights</router-link>
     </div>
 		<br />
 	</div>
@@ -45,22 +68,29 @@ export default Vue.extend({
   data: () => {
     return {
       hubAvailable: false,
+      capabilities: [],
       loaded: false,
     };
   },
   methods: {
+    /** Whether the server granted this capability at this block. */
+    can(capability) {
+      return this.capabilities.indexOf(capability) !== -1;
+    },
     /**
-     * Whether this block offers an Update hub to this member. 200 means at least
-     * one capability was granted; 403 means none, and no entry is drawn.
-     * Presentational only - the hub and every tool inside it re-check server-side.
+     * Which tools this member may use at this block. 200 means at least one
+     * capability was granted; 403 means none, and no admin button is drawn.
+     * Presentational only - every tool re-checks server-side when used.
      */
     async checkHub() {
       try {
-        await this.$http.get(
+        const response = await this.$http.get(
           `/place/${this.$store.data.place.block.id}/update-hub`,
         );
+        this.capabilities = response.data.hub.capabilities || [];
         this.hubAvailable = true;
       } catch (e) {
+        this.capabilities = [];
         this.hubAvailable = false;
       }
     },

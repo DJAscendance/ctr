@@ -38,23 +38,34 @@
     </div>
     <div v-if="canAdmin">
       <!--
-        Colony: the scoped administration tools now live behind one Update entry,
-        shown only when the server grants at least one capability at this colony.
-        Message to All, Inbox to All and Access Rights are inside that hub.
-        Other place types keep the tool bar they had - they have no scoped hub.
+        The tool bar keeps every button it had, in the order it had them. For a
+        colony, Update now opens the scoped hub instead of being a dead <span>;
+        the hub also carries these same tools as tiles, so either route reaches
+        them. Other place types have no scoped hub and are untouched.
       -->
+      <span v-if="$store.data.place.type === 'colony'">
+        <router-link v-if="can('message_to_all')"
+                     :to="{ name: 'colonyMessageToAll' }"
+                     class="btn-ui">Message to All</router-link>
+        <router-link v-if="can('inbox_to_all')"
+                     :to="{ name: 'colonyInboxToAll'}"
+                     class="btn-ui">Inbox to All</router-link>
+      </span>
       <router-link
         v-if="$store.data.place.type === 'colony' && hubAvailable"
         :to="{ name: 'colonyUpdate' }"
         class="btn-ui"
       >Update</router-link>
       <span v-else-if="$store.data.place.type !== 'colony'" class="btn-ui">Update</span>
-      <span
-        v-show="$store.data.place.type !== 'colony'
-          && $store.data.place.type !== 'shop'
-          && $store.data.place.slug !== 'cityhall'"
-      >
-        <router-link :to="{ name: 'worldAccessRights' }"
+      <span v-show="$store.data.place.type !== 'shop' && $store.data.place.slug !== 'cityhall'">
+        <!--
+          A colony's Access Rights button follows the capability that actually
+          governs the POST. ColonyService.canManageAccess admits the Colony
+          Leader but not the Colony Deputy, so a Deputy no longer sees a button
+          whose submission would have been refused.
+        -->
+        <router-link v-if="$store.data.place.type !== 'colony' || can('manage_access_rights')"
+                     :to="{ name: 'worldAccessRights' }"
                      class="btn-ui">Access Rights</router-link>
       </span>
       <br />
@@ -73,6 +84,7 @@ export default Vue.extend({
       loaded: false,
       canAdmin: false,
       hubAvailable: false,
+      capabilities: [],
       data: null,
       mallId: null,
     };
@@ -81,20 +93,29 @@ export default Vue.extend({
     async getMallId(){
       this.mallId = await this.$http.get('/place/mall');
     },
+    /** Whether the server granted this capability at this colony. */
+    can(capability) {
+      return this.capabilities.indexOf(capability) !== -1;
+    },
     /**
-     * Whether this colony offers an Update hub to this member. 200 means the
-     * server granted at least one capability; 403 means none, and the entry is
-     * not drawn. Presentational only - the hub re-checks on open.
+     * Which tools this member may use at this colony. 200 means at least one
+     * capability was granted; 403 means none. Presentational only - every tool
+     * re-checks server-side when used. Only colonies have a scoped hub.
      */
     async checkHub() {
       this.hubAvailable = false;
+      this.capabilities = [];
       if (this.$store.data.place.type !== "colony") {
         return;
       }
       try {
-        await this.$http.get(`/place/${this.$store.data.place.id}/update-hub`);
+        const response = await this.$http.get(
+          `/place/${this.$store.data.place.id}/update-hub`,
+        );
+        this.capabilities = response.data.hub.capabilities || [];
         this.hubAvailable = true;
       } catch (error) {
+        this.capabilities = [];
         this.hubAvailable = false;
       }
     },
