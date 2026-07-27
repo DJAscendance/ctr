@@ -20,15 +20,18 @@
 		</router-link>
 		<br />
 		<br />
-		<div v-if="canAdmin && this.$store.data.place.hood">
-      <router-link :to="{ name: 'neighborhoodMessageToAll' }" class="btn-ui">
-        Message to All</router-link>
-      <router-link :to="{ name: 'neighborhoodInboxToAll'}" class="btn-ui">
-        Inbox to All</router-link>
-			<router-link :to="{ name: 'neighborhoodmapbackground' }" class="btn-ui">
-				Update</router-link>
-      <router-link :to="{ name: 'neighborhoodAccessRights' }" class="btn-ui">Access Rights</router-link>
-		</div>
+    <!--
+      One Update entry, drawn only when the server grants at least one capability
+      at this neighborhood. Message to All, Inbox to All, Access Rights,
+      Information and the map background now live inside the hub rather than as
+      separate buttons here. This restores the original shape: blaxxun CS 4.0
+      templates/neighbor/action.tmpl:43-44 put a single Update button behind
+      #ifdef owneraccess, opening a per-place wizard.
+    -->
+    <div v-if="hubAvailable && this.$store.data.place.hood">
+      <router-link :to="{ name: 'neighborhoodUpdate' }" class="btn-ui">
+        Update</router-link>
+    </div>
 		<br />
 	</div>
 </template>
@@ -40,18 +43,24 @@ export default Vue.extend({
   name: "NeighborhoodTools",
   data: () => {
     return {
-      canAdmin: false,
+      hubAvailable: false,
       loaded: false,
     };
   },
   methods: {
-    async checkAdmin() {
+    /**
+     * Whether this neighborhood offers an Update hub to this member. 200 means at
+     * least one capability was granted; 403 means none, and no entry is drawn.
+     * Presentational only - the hub and every tool inside it re-check server-side.
+     */
+    async checkHub() {
       try {
-        this.canAdmin = await this.$http.get(
-          `/hood/${  this.$store.data.place.hood.id  }/can_admin`,
+        await this.$http.get(
+          `/place/${this.$store.data.place.hood.id}/update-hub`,
         );
+        this.hubAvailable = true;
       } catch (e) {
-        this.canAdmin = false;
+        this.hubAvailable = false;
       }
     },
     async opener(link) {
@@ -63,7 +72,7 @@ export default Vue.extend({
       handler() {
         if (this.$store.data.place.hood) {
           this.loaded = true;
-          this.checkAdmin();
+          this.checkHub();
         }
       },
     },

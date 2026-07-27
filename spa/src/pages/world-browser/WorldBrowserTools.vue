@@ -37,15 +37,23 @@
       <br />
     </div>
     <div v-if="canAdmin">
-      <span v-if="this.$store.data.place.type === 'colony'">
-        <router-link :to="{ name: 'colonyMessageToAll' }"
-                     class="btn-ui">Message to All</router-link>
-        <router-link :to="{ name: 'colonyInboxToAll'}"
-              class="btn-ui">Inbox to All</router-link>
-      </span>
-      <span href=""
-            class="btn-ui">Update</span>
-      <span v-show="$store.data.place.type !== 'shop' && $store.data.place.slug !== 'cityhall'">
+      <!--
+        Colony: the scoped administration tools now live behind one Update entry,
+        shown only when the server grants at least one capability at this colony.
+        Message to All, Inbox to All and Access Rights are inside that hub.
+        Other place types keep the tool bar they had - they have no scoped hub.
+      -->
+      <router-link
+        v-if="$store.data.place.type === 'colony' && hubAvailable"
+        :to="{ name: 'colonyUpdate' }"
+        class="btn-ui"
+      >Update</router-link>
+      <span v-else-if="$store.data.place.type !== 'colony'" class="btn-ui">Update</span>
+      <span
+        v-show="$store.data.place.type !== 'colony'
+          && $store.data.place.type !== 'shop'
+          && $store.data.place.slug !== 'cityhall'"
+      >
         <router-link :to="{ name: 'worldAccessRights' }"
                      class="btn-ui">Access Rights</router-link>
       </span>
@@ -64,6 +72,7 @@ export default Vue.extend({
       adminCheck: false,
       loaded: false,
       canAdmin: false,
+      hubAvailable: false,
       data: null,
       mallId: null,
     };
@@ -71,6 +80,23 @@ export default Vue.extend({
   methods: {
     async getMallId(){
       this.mallId = await this.$http.get('/place/mall');
+    },
+    /**
+     * Whether this colony offers an Update hub to this member. 200 means the
+     * server granted at least one capability; 403 means none, and the entry is
+     * not drawn. Presentational only - the hub re-checks on open.
+     */
+    async checkHub() {
+      this.hubAvailable = false;
+      if (this.$store.data.place.type !== "colony") {
+        return;
+      }
+      try {
+        await this.$http.get(`/place/${this.$store.data.place.id}/update-hub`);
+        this.hubAvailable = true;
+      } catch (error) {
+        this.hubAvailable = false;
+      }
     },
     async checkAdmin() {
       let endpoint;
@@ -98,12 +124,14 @@ export default Vue.extend({
   },
   mounted() {
     this.checkAdmin();
+    this.checkHub();
     this.getMallId();
   },
   watch: {
     async $route(to, from) {
       console.log("Place Change");
       await this.checkAdmin();
+      await this.checkHub();
       this.loaded = true;
     },
   },
