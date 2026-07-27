@@ -8,5 +8,10 @@
     "outDir": "./.compiled",
     "types": ["node"]
   },
-  "include": ["*.ts", "../src/presence.ts", "../src/helpers/block-map.helper.ts"]
+  "include": [
+    "*.ts",
+    "../src/presence.ts",
+    "../src/helpers/block-map.helper.ts",
+    "../src/helpers/place-update-hub.helper.ts"
+  ]
 }
