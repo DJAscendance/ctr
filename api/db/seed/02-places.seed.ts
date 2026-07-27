@@ -1,8 +1,34 @@
 import { Knex } from 'knex';
 
+/**
+ * Inserts each place only when its slug is not already present, and otherwise refreshes the
+ * existing row in place.
+ *
+ * A bare `insert()` here is what produced the duplicate public places that
+ * 20260727130000_dedupe_seeded_places had to clean up: every extra run of the seed suite
+ * added another copy of every place, all with the same slug, leaving findBySlug() to return
+ * whichever row the database happened to hand back first. That migration also adds
+ * UNIQUE(place.slug), so an unconditional insert would now fail outright on a second run
+ * rather than duplicate - this keeps the seed re-runnable, matching how
+ * 09-update.roles.seed already behaves.
+ *
+ * Matching on slug (not name) is deliberate: "mall" was renamed to "The Mall" between seed
+ * versions, and the slug is what the application resolves places by.
+ */
+async function upsertBySlug(knex: Knex, rows: Array<Record<string, unknown>>): Promise<void> {
+  for (const row of rows) {
+    const existing = await knex('place').where('slug', row.slug).first();
+    if (existing) {
+      await knex('place').where('slug', row.slug).update(row);
+    } else {
+      await knex('place').insert(row);
+    }
+  }
+}
+
 export async function seed(knex: Knex): Promise<void> {
   console.log('Creating seed places');
-  await knex('place').insert([
+  await upsertBySlug(knex, [
     {
       name: 'The Plaza',
       description: 'Welcome to the plaza',
