@@ -17,6 +17,7 @@ export * from './role/role.service';
 export * from './role-assignment/role-assignment.service';
 export * from './place/place.service';
 export * from './place/place-information.service';
+export * from './place/place-update-hub.service';
 export * from './wallet/wallet.service';
 export * from './messageboard/messageboard.service';
 export * from './inbox/inbox.service';

@@ -6,6 +6,7 @@ import { PlaceService } from '../services/place/place.service';
 import { MemberService } from '../services/member/member.service';
 import { HomeService } from '../services/home/home.service';
 import { PlaceInformationService } from '../services/place/place-information.service';
+import { PlaceUpdateHubService } from '../services/place/place-update-hub.service';
 
 /**
  * Contract coverage for GET place canAdmin.
@@ -28,6 +29,7 @@ describe('PlaceController canAdmin contract', () => {
   let memberService: jest.Mocked<MemberService>;
   let homeService: jest.Mocked<HomeService>;
   let placeInformationService: jest.Mocked<PlaceInformationService>;
+  let placeUpdateHubService: jest.Mocked<PlaceUpdateHubService>;
   let controller: PlaceController;
 
   const TOKEN = 'a.valid.token';
@@ -38,17 +40,23 @@ describe('PlaceController canAdmin contract', () => {
     memberService = createSpyObj(MemberService);
     homeService = createSpyObj(HomeService);
     placeInformationService = createSpyObj(PlaceInformationService);
+    placeUpdateHubService = createSpyObj(PlaceUpdateHubService);
 
     Container.reset();
     Container.set(PlaceService, placeService);
     Container.set(MemberService, memberService);
     Container.set(HomeService, homeService);
     Container.set(PlaceInformationService, placeInformationService);
+    Container.set(PlaceUpdateHubService, placeUpdateHubService);
 
     // Constructed directly with the mocks, the way home.controller.spec does - the
     // module-level `placeController` singleton resolves real services at import time.
     controller = new PlaceController(
-      placeService, memberService, homeService, placeInformationService);
+      placeService,
+      memberService,
+      homeService,
+      placeInformationService,
+      placeUpdateHubService);
 
     memberService.decodeMemberToken.mockReturnValue(SESSION as any);
     placeService.findBySlug.mockResolvedValue({ id: 7 } as any);

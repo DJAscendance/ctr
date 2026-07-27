@@ -11,6 +11,8 @@ placeRoutes.get('/can_manage_access/:slug/:id?',
   (request, response) => placeController.canManageAccess(request, response));
 placeRoutes.get('/getAccessInfo/:slug/:id?',
   (request, response) => placeController.getAccessInfoByUsername(request, response));
+placeRoutes.get('/:placeId/update-hub',
+  (request, response) => placeController.getUpdateHub(request, response));
 placeRoutes.get('/:placeId/information',
   (request, response) => placeController.getInformation(request, response));
 placeRoutes.get('/:placeId/information/can_edit',

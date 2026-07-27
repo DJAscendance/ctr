@@ -4,6 +4,7 @@ import {
   MemberService,
   HomeService,
   PlaceInformationService,
+  PlaceUpdateHubService,
 } from '../services';
 import { Container } from 'typedi';
 
@@ -17,6 +18,7 @@ export class PlaceController {
     private memberService: MemberService,
     private homeService: HomeService,
     private placeInformationService: PlaceInformationService,
+    private placeUpdateHubService: PlaceUpdateHubService,
   ) {}
 
   /**
@@ -467,6 +469,58 @@ export class PlaceController {
   }
 
   /**
+   * Capability set for a place's scoped Update hub.
+   *
+   * The response contract, by condition:
+   *   missing / malformed / expired token -> 401 { error }
+   *   non-numeric place id                -> 400 { error }
+   *   place does not exist                -> 404 { error }
+   *   type has no hub, or no capability   -> 403 { error }
+   *   at least one capability granted     -> 200 { hub }
+   *   repository / database failure       -> 500 { error }
+   *
+   * "Type has no hub" and "you hold no capability here" deliberately answer the
+   * same 403 with the same body. Distinguishing them would let an unauthorized
+   * caller enumerate which places have scoped administration.
+   *
+   * The only client input is the place id. Type, slug and the parent chain are
+   * read from the stored row inside PlaceUpdateHubService, so nothing the client
+   * sends can steer which scoped check runs. This endpoint is advisory for
+   * rendering only: every tool it advertises is independently authorized by its
+   * own endpoint, and hiding a tile is never the access control.
+   */
+  public async getUpdateHub(request: Request, response: Response): Promise<void> {
+    const { apitoken } = request.headers;
+    const placeId = Number.parseInt(request.params.placeId, 10);
+    if (Number.isNaN(placeId)) {
+      response.status(400).json({ error: 'invalid place id' });
+      return;
+    }
+    const session = this.authenticate(apitoken, response);
+    if (!session) {
+      return;
+    }
+    try {
+      const result = await this.placeUpdateHubService.getHub(placeId, session.id);
+      switch (result.status) {
+      case 'success':
+        response.status(200).json({ hub: result.hub });
+        return;
+      case 'not_found':
+        response.status(404).json({ error: 'Place not found.' });
+        return;
+      case 'unsupported':
+      case 'forbidden':
+        response.status(403).json({ error: 'You may not administer this place.' });
+        return;
+      }
+    } catch (error) {
+      console.error('place.getUpdateHub failed', error);
+      response.status(500).json({ error: 'Unable to determine place capabilities.' });
+    }
+  }
+
+  /**
    * Shared token gate. Writes the 401 and returns null when authentication
    * fails, so callers can `if (!session) return;`.
    */
@@ -494,5 +548,6 @@ const placeService = Container.get(PlaceService);
 const memberService = Container.get(MemberService);
 const homeService = Container.get(HomeService);
 const placeInformationService = Container.get(PlaceInformationService);
+const placeUpdateHubService = Container.get(PlaceUpdateHubService);
 export const placeController = new PlaceController(
-  placeService, memberService, homeService, placeInformationService);
+  placeService, memberService, homeService, placeInformationService, placeUpdateHubService);

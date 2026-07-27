@@ -14,6 +14,7 @@ import WorldBrowserPage from "./pages/world-browser/WorldBrowserPage.vue";
 import WorldBrowserTools from "./pages/world-browser/WorldBrowserTools.vue";
 import CityMapPage from "./pages/CityMapPage.vue";
 import PlaceUpdateInformationPage from "@/pages/place/PlaceUpdateInformationPage.vue";
+import PlaceUpdatePage from "@/pages/place/PlaceUpdatePage.vue";
 import InformationPage from "./pages/Information.vue";
 import NeighborhoodPage from "./pages/neighborhood/NeighborhoodPage.vue";
 import NeighborhoodMapPage from "./pages/neighborhood/NeighborhoodMapPage.vue";
@@ -189,6 +190,17 @@ export default [
         name: "colonyInboxToAll",
         meta: { wrapper: true },
       },
+      {
+        // Colony Update hub. `:id` here is a SLUG, so the page resolves it to a
+        // place id before asking the server for capabilities. `tier` selects that
+        // resolution strategy - it grants nothing, and the server decides
+        // authorization from the stored place row.
+        path: "update",
+        component: PlaceUpdatePage,
+        props: { tier: "colony" },
+        name: "colonyUpdate",
+        meta: { wrapper: true },
+      },
     ],
   },
   {
@@ -286,6 +298,13 @@ export default [
         name: "neighborhoodInboxToAll",
         meta: { wrapper: true },
       },
+      {
+        path: "update",
+        component: PlaceUpdatePage,
+        props: { tier: "hood" },
+        name: "neighborhoodUpdate",
+        meta: { wrapper: true },
+      },
     ],
   },
   {
@@ -337,6 +356,13 @@ export default [
         path: "",
         component: InboxToAll,
         name: "blockInboxToAll",
+        meta: { wrapper: true },
+      },
+      {
+        path: "update",
+        component: PlaceUpdatePage,
+        props: { tier: "block" },
+        name: "blockUpdate",
         meta: { wrapper: true },
       },
     ],
