@@ -80,7 +80,7 @@ export default Vue.extend({
         {
           img: '/assets/img/homes/updinfo.jpg',
           label: 'Reset',
-          link: '',
+          link: '/home/reset',
         },{
           img: '/assets/img/homes/updright.jpg',
           label: 'Chat Access Rights',

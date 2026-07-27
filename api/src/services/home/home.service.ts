@@ -11,6 +11,8 @@ import {
   HomeRepository,
   RoleAssignmentRepository,
   RoleRepository,
+  MemberRepository,
+  TransactionRepository,
 } from '../../repositories';
 import { Place, HomeDesign, Home } from '../../types/models';
 import { MemberService } from '../member/member.service';
@@ -27,6 +29,8 @@ export class HomeService {
     private homeRepository: HomeRepository,
     private roleAssignmentRepository: RoleAssignmentRepository,
     private roleRepository: RoleRepository,
+    private memberRepository: MemberRepository,
+    private transactionRepository: TransactionRepository,
     private memberService: MemberService,
     private blockService: BlockService,
   ) {}
@@ -162,6 +166,148 @@ export class HomeService {
       {home_design_id: homeDesignId},
     );
 
+  }
+
+  /** 2D map icon a home returns to when it is reset. */
+  public static readonly DEFAULT_MAP_ICON_INDEX = 1;
+
+  /**
+   * Resets a member's home: moves it to a chosen free lot and clears the customisations
+   * back to defaults, refunding the paid 3D design if there was one.
+   *
+   * Everything below happens in ONE transaction, so a failure anywhere leaves the home,
+   * lot, wallet, design and image state exactly as they were. Lock order is fixed and
+   * request-independent - `home`, then the affected `map_location` rows in primary-key
+   * order, then `wallet` - so two concurrent resets can never each hold what the other
+   * needs.
+   *
+   * Exactly-once refund, without an idempotency column on the ledger: the decision to refund
+   * is made from `home_design_id` read under the home's row lock, and the SAME transaction
+   * clears that column and writes the ledger row. A duplicate submit, a client retry, a
+   * transaction retry or a second concurrent reset therefore all observe an already-null
+   * design and refund nothing. A crash mid-flight rolls back, leaving the design intact, so
+   * a retry is still correct.
+   *
+   * Image state uses the PR #410 model unchanged - the record moves to ('none', null) under
+   * the same row lock every other image mutation takes, and files are cleaned up after the
+   * commit through the existing revision-specific, state-guarded helpers. Nothing here
+   * deletes by wildcard, and a cleanup failure cannot invalidate the committed reset.
+   *
+   * @param memberId id of the home's owner, from the authenticated session
+   * @param blockId id of the block to place the home in
+   * @param location lot number within that block
+   */
+  public async resetHome(memberId: number, blockId: number, location: number): Promise<void> {
+    const home = await this.placeRepository.findHomeByMemberId(memberId);
+    if (!home) {
+      throw new Error('You don\'t have a home yet.');
+    }
+
+    // The requested lot must belong to an actual block - otherwise a caller could name any
+    // place id and reset their home onto a colony, a hood, or another member's home.
+    const block = await this.placeRepository.findById(blockId);
+    if (!block || block.type !== 'block') {
+      throw new Error('Location is not available.');
+    }
+
+    const member = await this.memberRepository.findById(memberId);
+    if (!member) {
+      throw new Error('Member not found.');
+    }
+
+    // Champion donors were charged nothing for the champion home, so they are owed nothing
+    // back. Identical rule to updateHome, deliberately - the two refund paths must agree.
+    const donor = await this.memberService.getDonorLevel(memberId);
+    const donorLevel = donor ? Object.values(donor).toString() : null;
+
+    let clearedRevision: string | undefined;
+
+    await this.homeRepository.runInTransaction(async trx => {
+      // 1. home row - the serialisation point shared with every image mutation.
+      const lockedHome = await this.homeRepository.lockHome(trx, home.id);
+      if (!lockedHome) {
+        throw new Error('You don\'t have a home yet.');
+      }
+      clearedRevision = lockedHome.image_revision;
+
+      // 2. map_location rows, in primary-key order (see lockLocationsWithin).
+      const currentLocation = await this.mapLocationRespository
+        .findPlaceLocationWithin(trx, home.id);
+      const lotKeys = [{ parentPlaceId: blockId, location }];
+      if (currentLocation) {
+        lotKeys.push({
+          parentPlaceId: currentLocation.parent_place_id,
+          location: currentLocation.location,
+        });
+      }
+      await this.mapLocationRespository.lockLocationsWithin(trx, lotKeys);
+
+      const stayingPut = !!currentLocation
+        && currentLocation.parent_place_id === blockId
+        && currentLocation.location === location;
+
+      if (!stayingPut) {
+        // The claim proves the lot was still free through its own WHERE clause; a prior
+        // read plus an unconditional update would leave a window for a concurrent claim.
+        const claimed = await this.mapLocationRespository
+          .claimLocationWithin(trx, blockId, location, home.id);
+        if (!claimed) {
+          throw new Error('Location already taken.');
+        }
+        if (currentLocation) {
+          await this.mapLocationRespository.releaseLocationWithin(
+            trx,
+            currentLocation.parent_place_id,
+            currentLocation.location,
+            home.id,
+          );
+        }
+      }
+
+      // Clear the visible customisations back to a freshly-settled home.
+      await this.placeRepository.updateHomeByMemberIdWithin(trx, memberId, {
+        name: `${member.username}'s Home`,
+        description: '',
+        map_icon_index: HomeService.DEFAULT_MAP_ICON_INDEX,
+      });
+
+      // Clear the design and move image state to ('none', null) - exactly the state the
+      // PR #410 cleanup contract documents for a reset.
+      await this.homeRepository.updateWithin(trx, home.id, {
+        home_design_id: null,
+        image: null,
+        image_status: 'none',
+        image_revision: null,
+        image_checked_by: null,
+        image_checked_at: null,
+      });
+
+      // 3. wallet - last in the lock order, and only when a design was actually cleared.
+      if (lockedHome.home_design_id) {
+        const design = this.homeDesignRespository.find(lockedHome.home_design_id);
+        let refund = design ? design.price : 0;
+        if (donorLevel === 'Champion' && lockedHome.home_design_id === 'championhome') {
+          refund = 0;
+        }
+        if (refund > 0) {
+          await this.transactionRepository
+            .createHomeRefundTransactionWithin(trx, member.wallet_id, refund);
+        }
+      }
+    });
+
+    // Committed. Clean up the files this reset orphaned, through the same guarded helpers
+    // removeHomeImage uses: the private file is addressed by the exact revision captured
+    // under the lock, and the public file is removed only while the record still reads
+    // ('none', null) - so an upload or approval that committed in the gap keeps its image.
+    // Best-effort by design: the reset and refund are already durable and a stale file is
+    // recoverable, so a failed unlink must not report the reset as failed.
+    try {
+      this.deletePendingRevisionFile(home.id, clearedRevision);
+      await this.deletePublicImageIfState(home.id, 'none', null);
+    } catch (error) {
+      console.error('home reset: image cleanup failed', error);
+    }
   }
 
   /**

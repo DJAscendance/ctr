@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
@@ -89,6 +90,50 @@ export class TransactionRepository {
       return this.find({ id: transactionId });
     });
   }
+
+  /**
+   * Credits a home refund to a wallet inside an EXISTING transaction, rather than opening
+   * its own like every other helper here.
+   *
+   * Home reset must clear `home.home_design_id` and pay the refund as one logical operation.
+   * With two separate transactions there is a window in which the design is already cleared
+   * but the refund has not committed - a crash there silently takes the citizen's CityCash.
+   * Sharing the caller's transaction closes that window: either the design is cleared AND
+   * the refund is recorded, or neither is.
+   *
+   * This is also what makes the refund exactly-once WITHOUT an idempotency column on the
+   * ledger. The caller decides to refund from `home_design_id` read under the home's row
+   * lock and clears it in the same transaction, so a duplicate submit, a client retry, or a
+   * second concurrent reset all observe an already-null design and refund nothing.
+   *
+   * Unlike the self-transacting helpers, the wallet row is read FOR UPDATE before its
+   * balance is used, so concurrent credits to the same wallet cannot lose an update on this
+   * path. The other helpers' read-then-write is left exactly as it was - that shared
+   * weakness is real but is not home reset's to change.
+   *
+   * @param trx transaction handle owned by the caller
+   * @param walletId id of the wallet to credit
+   * @param amount amount to refund
+   */
+  public async createHomeRefundTransactionWithin(
+    trx: Knex.Transaction,
+    walletId: number,
+    amount: number,
+  ): Promise<void> {
+    const wallet = await trx<Wallet>('wallet').where({ id: walletId }).forUpdate().first();
+    if (!wallet) {
+      throw new Error('Wallet not found.');
+    }
+    await trx<Wallet>('wallet')
+      .where({ id: walletId })
+      .update({ balance: wallet.balance + amount });
+    await trx<Transaction>('transaction').insert({
+      amount,
+      reason: TransactionReason.HomeRefund,
+      recipient_wallet_id: walletId,
+    });
+  }
+
   public async createWeeklyRoleCreditTransaction(
     walletId: number,
     amount: number,

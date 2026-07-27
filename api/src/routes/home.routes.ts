@@ -32,6 +32,9 @@ homeRoutes.post('/update',
   (request, response) => homeController.updateHome(request, response));
 homeRoutes.post('/update-information',
   (request, response) => homeController.updateHomeInformation(request, response));
+// POST-only: reset is destructive, so it must never be reachable by a GET or a navigation.
+homeRoutes.post('/reset',
+  (request, response) => homeController.resetHome(request, response));
 homeRoutes.post('/upload-image',
   (request, response) => homeController.uploadImage(request, response));
 homeRoutes.post('/remove-image',

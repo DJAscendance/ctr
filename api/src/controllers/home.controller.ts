@@ -333,6 +333,42 @@ export class HomeController {
   }
 
   /**
+   * Resets the authenticated member's own home: moves it to a chosen free lot and clears
+   * its customisations, refunding a paid 3D design.
+   *
+   * Destructive, so it is POST-only and the SPA requires an explicit confirmation step
+   * before calling it - no GET, page load or route navigation can reach this. The home is
+   * resolved from the session inside HomeService, so the body carries only the destination
+   * and there is no member id, home id or username to substitute. A failure leaves the
+   * home, lot, wallet, design and image state untouched (see HomeService.resetHome).
+   */
+  public async resetHome(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+
+    const { blockId, location } = request.body;
+
+    try {
+      // Stringified before validation: the SPA sends these as numbers, and validator.isInt
+      // only accepts strings - an unconverted number would throw rather than validate.
+      if (!validator.isInt(String(blockId))) {
+        throw new Error('blockId must be passed');
+      }
+
+      if (!validator.isInt(String(location))) {
+        throw new Error('location must be passed');
+      }
+
+      await this.homeService.resetHome(session.id, parseInt(blockId), parseInt(location));
+
+      response.status(200).json({ 'status': 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ 'error': error.message });
+    }
+  }
+
+  /**
    * Returns the description a home's owner has published, for the Information popup. Any
    * authenticated citizen may read it - it is content the owner chose to publish on their
    * own home page. A non-home place resolves to an empty description rather than leaking

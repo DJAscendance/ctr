@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
@@ -109,6 +110,24 @@ export class PlaceRepository {
     return returning
       ? this.findHomeByMemberId(memberId)
       : undefined;
+  }
+
+  /**
+   * Updates a place row within an existing transaction, scoped to a home owned by the given
+   * member - the same ownership predicate as updateHomeByMemberId, so a transactional
+   * caller cannot widen its reach by passing a place id directly.
+   * @param trx transaction handle
+   * @param memberId id of the home's owner
+   * @param props columns to update
+   */
+  public async updateHomeByMemberIdWithin(
+    trx: Knex.Transaction,
+    memberId: number,
+    props: Partial<Place>,
+  ): Promise<void> {
+    await trx<Place>('place')
+      .where({ type: 'home', member_id: memberId })
+      .update(props);
   }
 
   public async updateMapBackgroundIndex(placeId: number, index: number | null): Promise<void> {
