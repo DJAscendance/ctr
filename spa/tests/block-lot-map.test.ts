@@ -1,0 +1,266 @@
+/**
+ * Regression guard for the shared block lot-map renderer.
+ *
+ * The SPA test harness is deliberately dependency-free (plain Node, no runner, no
+ * @vue/test-utils, no DOM), so this suite does not mount components. It guards the
+ * two things that actually regress:
+ *
+ *   1. The GEOMETRY, which is not a styling preference - it is the original
+ *      Cybertown lot coordinate system recovered from the blaxxun CS 4.0 templates
+ *      and archived production art (docs/research/classic-place-admin-re-evidence.md
+ *      §3.2). Those numbers are exercised directly against the helper.
+ *
+ *   2. That every consumer goes THROUGH the shared component and helper rather than
+ *      restating the grid. A second hand-rolled 12x6 grid is precisely the drift
+ *      this extraction exists to prevent, so the source of each consumer is
+ *      asserted to contain no independent grid definition.
+ *
+ * The behaviour-preservation claim for the public block map (same links, same
+ * icons, same fallback) is covered here by asserting the rendered slot markup still
+ * carries each of those, since the markup is the behaviour for a presentational
+ * page.
+ */
+import assert from "assert";
+
+const fs = require("fs");
+const path = require("path");
+
+const SPA_SRC = path.resolve(__dirname, "../../../src");
+const BLOCK_LOT_MAP = path.join(SPA_SRC, "components/block/BlockLotMap.vue");
+const BLOCK_MAP_PAGE = path.join(SPA_SRC, "pages/block/BlockMapPage.vue");
+const BLOCK_WIZARD_PAGE = path.join(SPA_SRC, "pages/block/BlockWizardPage.vue");
+
+import {
+  BLOCK_MAP_CELL_SIZE,
+  BLOCK_MAP_COLUMNS,
+  BLOCK_MAP_HEIGHT,
+  BLOCK_MAP_LOT_COUNT,
+  BLOCK_MAP_ROWS,
+  BLOCK_MAP_WIDTH,
+  blockBackgroundFilename,
+  blockBackgroundStyle,
+  blockFreeIconUrl,
+  blockHouseIconUrl,
+  locationToRowColumn,
+} from "../src/helpers/block-map.helper";
+
+type Test = { name: string; run: () => void };
+const tests: Test[] = [];
+function test(name: string, run: () => void): void {
+  tests.push({ name, run });
+}
+
+const read = (file: string): string => fs.readFileSync(file, "utf8");
+
+// ---------------------------------------------------------------- geometry
+
+test("lot geometry matches the archived Cybertown assets", () => {
+  assert.strictEqual(BLOCK_MAP_WIDTH, 480, "block backgrounds are 480px wide");
+  assert.strictEqual(BLOCK_MAP_HEIGHT, 240, "block backgrounds are 240px tall");
+  assert.strictEqual(BLOCK_MAP_CELL_SIZE, 40, "house and free icons are 40x40");
+  assert.strictEqual(BLOCK_MAP_COLUMNS, 12, "480 / 40 = 12 columns");
+  assert.strictEqual(BLOCK_MAP_ROWS, 6, "240 / 40 = 6 rows");
+  assert.strictEqual(BLOCK_MAP_LOT_COUNT, 72, "12 x 6 = 72 lots");
+  assert.strictEqual(
+    BLOCK_MAP_COLUMNS * BLOCK_MAP_CELL_SIZE,
+    BLOCK_MAP_WIDTH,
+    "columns must tile the background exactly",
+  );
+  assert.strictEqual(
+    BLOCK_MAP_ROWS * BLOCK_MAP_CELL_SIZE,
+    BLOCK_MAP_HEIGHT,
+    "rows must tile the background exactly",
+  );
+});
+
+test("locations are row-major, matching the original oRRCC naming", () => {
+  assert.deepStrictEqual(locationToRowColumn(1), { row: 1, column: 1 });
+  assert.deepStrictEqual(locationToRowColumn(12), { row: 1, column: 12 });
+  assert.deepStrictEqual(locationToRowColumn(13), { row: 2, column: 1 });
+  assert.deepStrictEqual(locationToRowColumn(72), { row: 6, column: 12 });
+});
+
+test("every location maps to a distinct cell inside the grid", () => {
+  const seen = new Set<string>();
+  for (let location = 1; location <= BLOCK_MAP_LOT_COUNT; location++) {
+    const { row, column } = locationToRowColumn(location);
+    assert.ok(row >= 1 && row <= BLOCK_MAP_ROWS, `row out of range at ${location}`);
+    assert.ok(
+      column >= 1 && column <= BLOCK_MAP_COLUMNS,
+      `column out of range at ${location}`,
+    );
+    const key = `${row}:${column}`;
+    assert.ok(!seen.has(key), `duplicate cell ${key} at location ${location}`);
+    seen.add(key);
+  }
+  assert.strictEqual(seen.size, BLOCK_MAP_LOT_COUNT);
+});
+
+// ---------------------------------------------------------------- assets
+
+test("background filename padding matches the archived Pimg2D naming", () => {
+  assert.strictEqual(blockBackgroundFilename(null), "Pimg2D000.gif");
+  assert.strictEqual(blockBackgroundFilename(0), "Pimg2D000.gif");
+  assert.strictEqual(blockBackgroundFilename(undefined), "Pimg2D000.gif");
+  assert.strictEqual(blockBackgroundFilename(-3), "Pimg2D000.gif");
+  assert.strictEqual(blockBackgroundFilename(1.5), "Pimg2D000.gif");
+  assert.strictEqual(blockBackgroundFilename(2), "Pimg2D002.gif");
+  assert.strictEqual(blockBackgroundFilename(13), "Pimg2D013.gif");
+});
+
+test("a selected background layers over the theme default as a fallback", () => {
+  assert.strictEqual(
+    blockBackgroundStyle("grass", null),
+    "url('/assets/img/map_themes/grass/block/Pimg2D000.gif')",
+    "no selection renders the default alone",
+  );
+  assert.strictEqual(
+    blockBackgroundStyle("grass", 4),
+    "url('/assets/img/map_themes/grass/block/Pimg2D004.gif'), " +
+      "url('/assets/img/map_themes/grass/block/Pimg2D000.gif')",
+    "a selection must keep the default underneath it",
+  );
+});
+
+test("house icons are 0-based files from a 1-based index, capped per theme", () => {
+  assert.strictEqual(
+    blockHouseIconUrl("grass", 1),
+    "/assets/img/map_themes/grass/block/Picon2D000.gif",
+  );
+  assert.strictEqual(
+    blockHouseIconUrl("grass", 12),
+    "/assets/img/map_themes/grass/block/Picon2D011.gif",
+    "grass has no icon cap",
+  );
+  assert.strictEqual(
+    blockHouseIconUrl("cyberhood", 6),
+    "/assets/img/map_themes/cyberhood/block/Picon2D000.gif",
+    "cyberhood caps at 5 and falls back to icon 000",
+  );
+  assert.strictEqual(
+    blockHouseIconUrl("desert", 8),
+    "/assets/img/map_themes/desert/block/Picon2D000.gif",
+    "desert caps at 7 and falls back to icon 000",
+  );
+  assert.strictEqual(
+    blockHouseIconUrl("desert", 7),
+    "/assets/img/map_themes/desert/block/Picon2D006.gif",
+  );
+});
+
+test("the free-lot marker is the archived Ficon2D000 asset", () => {
+  assert.strictEqual(
+    blockFreeIconUrl("grass"),
+    "/assets/img/map_themes/grass/block/Ficon2D000.gif",
+  );
+});
+
+// ---------------------------------------------- single source of geometry
+
+test("BlockLotMap owns the grid and renders no lot content of its own", () => {
+  const source = read(BLOCK_LOT_MAP);
+  assert.ok(
+    /grid-cols-12/.test(source),
+    "BlockLotMap must declare the 12-column grid",
+  );
+  assert.ok(
+    /v-for="location in lotCount"/.test(source),
+    "BlockLotMap must iterate the shared lot count",
+  );
+  assert.ok(
+    /<slot\s+name="lot"/.test(source),
+    "consumers supply cell markup through the lot scoped slot",
+  );
+  assert.ok(
+    !/Picon2D|Ficon2D|Pimg2D/.test(source),
+    "BlockLotMap must not know about specific art - that belongs to consumers",
+  );
+});
+
+for (const [label, file] of [
+  ["BlockMapPage", BLOCK_MAP_PAGE],
+  ["BlockWizardPage", BLOCK_WIZARD_PAGE],
+] as Array<[string, string]>) {
+  test(`${label} uses the shared renderer instead of its own grid`, () => {
+    const source = read(file);
+    assert.ok(
+      /<block-lot-map/.test(source),
+      `${label} must render through BlockLotMap`,
+    );
+    assert.ok(
+      !/grid-cols-12/.test(source),
+      `${label} must not restate the grid - that is the drift this prevents`,
+    );
+    assert.ok(
+      !/in 72\b/.test(source),
+      `${label} must not hardcode the lot count`,
+    );
+    assert.ok(
+      !/width: *'480px'|480px/.test(source),
+      `${label} must not hardcode the map dimensions`,
+    );
+  });
+}
+
+test("the public block map keeps its links, icons and accessible names", () => {
+  const source = read(BLOCK_MAP_PAGE);
+  assert.ok(
+    /:to="'\/home\/' \+ lot\.username"/.test(source),
+    "an occupied lot still links to its owner's home",
+  );
+  assert.ok(
+    /:to="'\/block\/' \+ \$route\.params\.id \+ '\/move\/' \+ lot\.location"/.test(
+      source,
+    ),
+    "a free lot still links to the move route for that location",
+  );
+  assert.ok(
+    /houseIcon\(lot\.map_icon_index\)/.test(source),
+    "occupied lots still render the stored house icon",
+  );
+  assert.ok(/freeImage/.test(source), "free lots still render the Free marker");
+  assert.ok(
+    /aria-label="lot\.name \+ ' - home of ' \+ lot\.username"/.test(source),
+    "occupied lots need an accessible name",
+  );
+  assert.ok(
+    /aria-label="'Free lot ' \+ lot\.location/.test(source),
+    "free lots need an accessible name",
+  );
+  assert.ok(
+    /blockBackgroundStyle\(this\.theme, this\.block\.map_background_index\)/.test(
+      source,
+    ),
+    "the map still honours the block's selected background with default fallback",
+  );
+});
+
+test("the update wizard now shows the block's real background", () => {
+  const source = read(BLOCK_WIZARD_PAGE);
+  assert.ok(
+    /blockBackgroundStyle\(\s*colonyDataHelper\[this\.colony\.slug\]\.map_theme,\s*this\.block\.map_background_index/m.test(
+      source,
+    ),
+    "the wizard must not hardcode the theme default background",
+  );
+  assert.ok(
+    !/Pimg2D000/.test(source),
+    "the wizard must not name the default background directly",
+  );
+});
+
+// ---------------------------------------------------------------- runner
+
+let failures = 0;
+for (const { name, run } of tests) {
+  try {
+    run();
+    console.log(`  ok   ${name}`);
+  } catch (error) {
+    failures++;
+    console.error(`  FAIL ${name}`);
+    console.error(`       ${(error as Error).message}`);
+  }
+}
+console.log(`\n${tests.length - failures}/${tests.length} passed`);
+process.exit(failures === 0 ? 0 : 1);

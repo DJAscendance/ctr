@@ -1,61 +1,33 @@
 <template>
 	<div v-if="loaded">
 		<div class="w-full flex-1 text-center">
-			<div class="inline-block mx-auto">
-				<div
-					:style="{
-						width: '480px',
-						height: '240px',
-						'background-image': mapBackground
-					}"
-					class="grid grid-cols-12 gap-0"
-				>
-					<div
-						v-for="index in 72"
-						:key="index"
-						style="height:40px;line-height:40px;"
+			<block-lot-map
+				:locations="locations"
+				:background="mapBackground"
+				:aria-label="'Settlement lots for ' + block.name"
+			>
+				<template v-slot:lot="{ location, lot }">
+					<router-link
+						v-if="lot && lot.id"
+						:to="'/block/' + lot.id"
+						:aria-label="lot.name + ' - occupied'"
+						class="w-full h-full block text-center flex items-center justify-center"
 					>
-						<template
-							v-if="locations.find(b => b.location === index)"
-						>
-							<router-link
-								:to="
-									'/block/' +
-										locations.find(
-											b => b.location === index
-										).id
-								"
-								class="w-full h-full block text-center flex items-center justify-center"
-								v-if="
-									locations.find(b => b.location === index).id
-								"
-							>
-								<span style="
-									padding: 3px; 
-									max-height: 40px; 
-									line-height: 13px; 
-									overflow: hidden;">{{
-									locations.find(b => b.location === index)
-										.name
-								}}</span>
-							</router-link>
-							<input
-								type="checkbox"
-								v-model="availableLocations"
-								v-else
-								:value="index"
-							/>
-						</template>
-						<template v-else>
-							<input
-								type="checkbox"
-								v-model="availableLocations"
-								:value="index"
-							/>
-						</template>
-					</div>
-				</div>
-			</div>
+						<span style="
+							padding: 3px;
+							max-height: 40px;
+							line-height: 13px;
+							overflow: hidden;">{{ lot.name }}</span>
+					</router-link>
+					<input
+						v-else
+						type="checkbox"
+						v-model="availableLocations"
+						:value="location"
+						:aria-label="'Allow settlement on lot ' + location"
+					/>
+				</template>
+			</block-lot-map>
 
 			<p>
 				<strong
@@ -86,10 +58,13 @@
 
 <script lang="ts">
 	import Vue from "vue";
-	import { colonyDataHelper } from "@/helpers";
+
+	import BlockLotMap from "@/components/block/BlockLotMap.vue";
+	import { blockBackgroundStyle, colonyDataHelper } from "@/helpers";
 
 	export default Vue.extend({
 		name: "BlockWizardPage",
+		components: { BlockLotMap },
 		props: ["block", "hood", "colony"],
 		data: () => {
 			return {
@@ -127,7 +102,7 @@
 			},
 			async checkAdmin(): Promise<boolean> {
 				try {
-					const adminCheck = await this.$http.get(
+					await this.$http.get(
 						"/block/" + this.$store.data.place.block.id + "/can_admin"
 					);
 					return true;
@@ -137,11 +112,19 @@
 			}
 		},
 		computed: {
+			/**
+			 * The block's ACTUAL background, not the theme default. The previous
+			 * version hardcoded the default background file, so a leader who had
+			 * already chosen a background saw the wizard on the wrong scenery -
+			 * exactly the drift the shared renderer exists to prevent. The original
+			 * showed the block's own background here too: block/wizard/present.tmpl
+			 * renders `<BODY BACKGROUND="...<$imgblock>.gif">`, the block's stored
+			 * image.
+			 */
 			mapBackground(): string {
-				return (
-					"url('/assets/img/map_themes/" +
-					colonyDataHelper[this.colony.slug].map_theme +
-					"/block/Pimg2D000.gif')"
+				return blockBackgroundStyle(
+					colonyDataHelper[this.colony.slug].map_theme,
+					this.block.map_background_index
 				);
 			}
 		},
@@ -151,7 +134,6 @@
 			} else {
 				this.getData();
 			}
-		},
-		async beforeDestroy() {}
+		}
 	});
 </script>
