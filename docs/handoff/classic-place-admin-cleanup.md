@@ -60,10 +60,20 @@ ac3e250  fix: keep the classic buttons static under the pointer
 ae32250  test: pin the restored proportions and the static button look
 ```
 
+```
+0979983  fix: restore the pre-image Home information proportions exactly
+ac3e250  fix: keep the classic buttons static under the pointer
+ae32250  test: pin the restored proportions and the static button look
+e1721a8  docs: record the two review corrections
+33c4351  fix: send Message to All and Inbox to All Cancel to a named parent route
+9f663d4  fix: stop claiming a neighborhood is empty when its blocks failed to load
+4ad39c1  fix: make only real controls look clickable
+e24ef49  test: prove Cancel navigates, and stop a missing button passing vacuously
+```
+
 `07eea8e`-`c400474` are corrections found while capturing the QA screenshots.
-The final three are **Ryan's review corrections**: the Home proportions had
-overshot (§3.7) and the button hover highlight was invented rather than restored
-(§3.6). Both are kept as their own commits rather than folded back in.
+`0979983`-`e1721a8` are **Ryan's review corrections** (§3.6, §3.7). The last four
+answer the **independent Gemini + CodeRabbit review** (§4).
 
 ---
 
@@ -261,6 +271,140 @@ the fixed-width layout are unchanged. **Nothing here makes the page responsive.*
 
 ---
 
+## 4. Independent review corrections (Gemini + CodeRabbit)
+
+### 4.1 Cancel on Message to All / Inbox to All — fixed, but not for the stated reason
+
+**The reported mechanism does not reproduce.** The review said vue-router aborts
+the Cancel push as a duplicate navigation, leaving the citizen on the form.
+Verified in the running preview against the **pre-fix** bundle, reading
+`$route.name` directly either side of the click:
+
+```
+colonyInboxToAll  --CANCEL-->  world-browser
+```
+
+It navigated. On vue-router 3.5.2 the `.catch(() => undefined)` never fired.
+
+**The real defect is ordering fragility.** Each form is a named child with an
+empty path, so its URL is identical to its parent place view's, and `{ path }`
+cannot say which of the two it means — vue-router returns the *first* empty-path
+child declared. The place view is declared first at all three tiers, so Cancel
+worked by declaration order rather than by intent. A behavioral test now proves
+that reordering those siblings makes the same push resolve back to the form,
+where Cancel silently does nothing.
+
+Fixed by naming the destination (`helpers/place-form-return.helper.ts`):
+
+| Form route | Parent place view |
+|---|---|
+| `colonyMessageToAll`, `colonyInboxToAll` | `world-browser` |
+| `neighborhoodMessageToAll`, `neighborhoodInboxToAll` | `neighborhoodpage` |
+| `blockMessageToAll`, `blockInboxToAll` | `blockmap` |
+
+Keyed on route name, not the store's place type, so it resolves before any data
+loads — Cancel works on a form entered directly with no history. Params carry
+over, so it returns to *that* place. Unmapped forms fall back to The Plaza. It
+pushes rather than replaces, so browser Back still works. The `.catch` is gone.
+
+Verified live, all six combinations, each with the leader who actually holds the
+capability:
+
+```
+[colony] Message to All: colonyMessageToAll        --CANCEL--> world-browser
+[colony] Inbox to All:   colonyInboxToAll          --CANCEL--> world-browser
+[hood]   Message to All: neighborhoodMessageToAll  --CANCEL--> neighborhoodpage
+[hood]   Inbox to All:   neighborhoodInboxToAll    --CANCEL--> neighborhoodpage
+[block]  Message to All: blockMessageToAll         --CANCEL--> blockmap
+[block]  Inbox to All:   blockInboxToAll           --CANCEL--> blockmap
+```
+
+POST labels unchanged; `POST · CANCEL` order unchanged.
+
+### 4.2 Contradictory neighborhood overlay output — fixed
+
+A failed overlay fetch rendered the error *and* "This neighborhood has no blocks
+on its map yet." The summary came from `blocks.length === 0`, which cannot
+separate "loaded and empty" from "not loaded" or "failed".
+
+`overlayLoaded` is now set only inside the success path, and `overlayReady`
+(loaded **and** no error) gates both summaries. A retry clears both flags before
+starting; each failure path clears its rows so a stale overlay is not left
+looking current. Applied to the block occupancy summary too, which had the same
+defect. Verified live by forcing the blocks request to 404:
+
+| State | Error | Empty claim | Summary |
+|---|---|---|---|
+| success, 10 blocks | — | — | shown |
+| forced failure | shown | **gone** | — |
+| retry after failure | — | — | shown, 10 blocks redrawn |
+
+### 4.3 Pointer/focus scoped to interactive controls — fixed
+
+`cursor: pointer` was on `.btn-ui` itself, but that class is the button *look*,
+worn by two inert placeholders:
+
+| File | Element |
+|---|---|
+| `pages/neighborhood/NeighborhoodTools.vue` | `<span href="" class="btn-ui">Vote</span>` |
+| `pages/world-browser/WorldBrowserTools.vue` | `<span v-else-if="type !== 'colony'" class="btn-ui">Update</span>` |
+
+Pointer and the focus ring now apply to `a.btn-ui`, `button.btn-ui` and
+`.btn-ui[role="button"]` only; disabled buttons get the default cursor.
+
+**Neither span needed converting.** A sweep of every `.btn-ui` occurrence found
+no span or div anywhere carrying a click handler, and no `role="button"` in the
+codebase — both are genuinely inert. A test now fails if an interactive
+`.btn-ui` span ever appears, so the fix then is real markup, not a widened
+selector.
+
+Verified live: the Vote span reads `cursor: auto`; its neighbouring buttons and
+links read `pointer`; CHECK keeps `pointer`, hover identical to resting
+(`#001829` / `#8f9bb6`), and Enter still opens the queue in the Block frame.
+
+### 4.4 Vacuous label-order test — fixed
+
+`withLabel()` returned `""` for a missing control and `indexOf("")` is 0, so a
+form that had lost its primary button still satisfied `primaryAt < cancelAt`.
+It is now `buttonPosition()`, which throws when its control is absent; the two
+positions are asserted distinct so one control cannot satisfy both lookups; and
+a negative test feeds it a fixture with no primary button and requires a throw.
+
+The Cancel source-string assertion — which is how a navigation claim survived
+review in the first place — is replaced by the behavioral router suite in §4.1.
+
+### 4.5 Apply / Restore Default persistence — verified
+
+Against the isolated cleanup database only (`ctr-classicadmin-cleanup-mysql`,
+13309). Beta, production and the frozen fidelity database were not touched.
+
+| Step | Neighborhood 891 | Block 892 |
+|---|---|---|
+| original | `NULL` | `NULL` |
+| candidate selected, **no Apply** | `NULL` | `NULL` |
+| **Apply** | `3` | `2` |
+| reload the editor | `3`, radio 3 checked | — |
+| **Restore Default** | `NULL` | `NULL` |
+
+All 907 `place.map_background_index` rows were snapshotted before and after: the
+files are **identical**, so nothing else changed and both places are back to
+their original values.
+
+### 4.6 Preview stacks
+
+Both were already up and healthy — the unavailability was environmental, not a
+source finding:
+
+```
+cleanup   site 8089 200 | api 3002 401 (alive) | socket 8001 200 | db 13309 alive
+fidelity  site 8088 200 | api 3001 401 (alive) | socket 8000 200 | db 13308 alive
+```
+
+No `cybertown.dev` or `cybertown.com` host appears in any of the four `.env`
+files. The frozen fidelity database was not mutated.
+
+---
+
 ## 4. Neighborhood chooser — historical evidence
 
 **Proven:**
@@ -315,7 +459,7 @@ three consumers before this lane. Verified and now pinned by
 
 | Check | Result | Baseline |
 |---|---|---|
-| SPA `npm test` (Node 14) | **179/179**, 10 suites | was 149/149, 9 suites |
+| SPA `npm test` (Node 14) | **194/194**, 11 suites | was 149/149, 9 suites |
 | API `NODE_ENV=development npx jest` (Node 20) | **307 passed, 5 failed / 31 suites** | was 303 passed, 5 failed / 30 |
 | API `npx tsc --noEmit` | clean | clean |
 | SPA production build (Node 14) | succeeds | succeeds |
