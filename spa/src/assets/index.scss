@@ -154,27 +154,48 @@ table {
   text-transform: uppercase;
   margin-left: auto;
   margin-right: auto;
-  // The bar mixes <button>, <router-link> and (historically) <span>, and the
-  // browser gives those three different default cursors. Stating it once here
-  // means every bar control reads as clickable whichever element it happens to
-  // be.
-  cursor: pointer;
 
 }
 
-// Keyboard focus only.
+// `.btn-ui` is the classic button LOOK. It is deliberately not what makes
+// something clickable, because the class is also worn by inert placeholders that
+// only borrow the chrome - the neighborhood's "Vote" control and the non-colony
+// "Update" label are spans with no handler and nothing behind them. Putting
+// `cursor: pointer` on the class itself told a citizen those were buttons.
+//
+// So pointer and focus are scoped to elements that actually do something:
+// links, buttons, and anything explicitly given button semantics. An inert span
+// keeps the default cursor and takes no focus ring.
+//
+// If a `.btn-ui` span ever NEEDS to be interactive, give it real semantics -
+// make it a <button> or a <router-link> - rather than widening this selector.
+a.btn-ui,
+button.btn-ui,
+.btn-ui[role="button"] {
+  cursor: pointer;
+}
+
+// A control that cannot be used should not claim it can.
+button.btn-ui:disabled,
+.btn-ui[aria-disabled="true"] {
+  cursor: default;
+}
+
+// Keyboard focus only, and only on real controls.
 //
 // There is deliberately NO :hover rule. The classic Cybertown buttons are static
 // - they do not light up, change colour or animate under the pointer - and an
-// earlier pass here added a hover fill and border change that is not part of that
-// look. `cursor: pointer` above is the whole of the mouse affordance.
+// earlier pass here added a hover fill and border change that is not part of
+// that look.
 //
 // :focus-visible rather than :focus, so this ring appears when a keyboard user
 // tabs to a control and NOT when a mouse user clicks one. Engines without
 // :focus-visible support simply skip the rule and keep their own default focus
 // ring, which is the safe way to degrade: no rule here can restyle ordinary
 // hover.
-.btn-ui:focus-visible {
+a.btn-ui:focus-visible,
+button.btn-ui:focus-visible,
+.btn-ui[role="button"]:focus-visible {
   outline: 2px solid #d0dbf7;
   outline-offset: 1px;
 }
