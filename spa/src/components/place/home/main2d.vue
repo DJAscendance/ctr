@@ -3,80 +3,93 @@
     <!-- property/present.tmpl -->
     <h3><strong>Welcome to {{ $store.data.place.name }}</strong></h3>
 
+    <!--
+      `w-2/3` on the information column and `w-full` on the table are the classic
+      geometry, restored. Adding the image column had replaced them with a
+      shrink-to-fit div and a shrink-to-fit table, which collapsed the resident
+      details into a narrow strip against the left edge: the label and value
+      columns ended up ~120px apart instead of spreading across two thirds of the
+      page the way live CTR does.
+
+      With `w-full` back, the table's automatic layout distributes the spare width
+      between the two columns again, which is what produces the classic
+      separation - it is not a fixed label width, and pinning one (the `w-36` this
+      replaces) is what broke it.
+    -->
     <div class="flex flex-row" >
-      <div class="flex flex-auto">
-        <table>
+      <div class="flex flex-auto w-2/3">
+        <table class="w-full">
           <tr>
-            <td class="w-36 pr-4 font-bold text-left">
+            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
               Resident
             </td>
-            <td class="text-left">
+            <td class="py-0.5 text-left align-top">
               {{ memberInfo.username }}
             </td>
           </tr>
 
           <tr>
-            <td class="w-36 pr-4 font-bold text-left">
+            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
               Name
             </td>
-            <td class="text-left">
+            <td class="py-0.5 text-left align-top">
               {{ memberInfo.firstName }} {{ memberInfo.lastName }}
             </td>
           </tr>
           <tr v-if="parseInt(this.$store.data.user.id) == parseInt(this.$store.data.place.member_id)
           || this.$store.data.user.admin">
-            <td class="w-36 pr-4 font-bold text-left">
+            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
               Email
             </td>
-            <td class="text-left">
+            <td class="py-0.5 text-left align-top">
               {{ memberInfo.email }}
             </td>
           </tr>
 
           <tr>
-            <td class="w-36 pr-4 font-bold text-left">
+            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
               Immigration
             </td>
-            <td class="text-left">
+            <td class="py-0.5 text-left align-top">
               <!-- format Saturday, October 9 1999 -->
               {{ memberInfo.immigrationDate | dateFormatFilter }}
             </td>
           </tr>
           
           <tr v-if="canAdmin && this.$store.data.place.block">
-            <td class="w-36 pr-4 font-bold text-left">
+            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
               Last Access
             </td>
-            <td class="text-left">
+            <td class="py-0.5 text-left align-top">
               <!-- format Saturday, October 9 1999 -->
               {{ memberInfo.lastAccess | dateFormatFilter }}
             </td>
           </tr>
 
           <tr>
-            <td class="w-36 pr-4 font-bold text-left">
+            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
               Experience
             </td>
-            <td class="text-left">
+            <td class="py-0.5 text-left align-top">
               {{ memberInfo.xp }}
             </td>
           </tr>
 
           <tr v-if="parseInt(this.$store.data.user.id) === parseInt(this.$store.data.place.member_id)">
-            <td class="w-36 pr-4 font-bold text-left">
+            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
               Money
             </td>
-            <td class="text-left">
+            <td class="py-0.5 text-left align-top">
                {{ memberInfo.walletBalance }}cc
             </td>
           </tr>
 
           <!--
           <tr>
-            <td class="w-36 pr-4 font-bold text-left">
+            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
               Home Page
             </td>
-            <td class="text-left">
+            <td class="py-0.5 text-left align-top">
               <a href="<$HPG>" target="external"><$HPG></a>
             </td>
           </tr>
@@ -84,8 +97,15 @@
         </table>
 
       </div>
+      <!--
+        pl-6/pr-2/pt-2 keep the image off the resident details on one side and off
+        the window edge on the other, and clear of the page title above it. Without
+        them a 200x200 image sat flush against both the right and top edges, which
+        is what made the restored image area feel bolted on rather than part of the
+        page. The 200px column itself is unchanged - only its breathing room is.
+      -->
       <div
-        class="flex-none flex flex-col items-center justify-start text-center"
+        class="flex-none flex flex-col items-center justify-start text-center pl-6 pr-2 pt-2"
         style="width: 200px;"
       >
         <img
@@ -104,7 +124,11 @@
         <small v-else><i>No image uploaded yet!</i></small>
       </div>
     </div>
-    <storage :member_id="this.$store.data.place.member_id" v-if="showStorage"></storage>
+    <!-- Object Storage Areas is a separate section, not a continuation of the
+         identity fields; it needs a gap that the tightened layout had lost. -->
+    <div class="mt-4" v-if="showStorage">
+      <storage :member_id="this.$store.data.place.member_id"></storage>
+    </div>
   </div>
 </template>
 
