@@ -404,21 +404,38 @@ test("no upload happens before Update is pressed", () => {
 
 // ------------------------------------------------------ 6. Block CHECK button
 
-test("tool bar controls have a cursor, a hover state and a focus ring", () => {
+test("tool bar controls have a pointer cursor and a keyboard-only focus ring", () => {
   const styles = read(STYLES);
   const rule = styles.slice(styles.indexOf(".btn-ui {"), styles.indexOf(".btn-ui-inline"));
   assert.ok(/cursor: pointer;/.test(rule), "every bar control must read as clickable");
-  assert.ok(/\.btn-ui:hover/.test(rule), "and respond to hover");
-  assert.ok(/\.btn-ui:focus/.test(rule), "and show keyboard focus");
   assert.ok(
     /\.btn-ui:focus-visible/.test(rule),
-    "with :focus-visible so the ring is not shown on plain mouse clicks",
+    "keyboard users need a visible focus indicator",
+  );
+});
+
+test("the classic buttons stay static under the pointer", () => {
+  const styles = read(STYLES);
+  const rule = styles.slice(styles.indexOf(".btn-ui {"), styles.indexOf(".btn-ui-inline"));
+  const markup = rule.replace(/\/\/[^\n]*/g, "");
+  // No hover restyling of any kind: the classic Cybertown buttons do not light
+  // up, change colour or animate under the mouse.
+  assert.ok(!/:hover/.test(markup), "there must be no :hover rule at all");
+  assert.ok(
+    !/transition|animation|box-shadow:[^;]*(glow|rgba)/i.test(markup),
+    "no glow, transition or animation may be introduced",
+  );
+  // A bare :focus would fire on mouse clicks too, which is hover restyling by
+  // another name. Only :focus-visible is allowed.
+  assert.ok(
+    !/\.btn-ui:focus\s*\{/.test(markup),
+    "a bare :focus rule would also fire on a mouse click",
   );
 });
 
 // ------------------------------------ 7. Home page owner information spacing
 
-test("the home information table spans the page again", () => {
+test("the home information table is the original pre-image structure", () => {
   const template = markup(HOME_MAIN_2D);
   assert.ok(
     /<div class="flex flex-auto w-2\/3">/.test(template),
@@ -432,38 +449,69 @@ test("the home information table spans the page again", () => {
     !/w-36/.test(template),
     "pinning the label column to 9rem is what collapsed the separation",
   );
+  // Cell classes verbatim from the pre-image commit 0c6db9e.
+  assert.ok(
+    /<td class="w-130 font-bold text-left">/.test(template),
+    "the first label cell keeps its original class",
+  );
+  const labels = template.match(/<td class="font-bold text-left">/g) || [];
+  assert.ok(labels.length >= 6, "every other label cell is the plain original");
+  const values = template.match(/<td class="text-left">/g) || [];
+  assert.ok(values.length >= 7, "every value cell is the plain original");
 });
 
-test("the owner information cells have padding", () => {
+test("no cell padding is added back to the information table", () => {
   const template = markup(HOME_MAIN_2D);
-  const labels = template.match(/class="pr-8 py-0\.5 font-bold text-left[^"]*"/g) || [];
-  assert.ok(labels.length >= 6, "every label cell needs its gutter and padding");
-  const values = template.match(/class="py-0\.5 text-left align-top"/g) || [];
-  assert.ok(values.length >= 6, "every value cell needs matching padding");
+  const table = template.slice(
+    template.indexOf("<table"),
+    template.indexOf("</table>"),
+  );
+  // This table uses automatic layout, which distributes spare width in
+  // proportion to content width - so padding on a cell is AMPLIFIED, not merely
+  // added. pr-8 on the labels pushed the value column from ~20% to ~33%.
+  for (const forbidden of ["pr-", "px-", "py-", "pl-", "p-", "whitespace-nowrap", "align-top"]) {
+    assert.ok(
+      !table.includes(forbidden),
+      `${forbidden} on a cell moves the classic column proportions`,
+    );
+  }
 });
 
-test("the image is not flush against the page edges", () => {
+test("the image sits in the remaining third, not in the table's space", () => {
   const template = markup(HOME_MAIN_2D);
   assert.ok(
-    /flex-none flex flex-col items-center justify-start text-center pl-6 pr-2 pt-2/.test(
+    /flex-none w-1\/3 flex flex-col items-center justify-start text-center pt-2/.test(
       template,
     ),
-    "the image column needs clearance from the details, the edge and the title",
+    "the image region must be the complement of the w-2/3 information column",
   );
-  // 200px image + 24 left + 8 right. Widths are border-box, so the padding has
-  // to be ADDED to the declared width; leaving it at 200 would take the padding
-  // out of the image's own space and push it back against the edge.
+  // A fixed pixel column would take its width out of the row BEFORE the
+  // information column is sized, so its value would silently decide the first
+  // two columns' proportions.
   assert.ok(
-    /style="width: 232px;"/.test(template),
-    "the column must be wide enough to hold a 200px image plus its padding",
+    !/style="width: \d+px;"[\s\S]{0,40}<img/.test(template),
+    "the image region must not be a fixed-width flex sibling",
+  );
+  assert.ok(
+    /max-width: 200px; max-height: 200px;/.test(template),
+    "the image itself is still bounded at 200x200",
   );
 });
 
-test("Object Storage Areas is separated from the identity fields", () => {
+test("Object Storage Areas keeps its original placement", () => {
   const template = markup(HOME_MAIN_2D);
+  // Verbatim from 0c6db9e: no wrapper, no added margin. The gap live CTR shows
+  // between the identity fields and this section is the section's own, and
+  // adding to it moves Object Storage Areas off the reference.
+  const storage = /<storage ([^>]*)><\/storage>/.exec(template);
+  assert.ok(storage, "storage must be rendered directly, not inside a wrapper");
   assert.ok(
-    /<div class="mt-4" v-if="showStorage">/.test(template),
-    "storage needs a gap so it does not read as another identity row",
+    /v-if="showStorage"/.test(storage[1]),
+    "and keep its original showStorage guard",
+  );
+  assert.ok(
+    !/<div[^>]*mt-\d/.test(template),
+    "no margin wrapper may be added around it",
   );
 });
 
