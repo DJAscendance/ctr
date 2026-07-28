@@ -54,10 +54,16 @@ e7974f9  test: cover classic admin cleanup regressions
 07eea8e  fix: let the information window fill the page it is centered in
 1adf125  fix: size the home image column to include its own padding
 c400474  test: follow the home image column to its padded width
+4419e7e  docs: record cleanup findings and deferred lanes
+0979983  fix: restore the pre-image Home information proportions exactly
+ac3e250  fix: keep the classic buttons static under the pointer
+ae32250  test: pin the restored proportions and the static button look
 ```
 
-The last three are corrections found while capturing the QA screenshots, kept as
-their own commits rather than folded back in.
+`07eea8e`-`c400474` are corrections found while capturing the QA screenshots.
+The final three are **Ryan's review corrections**: the Home proportions had
+overshot (§3.7) and the button hover highlight was invented rather than restored
+(§3.6). Both are kept as their own commits rather than folded back in.
 
 ---
 
@@ -171,11 +177,19 @@ unauthorized member who types the URL still gets an empty queue and a refusal.
 Check Images also stays a permanent tool bar action rather than migrating into the
 Update hub.
 
-`.btn-ui` gained `cursor`, `:hover` and `:focus-visible` rules. The bar mixes
-`<button>`, `<router-link>` and (historically) `<span>`, which get three different
-default cursors; stating it once on the shared class is what makes "the same as its
-neighbours" true rather than approximately true. Measured after: `cursor: pointer`,
-hover `#002d4a` / border `#d0dbf7`, focus outline `#d0dbf7`.
+`.btn-ui` gained `cursor: pointer` and a `:focus-visible` ring — and nothing else.
+
+**Corrected after review:** the first pass also added a hover fill and border
+change, which was invented rather than restored. The classic Cybertown buttons are
+static under the pointer, and that highlight applied to every control sharing the
+class. It is gone, along with the bare `:focus` rule, which fired on mouse clicks
+too — hover restyling by another name. Only `:focus-visible` remains, so the ring
+appears when a keyboard user tabs to a control and not when a mouse user clicks
+one; engines without support skip it and keep their own default ring.
+
+Measured after: CHECK's hover background and border are **identical to its resting
+state** (`#001829` / `#8f9bb6`), the ring matches only `:focus-visible`, and Enter
+still opens the queue inside the Block content frame.
 
 ### 3.7 Home page owner information and image spacing
 
@@ -198,13 +212,52 @@ Restored `w-2/3` and `w-full` and dropped the fixed label width, so the automati
 table layout distributes the spare width again. Added cell padding, gave the image
 column clearance, and put a gap back before Object Storage Areas.
 
-The image column is **232px**, not 200: widths are border-box, so padding a 200px
-column takes the space out of the image rather than adding to it, and a full-width
-image went straight back to the edge. Measured after: labels x=10, values x=366,
-image ends 18px short of the content edge.
+**Corrected after review — the first pass overshot.** Restoring the containers
+fixed the collapse but put the value column at ~33% of the content width where
+live has it at ~20%. The cause was the cell padding that had been added alongside:
+this table uses **automatic layout**, which distributes spare width between columns
+in proportion to their content widths, so `pr-8` on the labels was not a 32px
+gutter — it was 32px of extra content width that the distribution then amplified.
+`whitespace-nowrap` and `align-top` compounded it.
 
-Narrowly scoped — the 200px image, the approved/pending/absent states and the
-fixed-width layout are unchanged. **Nothing here makes the page responsive.**
+The first two columns are now `0c6db9e` verbatim: `flex flex-auto w-2/3`, a
+`w-full` table, `w-130` on the first label cell, plain `font-bold text-left` /
+`text-left` elsewhere, and **no cell padding of any kind**. Object Storage Areas
+lost its added `mt-4` wrapper for the same reason — live's gap there is the
+section's own.
+
+The image sits in the remaining third rather than beside the table as a fixed
+232px sibling. A fixed pixel column takes its width out of the row *before* the
+information column is sized, so its value silently decides the table width and
+therefore the column proportions; `w-1/3` — the complement of `w-2/3` — keeps the
+information column the same two thirds it was before the image feature existed, at
+any window width.
+
+Measured at a 1536px content width against the live reference (1529px):
+
+| | cleanup | live |
+|---|---|---|
+| label column x | 10 | 10 |
+| value column x | 374 | 306 |
+| information column | 1024 (exactly 2/3) | — |
+| image region | 512 (exactly 1/3) | — |
+| image centre | 83.3% | ~82.7% |
+
+Verified across **approved, narrower-approved, pending and no-image**: all four
+hold identical 1024/512 column widths, so the information layout no longer depends
+on whether a home has an image. Long values cannot collide with the image at any
+length — they are bounded by the information column and flex siblings do not
+overlap (widest value ends at 1033, image starts at 1239).
+
+Narrowly scoped — the 200×200 image bound, the approved/pending/absent states and
+the fixed-width layout are unchanged. **Nothing here makes the page responsive.**
+
+> **One residual difference, not from this lane.** Rows sit ~30px apart in the
+> preview against ~20px on live. Ryan's own before-state screenshot of the fidelity
+> preview shows ~28.5px with identical fonts (label text 68px vs live's 67px), so
+> it is a global stylesheet difference between this build and what production
+> serves, present before any change here. Correcting it in `main2d.vue` would mean
+> inventing a line-height override — the very thing this correction removed.
 
 ---
 
@@ -262,7 +315,7 @@ three consumers before this lane. Verified and now pinned by
 
 | Check | Result | Baseline |
 |---|---|---|
-| SPA `npm test` (Node 14) | **178/178**, 10 suites | was 149/149, 9 suites |
+| SPA `npm test` (Node 14) | **179/179**, 10 suites | was 149/149, 9 suites |
 | API `NODE_ENV=development npx jest` (Node 20) | **307 passed, 5 failed / 31 suites** | was 303 passed, 5 failed / 30 |
 | API `npx tsc --noEmit` | clean | clean |
 | SPA production build (Node 14) | succeeds | succeeds |
@@ -369,8 +422,11 @@ Shutdown: `kill` the three node PIDs and
 | 8 | `08-home-image-selected-filename-green.png` | "Selected: my-new-home-picture.webp" in green |
 | 9 | `09-check-button-hover-focus.png` | CHECK hover and focus |
 | 10 | `10-image-check-in-block-content-area.png` | image check inside the block frame, tool bar intact |
-| 11 | `11-home-approved-image-padding.png` | approved image, restored spacing |
-| 12 | `12-home-no-image-padding.png` | no-image state |
+| 0 | `00-live-ctr-reference.png` | **Ryan's live CTR reference** — the visual authority for the Home layout |
+| 11 | `11-home-approved-image-padding.png` | approved image, restored proportions |
+| 12 | `12-home-no-image-padding.png` | no-image state, same column widths |
+| 16 | `16-home-narrow-image.png` | narrower approved image |
+| 17 | `17-home-pending-and-long-name.png` | pending placeholder with a long home name |
 | 13-15 | `13-message-to-all-buttons.png`, `14-…`, `15-…` | primary-before-Cancel on the three audited forms |
 
 ---
