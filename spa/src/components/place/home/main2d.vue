@@ -102,11 +102,16 @@
         the window edge on the other, and clear of the page title above it. Without
         them a 200x200 image sat flush against both the right and top edges, which
         is what made the restored image area feel bolted on rather than part of the
-        page. The 200px column itself is unchanged - only its breathing room is.
+        page.
+
+        232px = the 200px image plus that 24+8 of padding. Widths are border-box
+        here, so leaving the column at 200 would have taken the padding OUT of the
+        image's own space and pushed a full-width image back against the edge -
+        the padding has to be added to the declared width, not absorbed by it.
       -->
       <div
         class="flex-none flex flex-col items-center justify-start text-center pl-6 pr-2 pt-2"
-        style="width: 200px;"
+        style="width: 232px;"
       >
         <img
           v-if="homeImage"
