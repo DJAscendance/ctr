@@ -39,6 +39,8 @@
 <script lang="ts">
 import Vue from "vue";
 
+import { placeFormReturnTarget } from "@/helpers";
+
 export default Vue.extend({
   name: "InboxToAll",
   data: () => {
@@ -73,19 +75,23 @@ export default Vue.extend({
       }
     },
     /**
-     * Leaves without sending. This route shares its parent's path (it is a named
-     * child with an empty path), so pushing that path resolves back to the place's
-     * default view - the screen this form was opened from.
+     * Leaves without sending, and mutates nothing.
      *
-     * vue-router rejects a navigation to the route you are already on; that is
-     * this Cancel landing where it meant to, not a failure, so the rejection is
-     * swallowed rather than surfacing as an unhandled promise rejection.
+     * Navigates to the parent place view BY NAME. This route is a named child
+     * with an empty path, so its URL is identical to that parent's, and a path
+     * push cannot say which of the two it means - vue-router answers with the
+     * first empty-path child declared. That is the place view today, so it
+     * happened to work; reorder the siblings and the same push resolves back to
+     * this form and Cancel silently does nothing. Naming the destination is the
+     * only way to tell apart routes that share a path.
+     * See helpers/place-form-return.helper.ts.
      */
     switchView(): void {
-      const target = this.$router.push({ path: this.$route.path }) as unknown;
-      if (target && typeof (target as Promise<unknown>).catch === "function") {
-        (target as Promise<unknown>).catch(() => undefined);
-      }
+      const target = placeFormReturnTarget(
+        this.$route.name,
+        this.$route.params as Record<string, string>,
+      );
+      this.$router.push(target);
     },
   },
 });
