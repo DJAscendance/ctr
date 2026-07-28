@@ -3,20 +3,39 @@
 > ## ⏳ TEMPORARY — active lane marker
 >
 > **Remove this whole block (and this file, if nothing else has been added to it)
-> once `fix/classic-place-admin-fidelity` is merged.** It exists only so a fresh
+> once `fix/classic-place-admin-cleanup` is merged.** It exists only so a fresh
 > session knows what is already finished and does not redo or reopen it.
 
-## Active lane: `fix/classic-place-admin-fidelity`
+## Active lane: `fix/classic-place-admin-cleanup`
+
+Branched from `fix/classic-place-admin-fidelity` @ `0d9d33a` — **not** from beta.
+Worktree: `~/Projects/cybertown/.worktrees/ctr/classic-place-admin-cleanup`.
+**Local only: not pushed, not deployed.** Awaiting Ryan's review.
+
+It fixes the seven defect groups Ryan found while manually testing the fidelity
+branch: Information centering and stale route state, the neighborhood background
+preview and its 27-image chooser, button ordering, the home-image filename, the
+block CHECK button, and home-page spacing. **Bug-fixes only** — every item listed
+as deferred below is still deferred.
+
+Review the fidelity branch first; this one is a strict continuation and its diff
+only reads against that base. Merge order: fidelity → cleanup → beta, a
+fast-forward chain.
+
+### Previous lane: `fix/classic-place-admin-fidelity`
 
 Branched from `origin/beta` @ `76cb514`. Worktree:
 `~/Projects/cybertown/.worktrees/ctr/classic-place-admin-fidelity`.
-**Not deployed.** Awaiting Ryan's manual testing.
+**Not deployed.** Pushed to `origin` for safekeeping, and its upstream corrected
+away from `origin/beta`, so a bare push from it no longer targets beta. Its
+preview stack is left running on port 8088 as the frozen before-state.
 
 ### Read these first
 
 | Document | What it is |
 |---|---|
-| [**`docs/handoff/classic-place-admin-fidelity.md`**](docs/handoff/classic-place-admin-fidelity.md) | **Start here.** Git state, what shipped, what the manual review corrected, current test results, the preview stack, QA accounts, every unresolved item, and the scope of the next lane. |
+| [**`docs/handoff/classic-place-admin-cleanup.md`**](docs/handoff/classic-place-admin-cleanup.md) | **Start here.** The current lane: each defect's real root cause, the neighborhood-chooser evidence (what is proven vs reconstructed), the sanitizer verification, test results, the 8089 preview stack and its quirks, the screenshot index, and what this lane raised for Ryan. |
+| [`docs/handoff/classic-place-admin-fidelity.md`](docs/handoff/classic-place-admin-fidelity.md) | The lane before it. Git state, what shipped, what the manual review corrected, QA accounts — and **§8 is still the authoritative deferred list.** |
 | [`docs/research/classic-place-admin-re-evidence.md`](docs/research/classic-place-admin-re-evidence.md) | The approved reverse-engineering evidence report. CS 4.0 / 5.1 / 7.0 traced against the Wayback scrape. **This is the behavioral specification** for the features below — do not re-derive it. |
 | [`docs/research/classic-place-admin-followups.md`](docs/research/classic-place-admin-followups.md) | Deferred work, with the same evidence standard. Read before proposing anything in this area. **§1b is retracted** — see the matrix below. |
 | [`docs/research/classic-update-hierarchy-matrix.md`](docs/research/classic-update-hierarchy-matrix.md) | The Colony → Neighborhood → Block Update hierarchy trace, the placement table, the full permission matrix, and the CTR authorization audit. Corrects the follow-ups doc's colony-wizard claim. |
