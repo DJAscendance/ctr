@@ -162,25 +162,18 @@ table {
 
 }
 
-// Hover and keyboard focus for every tool bar control, defined once so the bar
-// cannot drift into "some buttons respond, some look dead".
-.btn-ui:hover {
-  background-color: #002d4a;
-  border-color: #d0dbf7;
-}
-
-// Keyboard users get the same affordance mouse users get. :focus-visible keeps
-// the ring off plain mouse clicks; the :focus rule is the fallback for engines
-// that do not support it and is cancelled where they do.
-.btn-ui:focus {
-  outline: 2px solid #d0dbf7;
-  outline-offset: 1px;
-}
-
-.btn-ui:focus:not(:focus-visible) {
-  outline: none;
-}
-
+// Keyboard focus only.
+//
+// There is deliberately NO :hover rule. The classic Cybertown buttons are static
+// - they do not light up, change colour or animate under the pointer - and an
+// earlier pass here added a hover fill and border change that is not part of that
+// look. `cursor: pointer` above is the whole of the mouse affordance.
+//
+// :focus-visible rather than :focus, so this ring appears when a keyboard user
+// tabs to a control and NOT when a mouse user clicks one. Engines without
+// :focus-visible support simply skip the rule and keep their own default focus
+// ring, which is the safe way to degrade: no rule here can restyle ordinary
+// hover.
 .btn-ui:focus-visible {
   outline: 2px solid #d0dbf7;
   outline-offset: 1px;
