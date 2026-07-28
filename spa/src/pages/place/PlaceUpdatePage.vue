@@ -15,6 +15,10 @@
 import Vue from "vue";
 
 import PlaceUpdateHub from "@/components/place/PlaceUpdateHub.vue";
+import {
+  createPlaceResolver,
+  placeUpdateRouteChanged,
+} from "@/helpers/place-hub-load.helper";
 
 /**
  * Route target for every scoped Update hub.
@@ -27,6 +31,13 @@ import PlaceUpdateHub from "@/components/place/PlaceUpdateHub.vue";
  * `tier` comes from the route table, not from the user, and is only used to pick
  * the resolution strategy and to assert against the type the server reports. It
  * grants nothing: authorization is decided server-side from the stored place row.
+ *
+ * vue-router REUSES this instance across places of the same tier, so resolving
+ * only in `mounted()` left the previous place - or a previous failure - on screen
+ * after every same-tier navigation. The resolution therefore lives in a
+ * controller that clears its state before each load and discards answers
+ * belonging to a route the member has already left; see
+ * helpers/place-hub-load.helper.
  */
 export default Vue.extend({
   name: "PlaceUpdatePage",
@@ -36,37 +47,36 @@ export default Vue.extend({
   },
   data() {
     return {
-      placeId: 0,
-      unresolved: false,
+      resolver: createPlaceResolver(this.$http),
     };
   },
+  computed: {
+    placeId(): number {
+      return this.resolver.state.placeId;
+    },
+    unresolved(): boolean {
+      return this.resolver.state.unresolved;
+    },
+  },
   methods: {
-    async resolvePlaceId(): Promise<void> {
-      const param = this.$route.params.id;
-      if (this.tier !== "colony") {
-        const parsed = Number.parseInt(param, 10);
-        if (Number.isNaN(parsed)) {
-          this.unresolved = true;
-          return;
-        }
-        this.placeId = parsed;
-        return;
-      }
-      try {
-        const response = await this.$http.get(`/place/${param}`);
-        const place = response.data.place;
-        if (!place || !place.id) {
-          this.unresolved = true;
-          return;
-        }
-        this.placeId = place.id;
-      } catch (e) {
-        this.unresolved = true;
-      }
+    reload(): void {
+      this.resolver.reload(this.$route.params.id, this.tier);
     },
   },
   mounted(): void {
-    this.resolvePlaceId();
+    this.reload();
+  },
+  watch: {
+    /**
+     * Vue 2 replaces `$route` on every navigation, so this fires once per
+     * navigation without `deep`. The guard skips navigations that leave the same
+     * place addressed - a query or hash change - while still catching a change of
+     * tier, which can share an id with the place it replaces.
+     */
+    $route(to, from) {
+      if (!placeUpdateRouteChanged(to, from)) return;
+      this.reload();
+    },
   },
 });
 </script>

@@ -42,6 +42,14 @@ const path = require("path");
 const SPA_SRC = path.resolve(__dirname, "../../../src");
 const HUB_COMPONENT = path.join(SPA_SRC, "components/place/PlaceUpdateHub.vue");
 const HUB_PAGE = path.join(SPA_SRC, "pages/place/PlaceUpdatePage.vue");
+/**
+ * The hub's loading, refusal and slug-resolution rules moved here when the hubs
+ * were made to refresh on route changes; the component and page now delegate to
+ * it. The assertions below follow that logic to its new home rather than
+ * relaxing what they guard - the behaviour itself is exercised for real in
+ * place-hub-route-refresh.test.
+ */
+const HUB_LOAD = path.join(SPA_SRC, "helpers/place-hub-load.helper.ts");
 const INFORMATION_PAGE = path.join(SPA_SRC, "pages/Information.vue");
 const ROUTES = path.join(SPA_SRC, "routes.ts");
 const COLONY_TOOLS = path.join(SPA_SRC, "pages/world-browser/WorldBrowserTools.vue");
@@ -589,7 +597,7 @@ test("every tile uses the classic Update Wizard art the home page uses", () => {
 test("the hub renders tiles from the server's capability list", () => {
   const source = read(HUB_COMPONENT);
   assert.ok(
-    source.includes("/update-hub"),
+    read(HUB_LOAD).includes("/update-hub"),
     "the hub must read capabilities from the server endpoint",
   );
   assert.ok(
@@ -597,23 +605,21 @@ test("the hub renders tiles from the server's capability list", () => {
     "the hub must build its tiles through the shared catalogue",
   );
   assert.ok(
-    !/can_admin/.test(source),
+    !/can_admin/.test(source) && !/can_admin/.test(read(HUB_LOAD)),
     "the hub must not fall back to a broad admin boolean",
   );
 });
 
 test("the hub refuses a place whose stored type is not the route's tier", () => {
-  const source = read(HUB_COMPONENT);
   assert.ok(
-    source.includes("hub.type !== this.expectedType"),
+    read(HUB_LOAD).includes("hub.type !== expectedType"),
     "a /block/<hood id>/update style mismatch must be refused, not rendered",
   );
 });
 
 test("the hub refuses an actor the server says has no wizard screen", () => {
-  const source = read(HUB_COMPONENT);
   assert.ok(
-    source.includes("hub.canOpen !== true"),
+    read(HUB_LOAD).includes("hub.canOpen !== true"),
     "holding only tool-bar or moderation capabilities must not open an empty hub",
   );
 });
@@ -805,7 +811,7 @@ test("the three Update routes are registered and carry their tier", () => {
 });
 
 test("the hub page resolves a colony slug rather than trusting it as an id", () => {
-  const source = read(HUB_PAGE);
+  const source = read(HUB_LOAD);
   assert.ok(
     source.includes("/place/${param}"),
     "a colony route param is a slug and must be resolved to a place id",
@@ -813,6 +819,10 @@ test("the hub page resolves a colony slug rather than trusting it as an id", () 
   assert.ok(
     source.includes("Number.parseInt"),
     "numeric tiers must parse their id rather than pass a raw string through",
+  );
+  assert.ok(
+    read(HUB_PAGE).includes("createPlaceResolver"),
+    "the page must resolve through the shared controller",
   );
 });
 

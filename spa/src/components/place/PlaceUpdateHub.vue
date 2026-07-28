@@ -110,6 +110,7 @@ import {
   tileRoute,
   visibleTiles,
 } from "@/helpers";
+import { createHubLoader } from "@/helpers/place-hub-load.helper";
 import { HubContext } from "@/helpers/place-update-hub.helper";
 
 /**
@@ -137,13 +138,28 @@ export default Vue.extend({
   },
   data() {
     return {
-      loaded: false,
-      denied: false,
-      hub: null,
-      children: [],
+      loader: createHubLoader(this.$http),
     };
   },
   computed: {
+    /**
+     * The rendered state is owned by the loader, which replaces it wholesale on
+     * every load. Reading it through computeds keeps the template unchanged and
+     * makes it impossible for a field of the previous place to survive a
+     * navigation the reset forgot about - there is no field-by-field reset.
+     */
+    loaded(): boolean {
+      return this.loader.state.loaded;
+    },
+    denied(): boolean {
+      return this.loader.state.denied;
+    },
+    hub(): any {
+      return this.loader.state.hub;
+    },
+    children(): any[] {
+      return this.loader.state.children;
+    },
     context(): HubContext {
       return {
         placeId: this.hub.placeId,
@@ -201,49 +217,28 @@ export default Vue.extend({
         "height=650,width=800,menubar=no,status=no",
       );
     },
-    async getChildren(): Promise<void> {
-      try {
-        if (this.hub.type === "colony" && this.hub.slug) {
-          const response = await this.$http.get(`/colony/${this.hub.slug}/hoods`);
-          this.children = response.data.hoods || [];
-        } else if (this.hub.type === "hood") {
-          const response = await this.$http.get(`/hood/${this.hub.placeId}/blocks`);
-          this.children = response.data.blocks || [];
-        }
-      } catch (e) {
-        // A failed child listing must not present as a refusal - the hub itself
-        // was authorized. Show the tools and an empty list.
-        this.children = [];
-      }
-    },
-    async getData(): Promise<void> {
-      try {
-        const response = await this.$http.get(`/place/${this.placeId}/update-hub`);
-        const hub = response.data.hub;
-        // `canOpen` is narrower than "the endpoint answered 200": the server
-        // grants it only when a capability whose control lives IN the hub was
-        // granted. A member holding just tool-bar or moderation capabilities has
-        // no wizard to open, and is refused rather than shown an empty page.
-        if (!hub || hub.type !== this.expectedType || hub.canOpen !== true) {
-          this.denied = true;
-          return;
-        }
-        this.hub = hub;
-        if (this.showsChildren) {
-          await this.getChildren();
-        }
-      } catch (e) {
-        this.denied = true;
-      } finally {
-        this.loaded = true;
-      }
+    reload(): void {
+      this.loader.reload(this.placeId, this.expectedType);
     },
     back(): void {
       this.$router.back();
     },
   },
   mounted(): void {
-    this.getData();
+    this.reload();
+  },
+  watch: {
+    /**
+     * The page above resolves a new id without remounting this component, so the
+     * prop changing IS the navigation as far as the hub is concerned. Watching
+     * the tier too covers a move between tiers that happens to share an id.
+     */
+    placeId(): void {
+      this.reload();
+    },
+    expectedType(): void {
+      this.reload();
+    },
   },
 });
 </script>
