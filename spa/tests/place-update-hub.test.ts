@@ -324,8 +324,11 @@ test("only staff the server authorizes see the Manage button", () => {
     source.includes("canEditInformation: false"),
     "it must default to hidden, so a failed or anonymous request shows nothing",
   );
+  // The catch also drops out early when the response belongs to a superseded
+  // route, so the assertion allows that guard between the catch and the reset -
+  // but still requires the reset to be what the catch does.
   assert.ok(
-    /catch \(e\) \{\s*this\.canEditInformation = false;/.test(source),
+    /catch \(e\) \{[^}]*this\.canEditInformation = false;/.test(source),
     "a failed can_edit request must hide the button rather than leaving it shown",
   );
   assert.ok(
@@ -401,8 +404,11 @@ test("the Information window renders Manage, heading, information, then staffing
 test("homes get no Manage button and no place heading", () => {
   // A home is not a staff-managed place; its owner has a separate Update tool.
   const source = read(INFORMATION_PAGE);
+  // Block layout, not a flex column. A flex column shrink-wrapped the centered
+  // section to the width of the information text rather than the page, which is
+  // what made the heading look off-centre.
   const PLACE_BRANCH =
-    "<div class=\"h-full w-full bg-black flex flex-col\" style=\"padding: 10px\" v-else>";
+    "<div class=\"h-full w-full bg-black\" style=\"padding: 10px\" v-else>";
   const homeBranch = source.slice(
     source.indexOf("v-if=\"$route.params.type === 'home'\""),
     source.indexOf(PLACE_BRANCH),
@@ -705,13 +711,62 @@ test("each tool bar keeps exactly one Update entry, pointing at its hub", () => 
 
 test("the block tool bar keeps its Check Images button", () => {
   const source = read(BLOCK_TOOLS);
+  // It opens in the block's own content area now rather than a detached popup,
+  // but it is still a permanent TOOL BAR action - it must not migrate into the
+  // Update hub, which carries only the Update Wizard's own screens.
   assert.ok(
-    source.includes("#/home/image-check"),
+    source.includes("name: 'blockImageCheck'"),
     "Check Images must stay on the block tool bar",
   );
   assert.ok(
     source.includes("can('check_images')"),
     "and stay gated on its own capability",
+  );
+});
+
+test("Check Images is a real control, not a bare span", () => {
+  const source = read(BLOCK_TOOLS);
+  const check = source.slice(
+    source.indexOf("can('check_images')") - 400,
+    source.indexOf("can('check_images')") + 400,
+  );
+  assert.ok(
+    /<router-link[^>]*name: 'blockImageCheck'/s.test(check),
+    "Check must be a router-link, so it gets the cursor, hover, tab stop and "
+      + "focus ring its neighbours get for free",
+  );
+  assert.ok(
+    !/<span[^>]*check_images/s.test(source),
+    "it must not go back to being a click-handled span",
+  );
+  assert.ok(
+    !/opener\('#\/home\/image-check'\)/.test(source),
+    "and must not reopen the detached popup window",
+  );
+});
+
+test("the block image-check route reuses the moderation page in the block frame", () => {
+  const routes = read(ROUTES);
+  assert.ok(
+    /name: "blockImageCheck"/.test(routes),
+    "the block-scoped image check route must exist",
+  );
+  const blockRoute = routes.slice(
+    routes.indexOf("path: \"/block/:id\""),
+    routes.indexOf("path: \"/home/update\""),
+  );
+  assert.ok(
+    /name: "blockImageCheck"/.test(blockRoute),
+    "it must be a CHILD of /block/:id so it renders in the block's content area",
+  );
+  assert.ok(
+    /component: HomeImageCheckPage,\s*name: "blockImageCheck"/.test(blockRoute),
+    "and must reuse the existing moderation page rather than forking it",
+  );
+  // The standalone popup route stays: nothing else that linked to it changes.
+  assert.ok(
+    /name: "home-image-check"/.test(routes),
+    "the standalone image-check route must remain for its own callers",
   );
 });
 

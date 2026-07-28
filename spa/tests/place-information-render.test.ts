@@ -60,8 +60,21 @@ test("the rendered value can only come from the server endpoint", () => {
   const assignments = page.match(/this\.placeDescription = /g) || [];
   assert.strictEqual(
     assignments.length,
-    2,
-    "expected exactly two assignments: the response value and the empty fallback",
+    3,
+    "expected exactly three assignments: the response value, the empty fallback, "
+      + "and the reset that clears the previous place before a route change loads",
+  );
+  // Every assignment other than the response one must be the empty string, so
+  // there is no third source of rendered HTML.
+  const nonResponse = page
+    .split(/this\.placeDescription = /)
+    .slice(1)
+    .map(rest => rest.slice(0, rest.indexOf(";")))
+    .filter(value => !value.startsWith("response."));
+  assert.deepStrictEqual(
+    nonResponse,
+    ["\"\"", "\"\""],
+    "the only non-response assignments may be the empty string",
   );
   assert.ok(
     /\$http\.get\(`\/place\/\$\{placeId\}\/information`\)/.test(page),

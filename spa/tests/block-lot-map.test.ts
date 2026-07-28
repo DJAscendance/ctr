@@ -327,15 +327,124 @@ test("previewing is local and never persists", () => {
     /submit\(null\)/.test(source),
     "Restore Default clears the stored selection",
   );
+  // Cancel now LEAVES rather than reverting in place: nothing was ever
+  // persisted by previewing, so abandoning the screen is the discard. What
+  // matters for this suite is unchanged - it must not mutate.
+  const cancelBody = source.slice(
+    source.indexOf("cancel(): void {"),
+    source.indexOf("restoreDefault(): void {"),
+  );
+  assert.ok(cancelBody.length > 0, "expected a cancel() method");
   assert.ok(
-    /cancel\(\): void \{\s*this\.pendingIndex = this\.selectedIndex \?\? 0;/m.test(
-      source,
-    ),
-    "Cancel reverts the preview locally without a request",
+    /this\.\$router\.push\(\{\s*name: this\.hubRouteName,/m.test(cancelBody),
+    "Cancel returns to the Update hub it was opened from",
+  );
+  assert.ok(
+    !/\$http\.|submit\(/.test(cancelBody),
+    "Cancel must issue no request of any kind",
   );
   assert.ok(
     /v-model\.number="pendingIndex"/.test(source),
     "choosing a background only moves local state",
+  );
+});
+
+test("Cancel has a hub to return to at both tiers", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  // Named routes, unconditionally - so Cancel lands somewhere meaningful even
+  // when the editor was reached by a pasted URL with no history behind it.
+  assert.ok(
+    /hubRouteName\(\): string \{[\s\S]*?"blockUpdate"[\s\S]*?"neighborhoodUpdate"/.test(
+      source,
+    ),
+    "both tiers must name their Update hub route",
+  );
+  assert.ok(
+    !/\$router\.back\(\)/.test(source),
+    "history-based back would strand a directly-opened editor",
+  );
+});
+
+test("the buttons read Apply, then Restore, then Cancel", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  // lastIndexOf: the component nests <template v-slot> blocks, so the FIRST
+  // closing tag is an inner slot, not the end of the component template.
+  const template = source.slice(0, source.lastIndexOf("</template>"));
+  // Anchored on the handlers rather than the labels: the labels are wording and
+  // may be revised, but which button does what is the thing being ordered.
+  const apply = template.indexOf("@click=\"apply\"");
+  const restore = template.indexOf("@click=\"restoreDefault\"");
+  const cancel = template.indexOf("@click=\"cancel\"");
+  assert.ok(apply > -1, "expected an Apply button");
+  assert.ok(restore > -1, "expected a Restore Default button");
+  assert.ok(cancel > -1, "expected a Cancel button");
+  assert.ok(
+    template.includes("Restore Default"),
+    "the restore button keeps its explicit label",
+  );
+  // DOM order IS the tab order, so asserting source order asserts both, and
+  // keeps anyone from reordering them with CSS alone.
+  assert.ok(apply < restore, "Apply must come before Restore");
+  assert.ok(restore < cancel, "Restore must come before Cancel");
+});
+
+test("the chooser is one paged row, not a wall of every option", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  // Markup only - the surrounding comments explain what the wrapping grid did
+  // wrong, and saying so must not trip the rule.
+  const template = source.slice(0, source.lastIndexOf("</template>"));
+  const markup = template.replace(/<!--[\s\S]*?-->/g, "");
+  assert.ok(
+    !/flex-wrap/.test(markup),
+    "a wrapping grid is what produced the 27-image wall",
+  );
+  assert.ok(
+    /flex-nowrap/.test(markup),
+    "candidates must stay on a single row",
+  );
+  assert.ok(
+    /visibleOptions\(\): MapBackgroundOption\[\]/.test(source),
+    "only a window of the options may be rendered at once",
+  );
+  assert.ok(
+    /v-for="option in visibleOptions"/.test(source),
+    "the row must render the window, not the full option list",
+  );
+  for (const control of ["pageBack", "pageForward"]) {
+    assert.ok(
+      source.includes(control),
+      `the strip needs an explicit ${control} control`,
+    );
+  }
+  assert.ok(
+    /revealOption\(this\.pendingIndex\)/.test(source),
+    "the strip must open on the page holding the current selection",
+  );
+});
+
+test("a neighborhood preview shows its real blocks, names and icons", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  const overlay = source.slice(
+    source.indexOf("<hood-block-map"),
+    source.indexOf("</hood-block-map>"),
+  );
+  assert.ok(overlay.length > 0, "expected a block overlay for neighborhoods");
+  assert.ok(
+    /:background="previewBackground"/.test(overlay),
+    "the candidate background must sit underneath the blocks",
+  );
+  assert.ok(
+    /\{\{ block\.name \}\}/.test(overlay),
+    "current block names must be visible against the candidate",
+  );
+  assert.ok(
+    /'background-image': icon/.test(overlay),
+    "so must the current block mini-city icons",
+  );
+  // Rendering, never editing. Structural block edits are a separate lane.
+  assert.ok(
+    !/<router-link|<input|@click/.test(overlay),
+    "the preview is inert - it must not offer navigation or editing",
   );
 });
 
