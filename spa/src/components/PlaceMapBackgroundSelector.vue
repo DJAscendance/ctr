@@ -102,10 +102,17 @@
         :style="previewStyle"
       />
 
-      <p v-if="showsLotOverlay" class="text-sm">
+      <!--
+        The occupancy/block summary describes what came back, so it may only be
+        shown once something DID come back. Gated on overlayReady - a successful
+        response, not merely a finished request - because "no blocks on its map
+        yet" is a claim about the neighborhood, and printing it beside a failure
+        message told the leader two contradictory things at once.
+      -->
+      <p v-if="showsLotOverlay && overlayReady" class="text-sm">
         {{ occupancySummary }}
       </p>
-      <p v-if="showsBlockOverlay" class="text-sm">
+      <p v-if="showsBlockOverlay && overlayReady" class="text-sm">
         {{ blockSummary }}
       </p>
       <p v-if="overlayError" class="text-red-500">{{ overlayError }}</p>
@@ -277,6 +284,10 @@ export default Vue.extend({
       options: [] as MapBackgroundOption[],
       locations: [] as Lot[],
       blocks: [] as HoodBlock[],
+      // True only after the overlay request SUCCEEDED. Distinguishes "loaded and
+      // genuinely empty" from "not loaded yet" and from "failed", which a bare
+      // `blocks.length === 0` cannot.
+      overlayLoaded: false,
       pageStart: 0,
     };
   },
@@ -294,6 +305,14 @@ export default Vue.extend({
     /** Neighborhoods overlay their blocks instead. */
     showsBlockOverlay(): boolean {
       return this.placeType === "hood";
+    },
+    /**
+     * Whether the overlay summary may be trusted: a successful response, and no
+     * error currently showing. Four states, not two - loading, loaded non-empty,
+     * loaded empty, failed - and only the two loaded ones may be described.
+     */
+    overlayReady(): boolean {
+      return this.overlayLoaded && !this.overlayError;
     },
     /**
      * Where Cancel goes: the Update hub this editor was opened from. Named
@@ -433,12 +452,18 @@ export default Vue.extend({
      * the tool, because the background choice itself does not depend on it.
      */
     async loadOverlay(): Promise<void> {
+      // Reset BOTH flags up front, so a retry after a failure starts from
+      // "nothing known" rather than inheriting the previous attempt's verdict.
       this.overlayError = "";
+      this.overlayLoaded = false;
       if (this.showsLotOverlay) {
         try {
           const response = await this.$http.get(`${this.apiRoot  }/locations`);
           this.locations = response.data.locations || [];
+          this.overlayLoaded = true;
         } catch (e) {
+          // Clear the rows as well as flagging the error: a stale overlay from a
+          // previous successful load must not be left on screen looking current.
           this.locations = [];
           this.overlayError =
             "Could not load this block's homes, so the preview shows scenery only.";
@@ -449,6 +474,7 @@ export default Vue.extend({
         try {
           const response = await this.$http.get(`${this.apiRoot  }/blocks`);
           this.blocks = response.data.blocks || [];
+          this.overlayLoaded = true;
         } catch (e) {
           this.blocks = [];
           this.overlayError =
