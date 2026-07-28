@@ -29,7 +29,28 @@
       The place NAME is display only. The editor behind Manage writes exactly one
       column, place.description; renaming a place is not part of this tool.
     -->
-    <div class="h-full w-full bg-black flex flex-col" style="padding: 10px" v-else>
+    <!--
+      Block layout, not a flex column, and deliberately so. The original rendered
+      this page as ordinary document flow: a <center> block holding the management
+      control and the place heading, and then the place's own body text below it,
+      left-aligned like any other paragraph.
+
+      A flex column shrink-wraps its items to the widest child, so "centered"
+      became "centered over the information text" rather than centered on the
+      page. Normal block flow makes the centered section full width, which is what
+      restores the classic presentation.
+    -->
+    <div class="h-full w-full bg-black" style="padding: 10px" v-else>
+      <!--
+        The centered section, and ONLY this section. The classic markup was a
+        <center> block holding the MANAGE control and, under a <br>, the place
+        heading - and nothing else.
+
+        The manager-authored information below is explicitly OUTSIDE it, so a
+        place's own text keeps whatever alignment its author gave it instead of
+        being force-centered by the page. `center` is in the shared sanitizer
+        allowlist, so an author who wants centered text can still say so.
+      -->
       <div class="text-center">
         <!--
           The classic MANAGE button, in the same treatment the Inbox and Message
@@ -48,6 +69,10 @@
             </button>
           </div>
         </div>
+        <!--
+          Display only. The editor behind MANAGE writes place.description and
+          nothing else - editing a place's information never renames it.
+        -->
         <h2 v-if="placeName">Welcome to: {{ placeName }}</h2>
       </div>
 
@@ -117,6 +142,15 @@ export default Vue.extend({
       placeName: "",
       placeDescription: "",
       canEditInformation: false,
+      // Monotonic request id. The Information window is a popup that reuses ONE
+      // component instance for every #/information/<type>/<id>/<slug> target, so
+      // navigating straight from one place to another re-runs these fetches
+      // without a remount. Only the response whose token still matches the
+      // current value may write to the component; anything older belongs to a
+      // superseded route and is discarded. Without this, a slow response for
+      // place A can land after a fast one for place B and repaint A's name,
+      // information, staffing - or A's Manage button - over B.
+      loadToken: 0,
     };
   },
   computed: {
@@ -140,38 +174,64 @@ export default Vue.extend({
      * than blocking the staffing listing, which is the more important content
      * here.
      */
-    async getPlaceInformation(): Promise<void> {
+    async getPlaceInformation(token: number): Promise<void> {
       if (!this.supportsPlaceInformation) {
         return;
       }
       const placeId = this.$route.params.id;
       try {
         const response = await this.$http.get(`/place/${placeId}/information`);
+        if (token !== this.loadToken) return;
         this.placeName = response.data.name || "";
         this.placeDescription = response.data.description || "";
       } catch (e) {
+        if (token !== this.loadToken) return;
         this.placeName = "";
         this.placeDescription = "";
       }
       // Purely to decide whether to draw the Manage button. The editor route and
       // the update endpoint both re-check, so a stale or forced answer here
-      // grants nothing.
+      // grants nothing. It is still sequenced: the PREVIOUS place's answer must
+      // never be the one that leaves a Manage button on screen for this one.
       try {
         const response = await this.$http.get(
           `/place/${placeId}/information/can_edit`,
         );
+        if (token !== this.loadToken) return;
         this.canEditInformation = response.data.result === true;
       } catch (e) {
+        if (token !== this.loadToken) return;
         this.canEditInformation = false;
       }
     },
-    async getData(): Promise<void> {
+    /**
+     * Clears every field this window renders and reloads for the CURRENT route.
+     *
+     * Called on mount and again whenever the route changes underneath the popup.
+     * State is cleared synchronously and BEFORE the requests start, so nothing
+     * from the previous place - not its name, its information, its staffing, nor
+     * its Manage capability - can remain visible while the new place loads.
+     */
+    reload(): void {
+      const token = ++this.loadToken;
+      this.owner = null;
+      this.deputies = [];
+      this.securityInfo = {};
+      this.homeDescription = null;
+      this.placeName = "";
+      this.placeDescription = "";
+      this.canEditInformation = false;
+      this.getData(token);
+      this.getPlaceInformation(token);
+    },
+    async getData(token: number): Promise<void> {
       let infopoint = null;
       switch (this.$route.params.type) {
       case "home":
         // Homes have no leader/deputy structure - the Information tool shows the owner's
         // own description instead, so this branch returns before the access-info fetch.
         this.$http.get(`/home/information/${this.$route.params.id}`).then((response) => {
+          if (token !== this.loadToken) return;
           this.homeDescription = response.data.description;
         });
         return;
@@ -210,6 +270,7 @@ export default Vue.extend({
         break;
       }
       this.$http.get(infopoint).then((response) => {
+        if (token !== this.loadToken) return;
         if (this.$route.params.slug === "jail") {
           this.securityInfo = response.data.securityInfo;
         }
@@ -219,9 +280,11 @@ export default Vue.extend({
           } else {
             this.owner = "";
           }
-          response.data.data.deputies.forEach((username, index) => {
-            this.deputies[index] = username;
-          });
+          // Assigned as a whole new array rather than written index by index:
+          // per-index assignment is not reactive in Vue 2, and it would also
+          // leave the previous place's extra deputies in place when the new one
+          // has fewer.
+          this.deputies = response.data.data.deputies.slice();
         }
       });
       return;
@@ -232,8 +295,29 @@ export default Vue.extend({
     },
   },
   mounted() {
-    this.getData();
-    this.getPlaceInformation();
+    this.reload();
+  },
+  watch: {
+    /**
+     * The popup reuses one component for every Information target, so changing
+     * the route does NOT remount it. Watching $route is the smallest mechanism
+     * that covers every way the target can change - type, id or slug - including
+     * a change of type alone (hood -> block) or of slug alone (a public place),
+     * which a watcher on a single param would miss.
+     *
+     * Vue 2's $route object is replaced on every navigation, so this fires once
+     * per navigation without needing `deep`.
+     */
+    $route(to, from) {
+      if (
+        to.params.type === from.params.type &&
+        to.params.id === from.params.id &&
+        to.params.slug === from.params.slug
+      ) {
+        return;
+      }
+      this.reload();
+    },
   },
 });
 </script>
