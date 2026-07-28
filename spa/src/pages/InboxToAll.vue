@@ -24,9 +24,14 @@
     <div class="w-2/3 text-center">
       <textarea id="body" class="text-black w-2/3 h-96" v-model="body"></textarea><br><br>
     </div>
+    <!--
+      Primary action first, Cancel last - the same order every other edit form in
+      CTR uses, and the same order in the DOM as on screen so the tab order agrees
+      with both. Cancel is type="button" so it can never be taken for a submit.
+    -->
     <div>
-      <button class="btn" @click="switchView()">CANCEL</button>&nbsp;&nbsp;&nbsp;
-      <button type="submit" class="btn" @click="postInboxMessage()">POST</button>
+      <button type="submit" class="btn" @click="postInboxMessage()">POST</button>&nbsp;&nbsp;&nbsp;
+      <button type="button" class="btn" @click="switchView()">CANCEL</button>
     </div>
   </div>
 </template>
@@ -67,8 +72,20 @@ export default Vue.extend({
         this.success = "Inbox posted successfully.";
       }
     },
+    /**
+     * Leaves without sending. This route shares its parent's path (it is a named
+     * child with an empty path), so pushing that path resolves back to the place's
+     * default view - the screen this form was opened from.
+     *
+     * vue-router rejects a navigation to the route you are already on; that is
+     * this Cancel landing where it meant to, not a failure, so the rejection is
+     * swallowed rather than surfacing as an unhandled promise rejection.
+     */
     switchView(): void {
-      this.$router.push({ path: this.$route.path });
+      const target = this.$router.push({ path: this.$route.path }) as unknown;
+      if (target && typeof (target as Promise<unknown>).catch === "function") {
+        (target as Promise<unknown>).catch(() => undefined);
+      }
     },
   },
 });
