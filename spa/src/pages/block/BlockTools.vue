@@ -49,12 +49,20 @@
       <router-link v-if="canOpen" :to="{ name: 'blockUpdate' }" class="btn-ui">
         Update
       </router-link>
-      <span
+      <!--
+        A router-link, like every other destination on this bar. It used to be a
+        bare <span> with a click handler, which gave it none of the affordances
+        its neighbours have: no pointer cursor or hover state, no tab stop, no
+        focus ring, and nothing for a screen reader to announce as a control.
+        Being a real link restores all of those from the shared .btn-ui styling
+        rather than re-implementing them here.
+      -->
+      <router-link
         v-if="can('check_images')"
+        :to="{ name: 'blockImageCheck' }"
         class="btn-ui"
         title="Check Images"
-        v-on:click="opener('#/home/image-check')"
-      >Check</span>
+      >Check</router-link>
       <router-link
         v-if="can('manage_access_rights')"
         :to="{ name: 'blockaccessrights' }"

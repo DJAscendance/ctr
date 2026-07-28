@@ -341,6 +341,21 @@ export default [
         meta: { wrapper: true },
       },
       {
+        // Check Images is a permanent block tool bar action, so it belongs in the
+        // block's own content area alongside the other bar destinations rather
+        // than in a detached popup window. Same component and same endpoints as
+        // the standalone /home/image-check route below - only the frame differs.
+        //
+        // This is presentation. The queue and both moderation actions are
+        // authorized server-side on every request, so reaching this route grants
+        // nothing: an unauthorized member who typed the URL still gets an empty
+        // queue and a refusal on any action.
+        path: "image-check",
+        component: HomeImageCheckPage,
+        name: "blockImageCheck",
+        meta: { wrapper: true },
+      },
+      {
         path: "",
         component: AccessRights,
         name: "blockaccessrights",
