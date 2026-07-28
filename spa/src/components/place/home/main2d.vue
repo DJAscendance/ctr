@@ -4,92 +4,96 @@
     <h3><strong>Welcome to {{ $store.data.place.name }}</strong></h3>
 
     <!--
-      `w-2/3` on the information column and `w-full` on the table are the classic
-      geometry, restored. Adding the image column had replaced them with a
-      shrink-to-fit div and a shrink-to-fit table, which collapsed the resident
-      details into a narrow strip against the left edge: the label and value
-      columns ended up ~120px apart instead of spreading across two thirds of the
-      page the way live CTR does.
+      The information column and its table are the ORIGINAL pre-image structure,
+      restored verbatim from 0c6db9e: `flex flex-auto w-2/3` holding a `w-full`
+      table whose cells carry no padding of their own.
 
-      With `w-full` back, the table's automatic layout distributes the spare width
-      between the two columns again, which is what produces the classic
-      separation - it is not a fixed label width, and pinning one (the `w-36` this
-      replaces) is what broke it.
+      That last part is load-bearing. This table uses automatic layout, which
+      distributes spare width between the columns in proportion to their content
+      widths - so cell padding does not merely add a gutter, it is amplified by
+      the distribution. An earlier attempt here added `pr-8` and `whitespace-nowrap`
+      to the label cells and pushed the value column out to ~33% of the width,
+      where live CTR sits at ~20%. The classic spacing comes from the automatic
+      distribution alone; anything added to a cell moves it off.
+
+      The image lives in the remaining third (below) rather than being inserted
+      into this table, so the first two columns are sized exactly as they were
+      before the image feature existed.
     -->
     <div class="flex flex-row" >
       <div class="flex flex-auto w-2/3">
         <table class="w-full">
           <tr>
-            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
+            <td class="w-130 font-bold text-left">
               Resident
             </td>
-            <td class="py-0.5 text-left align-top">
+            <td class="text-left">
               {{ memberInfo.username }}
             </td>
           </tr>
 
           <tr>
-            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
+            <td class="font-bold text-left">
               Name
             </td>
-            <td class="py-0.5 text-left align-top">
+            <td class="text-left">
               {{ memberInfo.firstName }} {{ memberInfo.lastName }}
             </td>
           </tr>
           <tr v-if="parseInt(this.$store.data.user.id) == parseInt(this.$store.data.place.member_id)
           || this.$store.data.user.admin">
-            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
+            <td class="font-bold text-left">
               Email
             </td>
-            <td class="py-0.5 text-left align-top">
+            <td class="text-left">
               {{ memberInfo.email }}
             </td>
           </tr>
 
           <tr>
-            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
+            <td class="font-bold text-left">
               Immigration
             </td>
-            <td class="py-0.5 text-left align-top">
+            <td class="text-left">
               <!-- format Saturday, October 9 1999 -->
               {{ memberInfo.immigrationDate | dateFormatFilter }}
             </td>
           </tr>
           
           <tr v-if="canAdmin && this.$store.data.place.block">
-            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
+            <td class="font-bold text-left">
               Last Access
             </td>
-            <td class="py-0.5 text-left align-top">
+            <td class="text-left">
               <!-- format Saturday, October 9 1999 -->
               {{ memberInfo.lastAccess | dateFormatFilter }}
             </td>
           </tr>
 
           <tr>
-            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
+            <td class="font-bold text-left">
               Experience
             </td>
-            <td class="py-0.5 text-left align-top">
+            <td class="text-left">
               {{ memberInfo.xp }}
             </td>
           </tr>
 
           <tr v-if="parseInt(this.$store.data.user.id) === parseInt(this.$store.data.place.member_id)">
-            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
+            <td class="font-bold text-left">
               Money
             </td>
-            <td class="py-0.5 text-left align-top">
+            <td class="text-left">
                {{ memberInfo.walletBalance }}cc
             </td>
           </tr>
 
           <!--
           <tr>
-            <td class="pr-8 py-0.5 font-bold text-left align-top whitespace-nowrap">
+            <td class="font-bold text-left">
               Home Page
             </td>
-            <td class="py-0.5 text-left align-top">
+            <td class="text-left">
               <a href="<$HPG>" target="external"><$HPG></a>
             </td>
           </tr>
@@ -98,20 +102,22 @@
 
       </div>
       <!--
-        pl-6/pr-2/pt-2 keep the image off the resident details on one side and off
-        the window edge on the other, and clear of the page title above it. Without
-        them a 200x200 image sat flush against both the right and top edges, which
-        is what made the restored image area feel bolted on rather than part of the
-        page.
+        The image occupies the remaining third of the row - the space the classic
+        layout already left empty beside the resident details - and is centred in
+        it, which is where live CTR draws it.
 
-        232px = the 200px image plus that 24+8 of padding. Widths are border-box
-        here, so leaving the column at 200 would have taken the padding OUT of the
-        image's own space and pushed a full-width image back against the edge -
-        the padding has to be added to the declared width, not absorbed by it.
+        `w-1/3` rather than a fixed pixel column ON PURPOSE. A fixed-width flex
+        sibling takes its width out of the row before the information column is
+        sized, so its exact value silently decides how wide the table is and
+        therefore how the first two columns come out. Expressing it as the
+        complement of `w-2/3` means the information column is the same two thirds
+        it was before the image feature existed, whatever the window width.
+
+        pt-2 gives the image clearance from the page title. Nothing here adds
+        padding that could reach the table.
       -->
       <div
-        class="flex-none flex flex-col items-center justify-start text-center pl-6 pr-2 pt-2"
-        style="width: 232px;"
+        class="flex-none w-1/3 flex flex-col items-center justify-start text-center pt-2"
       >
         <img
           v-if="homeImage"
@@ -129,11 +135,7 @@
         <small v-else><i>No image uploaded yet!</i></small>
       </div>
     </div>
-    <!-- Object Storage Areas is a separate section, not a continuation of the
-         identity fields; it needs a gap that the tightened layout had lost. -->
-    <div class="mt-4" v-if="showStorage">
-      <storage :member_id="this.$store.data.place.member_id"></storage>
-    </div>
+    <storage :member_id="this.$store.data.place.member_id" v-if="showStorage"></storage>
   </div>
 </template>
 
