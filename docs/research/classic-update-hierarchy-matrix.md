@@ -510,29 +510,109 @@ controllers already honour it on every scoped path (`MessageboardController.admi
 It is modelled here so the tile list and the endpoint behind it agree. It deliberately
 does **not** confer the place-shaping tools.
 
-### 6.3 Tile inventory
+This table answers **who may**. It does not answer **where the control lives** — that is
+§6.3, and the two must not be collapsed: several capabilities above are granted and
+deliberately have no tile.
 
-Every tile, as required. None is a placeholder; a tool without an authoritative backend
-is not listed at all.
+### 6.3 Where each control lives — placement, which is not authorization
+
+**Corrected 2026-07-27** after Ryan's manual review found the hubs duplicating
+permanent tool-bar actions and carrying two invented moderation tiles.
+
+Holding a capability says the server would honour the action. It does **not** say the
+action belongs on the Update page. The original drew that line and CTR now follows it:
+CS 4.0's action bars carried Group Message and Access Rights as permanent buttons
+(`community/action.tmpl:48-56`, `neighbor/action.tmpl:40-50`, `block/action.tmpl:37-41`),
+while the Update button *beside* them opened a wizard whose own screens were a different,
+smaller set:
+
+```
+$ strings install-4.0/csbin/community/neighbor.exe | grep -i '^wizard'
+wizard  wizarderror002  wizarderror003  wizardimage  wizardimagesubmit
+wizardinfo  wizardplace  wizardpresent  wizardsubmit
+```
+
+Information, the child map, the background. Nothing else. Reproducing every capability as
+a tile invented an umbrella screen the original never had, and put the same action in two
+places.
+
+Four categories, and every capability is in exactly one:
+
+| Category | Capabilities | Surface |
+|---|---|---|
+| **Permanent place tool bar** | `message_to_all`, `inbox_to_all`, `manage_access_rights`, `check_images` | The bar, in its original position and order. Unchanged by this branch. |
+| **Inside the Update hub** | `update_information`, `manage_lots`, `manage_background`, `list_neighborhoods`, `list_blocks` | The wizard's own screens. |
+| **A dedicated moderation page** | `moderate_messageboard`, `moderate_inbox` | The place's own Messages and Inbox windows, which already carry their delete controls. These are message-board and inbox moderation and are **never** relabelled as chat moderation. |
+| **Structural, unavailable in CTR** | *(no capability exists)* | Colony map editing (§6.6), block creation/withdrawal (§6.4). Enforced by absence, not by a hidden flag. |
+
+The table is `CAPABILITY_PLACEMENT` in `spa/src/helpers/place-update-hub.helper.ts`, with
+the hub-placed subset duplicated as `HUB_PLACED_CAPABILITIES` in
+`place-update-hub.service.ts` so the server — not the client — decides `canOpen`.
+
+**`canOpen`.** The endpoint returns the *full* capability list, because the tool bars need
+it to gate their own buttons. `canOpen` is the narrower answer: true only when a
+hub-placed capability was granted. A Security role holds four capabilities and `canOpen:
+false` — it gets its bar buttons and no Update button, rather than an empty wizard.
+
+#### Tile inventory
+
+Every tile. None is a placeholder; a tool without an authoritative backend is not listed
+at all, and no tile is a second route to something the bar already offers.
 
 | Label | Capability | Route / target | Backend endpoint | Server-side authorization | Place types | Origin |
 |---|---|---|---|---|---|---|
-| Update Information | `update_information` | `place-update-information` | `GET/PUT /place/:placeId/information` | `PlaceInformationService.canEdit` (type from stored row) | colony, hood, block | **classic** — `place/updateinfo.{cfg,tmpl}` |
-| Access Rights | `manage_access_rights` | `worldAccessRights` / `neighborhoodAccessRights` / `blockaccessrights` | `GET /<tier>/:id/getAccessInfo`, `POST /<tier>/:id/postAccessInfo` | `<tier>Service.canManageAccess` on the POST | colony, hood, block | **classic** — `common/updownerrights` (`OWN` + `AS1`–`AS8`) |
-| Message to All | `message_to_all` | `colonyMessageToAll` / `neighborhoodMessageToAll` / `blockMessageToAll` | `POST /messageboard/postmessageall` | `MessageboardController.adminCheck` → `<tier>Service.canAdmin` or security | colony, hood, block | **classic** — Group Message, `msb?ac=writegroup&DTY=C\|N\|B` |
-| Inbox to All | `inbox_to_all` | `colonyInboxToAll` / `neighborhoodInboxToAll` / `blockInboxToAll` | `POST /inbox/postinboxall` | `InboxController.adminCheck` → same scoped set | colony, hood, block | **modern** — the original's group tool posted to boards only |
-| Moderate Messages | `moderate_messageboard` | popup `#/messageboard/<placeId>` | `POST /messageboard/deletemessage` | `adminCheck` → `<tier>Service.canAdmin` or security | colony, hood, block | **classic** |
-| Moderate Inbox | `moderate_inbox` | popup `#/inbox/<placeId>` | `POST /inbox/deletemessage` | `adminCheck` → same | colony, hood, block | **classic** |
-| Lot Availability | `manage_lots` | `blockwizard` | `GET/POST /block/:id/locations` | `BlockService.canAdmin` | block | **classic** — `block/wizard/present.tmpl`, 72 checkboxes |
-| Map Background | `manage_background` | `neighborhoodmapbackground` / `blockmapbackground` | `GET/PUT /<tier>/:id/map-background-*` | `<tier>Service.canAdmin` (PR #411) | hood, block | **classic** — `wizard/image.tmpl`; the live-overlay preview is a CTR enhancement |
-| Check Images | `check_images` | popup `#/home/image-check` | existing home image-check page | `BlockService.canAdmin` for the tile | block | **classic** — `block/action.tmpl` `TPL=block/plist` |
+| Update Information | `update_information` | `place-update-information` | `GET/PUT /place/:placeId/information` | `PlaceInformationService.canEdit` (type from stored row) | colony, hood, block | **classic** — `place/updateinfo.{cfg,tmpl}`, wizard `ac=wizardinfo` |
+| Lot Availability | `manage_lots` | `blockwizard` | `GET/POST /block/:id/locations` | `BlockService.canAdmin` | block | **classic** — `block/wizard/present.tmpl`, 72 checkboxes, `ac=wizardpresent` |
+| Map Background | `manage_background` | `neighborhoodmapbackground` / `blockmapbackground` | `GET/PUT /<tier>/:id/map-background-*` | `<tier>Service.canAdmin` (PR #411) | hood, block | **classic** — `wizard/image.tmpl`, `ac=wizardimage`; the live-overlay preview is a CTR enhancement |
+
+So: **Colony** = Update Information + the neighborhood list. **Neighborhood** = Update
+Information + Map Background + the block list. **Block** = Update Information + Lot
+Availability + Map Background. That is the CS 4.0 wizard action set exactly, minus the
+child-creation half deferred in §6.4.
 
 Children are listed for **navigation only** (`GET /colony/:slug/hoods`,
 `GET /hood/:id/blocks`). Listing a child confers no authority over it; each child's own
 Update page re-checks the actor.
 
-"Moderation" is not used as a category anywhere — the four moderation-ish tools are named
-individually, and each maps to a specific endpoint above.
+#### Tool-bar inventory — unchanged, and asserted to stay that way
+
+| Label | Capability | Route | Backend endpoint | Authorization |
+|---|---|---|---|---|
+| Message to All | `message_to_all` | `colonyMessageToAll` / `neighborhoodMessageToAll` / `blockMessageToAll` | `POST /messageboard/postmessageall` | `MessageboardController.adminCheck` → `<tier>Service.canAdmin` or security |
+| Inbox to All | `inbox_to_all` | `colonyInboxToAll` / `neighborhoodInboxToAll` / `blockInboxToAll` | `POST /inbox/postinboxall` | `InboxController.adminCheck` → same scoped set |
+| Access Rights | `manage_access_rights` | `worldAccessRights` / `neighborhoodAccessRights` / `blockaccessrights` | `GET /<tier>/:id/getAccessInfo`, `POST /<tier>/:id/postAccessInfo` | `<tier>Service.canManageAccess` on the POST |
+| Check (Images) | `check_images` | popup `#/home/image-check` | existing home image-check page | `BlockService.canAdmin` for the button |
+| Information / Inbox / Messages | *(ungated)* | popups | existing | each window authorizes its own actions |
+
+**Check Images is a bar tool, not a wizard screen.** It is `block/action.tmpl`'s third
+owner tool (`edit?…&TPL=block/plist`), and it is absent from the block wizard's action
+list above. It stays on the bar, where it has always been, and is asserted absent from the
+hub.
+
+"Moderation" is not used as a category anywhere — the moderation-ish tools are named
+individually, and each maps to a specific endpoint.
+
+#### Public Information windows are display-only
+
+**Corrected 2026-07-27.** `spa/src/pages/Information.vue` previously offered an
+`Update Info` link when `GET /place/:id/information/can_edit` said yes. That link is gone
+from the Colony, Neighborhood, Block and public/Mall Information windows, and the page no
+longer calls `can_edit` at all — it offers no editor, so the answer would decide nothing.
+
+The window now shows heading → sanitized information → Leader/Deputy staffing, and
+nothing else. This matches the original: `place/info.tmpl` and the block/neighbor
+equivalents rendered `<$TXT>` and the roles list, while every editor lived behind the
+action bar's Update button on the authenticated page.
+
+`PUT /place/:placeId/information` is unchanged and still independently authorized —
+removing the link removed a link, not a gate.
+
+> **Consequence, flagged rather than worked around:** public places (Mall, and every other
+> `type = 'public'` place) have **no Update hub** — `PlaceUpdateHubService` supports
+> colony, hood and block only. With the link gone, public/Mall information has no UI entry
+> point on this branch. The endpoint, its authorization and any stored value are untouched;
+> what is missing is a route to reach it. Building a public-place hub would be a new
+> feature, which this branch is explicitly not to add. **Deferred, and listed in §6.9.**
 
 ### 6.4 Block creation — decided, deliberately not built
 
@@ -560,11 +640,36 @@ open before it can be built: slug generation, seeding the new block's 72 child
 slot and `place.map_icon_index` the classic `IC2` icon, so the schema is closer than the
 gap suggests.
 
-### 6.5 Chat Access — still deferred, and still absent
+### 6.5 Chat Access and Chat Moderation — traced, deferred, and still absent
 
-No Chat Access tile exists at any tier, and a test asserts no tile's key or label
-contains "chat". `HomeService.canChatInPlace` is home-scoped by construction (§2.5);
-a place-tier tile would be a button with nothing behind it.
+Both were traced in full on 2026-07-27 —
+[`classic-chat-moderation-trace.md`](./classic-chat-moderation-trace.md) is the evidence
+document; the headline findings are:
+
+- The original had **two** distinct features, not one. **Moderate Chat** was a live
+  console: a Java applet (`place/moderate.tmpl`) talking to a separate `mdserver` daemon,
+  gated on `owneraccess` or a server-wide `mdserverPassword`, with **no stored
+  "who may moderate" list anywhere**. **Chat Write/Read Access** was the rights screen
+  (`common/chatrights` → `updwriterights&cht=1`), 8 nickname slots plus a job bitmask.
+- **Neither existed at the colony or neighborhood tier.** Only `place.exe` carries the
+  `moderate` action — `community.exe`, `neighbor.exe` and `block.exe` carry none — and
+  every archived Cybertown moderation URL is `place?ac=moderate&plc=<public slug>`
+  (beach, fleamarket, jail, nightclub). Every archived `cht=1` rights URL targets
+  `DTY=I&KEY=h<homeID>`, a home.
+- Building either in CTR needs a new relation, a migration, a socket authorization rule
+  and a moderator identity model — **all four**. Per the standing instruction, the design
+  was produced and implementation stopped there.
+
+So no Chat or Chat Moderation tile exists at any tier, and tests assert it at both layers:
+no tile's key, label or description contains "chat"
+(`spa/tests/place-update-hub.test.ts`), and no chat-named capability is ever granted
+(`place-update-hub.service.spec.ts`). `HomeService.canChatInPlace` is home-scoped by
+construction (§2.5); a place-tier tile would be a button with nothing behind it.
+
+**`moderate_messageboard` and `moderate_inbox` are not it.** They are message-board and
+inbox moderation, they keep their own names and their own windows, and they were removed
+from the Update hubs on 2026-07-27 rather than relabelled — a chat tile pointing at
+`#/messageboard/<id>` would have been exactly the cosmetic tile the brief forbade.
 
 **Product constraint for that future lane, from Ryan, 2026-07-27:** in the homesteading
 hierarchy **you cannot chat in a block.** Chat exists at the **colony** and
@@ -641,9 +746,14 @@ administrators. They get the four message/inbox capabilities everywhere and noth
 no Information, no Owner/Access Rights, no lots, no background, no image check, no child
 listing. Pinned by `place-update-hub.service.spec.ts`.
 
+The **open Update hub** row follows `canOpen`, not "the endpoint answered 200": it is true
+only when a capability whose control lives *inside* the hub was granted (§6.3). That is why
+Security roles — who hold four real capabilities — get **No**. Their bar buttons are
+unaffected.
+
 | Capability | Admin (global) | Security roles (global) | Colony Leader (own colony) | Colony Deputy (own colony) | Neighborhood Leader (own hood) | Neighborhood Deputy (own hood) | Block Leader (own block) | Block Deputy (own block) | Member / unrelated staff | Anonymous |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **open Update hub** | Yes | Yes | Yes (colony, + descendants) | Yes (colony, + descendants) | Yes (hood, + its blocks) | Yes (hood, + its blocks) | Yes (block) | Yes (block) | No | No |
+| **open Update hub** | Yes | **No** — moderation authority, no wizard screen | Yes (colony, + descendants) | Yes (colony, + descendants) | Yes (hood, + its blocks) | Yes (hood, + its blocks) | Yes (block) | Yes (block) | No | No |
 | **update Information** | Yes | No | Yes | Yes | Yes | Yes | Yes | Yes | No | No |
 | **manage Owner/Access Rights** | Yes | No | Yes | **No** (see §6.5a — unrelated to Chat Access) | Yes | **No** at own hood; Yes at blocks beneath it | Yes | **No** | No | No |
 | **use Message to All** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | No | No |
@@ -655,6 +765,11 @@ listing. Pinned by `place-update-hub.service.spec.ts`.
 | **create neighborhoods** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** | **Unavailable** |
 | **create blocks** | *Not implemented — deferred* | *Not implemented — deferred* | *Not implemented — deferred* (intended: **Yes**) | *Not implemented — deferred* (intended: **Yes**) | *Not implemented — deferred* (intended: **Yes**) | *Not implemented — deferred* (intended: **No**) | *Not implemented — deferred* (intended: No) | *Not implemented — deferred* (intended: No) | No | No |
 | **manage Chat Access** | *Not implemented — deferred* | *Not implemented — deferred* | *Not implemented — deferred* (colony: future lane) | *Not implemented — deferred* (colony: future lane, **Ryan requires Deputies included**) | *Not implemented — deferred* (hood: future lane) | *Not implemented — deferred* (hood: future lane) | **Not planned** — blocks have no chat | **Not planned** — blocks have no chat | No | No |
+| **manage Chat Moderation** | *Not implemented — deferred* | *Not implemented — deferred* | *Not implemented — deferred* (colony: future lane) | *Not implemented — deferred* (colony: future lane) | *Not implemented — deferred* (hood: future lane) | *Not implemented — deferred* (hood: future lane) | **Not planned** — blocks have no chat | **Not planned** — blocks have no chat | No | No |
+| **moderate message board / inbox** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | No | No |
+
+The last row is deliberately adjacent to the two above it: it is a real, shipped capability
+reached from the place's Messages and Inbox windows, and it is **not** chat moderation.
 
 **Explicit product record:**
 
@@ -662,20 +777,48 @@ listing. Pinned by `place-update-hub.service.spec.ts`.
   explains why the Owner-axis exclusion does not carry over.
 - **Neighborhood Chat Access** — future lane.
 - **Block Chat Access** — **intentionally not planned.** You cannot chat in a block (§6.5).
+- **Colony / Neighborhood Chat Moderation** — future lane, blocked on a product decision
+  between the original's two different features (a live console vs. a stored allowlist).
+  Traced in full: `classic-chat-moderation-trace.md`. Neither existed at these tiers
+  historically, so the permission set must be decided, not recovered.
+- **Block Chat Moderation** — **intentionally not planned**, for the same reason as Block
+  Chat Access.
 - **Block creation** — future lane. Colony Leader **yes**, Colony Deputy **yes**,
   Neighborhood Leader **yes**, Neighborhood Deputy **no** (§6.4).
 - **Colony structural map editing** — **unavailable** to every role including Admin (§6.6).
 - **`ColonyRepresentative` latent authorization clause** — separate security-cleanup lane
   (§2.3). Fails closed today; do not seed a role with that name.
 
-### 6.8 Behavior change worth reviewing
+### 6.8 Behavior changes worth reviewing
 
-The scoped tool bars previously showed Message to All, Inbox to All and Access Rights as
-separate buttons beside Update. Those buttons are **gone from the tool bars** and now live
-inside the hub, leaving one Update entry per place — which is both what the brief asked
-for and the original's shape. Their routes are unchanged and still directly reachable.
+Four, in the order a reviewer will meet them.
 
-One user-visible tightening falls out of using the real capability: a Colony Deputy
-previously saw an Access Rights button that would have been refused on POST
-(`canManageAccess` excludes them). They no longer see it. Nothing they could actually do
-has been removed.
+1. **The scoped tool bars are unchanged.** Message to All, Inbox to All, Access Rights and
+   Check keep their positions and routes. An intermediate iteration of this branch moved
+   them into the hub; that was wrong, was reverted, and is now asserted against by test
+   (`the permanent tool bars keep their original buttons and routes`).
+
+2. **The public Information windows no longer offer `Update Info`.** Colony, Neighborhood,
+   Block and public/Mall Information are display-only. Editing is reached from the Update
+   hub's Update Information tile. See §6.3 — including the flagged consequence that
+   public/Mall information now has no UI entry point at all.
+
+3. **A tool bar's Update button follows `canOpen`.** A member who holds only tool-bar or
+   moderation capabilities — a Security role is exactly that — sees their bar buttons and
+   no Update button, instead of an Update button leading to an empty page.
+
+4. **A Colony Deputy no longer sees an Access Rights button.** It falls out of using the
+   real capability: `canManageAccess` excludes them, so the POST was already being refused.
+   Nothing they could actually do has been removed.
+
+### 6.9 Deferred out of this branch, deliberately
+
+| Item | Why | Where recorded |
+|---|---|---|
+| Colony / Neighborhood **Chat Access** | Needs a new relation, migration and socket rule | `classic-chat-moderation-trace.md` §4.1 |
+| **Chat Moderation** console | Needs all of the above plus a moderator identity model | same, §4.2 |
+| **Block creation / withdrawal** | Schema and rollback design open | §6.4 |
+| **Public/Mall Information editing UI** | Public places have no Update hub, and adding one is a new feature this branch must not add. Endpoint and authorization untouched | §6.3 |
+| Job-wide `WRO` chat grants; Chat **Read** Access | No model in CTR at all | `classic-place-admin-followups.md` §2 |
+| `ColonyRepresentative` dead clause | Fails closed today; belongs to a security lane | §2.3 |
+| Unauthenticated `moderation` socket rebroadcast (`spa/server.js:345-349`) | Pre-existing, untouched by this branch; same security lane | `classic-chat-moderation-trace.md` §3 |
