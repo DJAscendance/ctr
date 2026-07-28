@@ -35,8 +35,10 @@ const template: string = source.slice(
 );
 
 test("Information.vue renders the home description via text interpolation", () => {
+  // The branch's POSITION is not the point - only that a home gets a branch of
+  // its own, separate from the staff-managed places.
   assert.ok(
-    /v-else-if="\$route\.params\.type === 'home'"/.test(template),
+    /v-(else-)?if="\$route\.params\.type === 'home'"/.test(template),
     "expected a dedicated home branch in Information.vue",
   );
   assert.ok(

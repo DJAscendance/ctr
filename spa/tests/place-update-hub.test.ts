@@ -262,40 +262,177 @@ test("Colony and Neighborhood show no chat tile before a real backend exists", (
 
 /* --------------------------------------------------- public Information page */
 
-test("the public Information window carries no Update link", () => {
+test("the Information window offers the classic MANAGE button, not a text link", () => {
   const source = read(INFORMATION_PAGE);
   assert.ok(
+    source.includes("data-testid=\"place-manage\""),
+    "authorized staff must get a Manage button",
+  );
+  assert.ok(
+    /class="btn-ui"[^>]*data-testid="place-manage"/.test(source)
+      || /data-testid="place-manage"[\s\S]{0,80}MANAGE/.test(source),
+    "it must be the classic MANAGE button",
+  );
+  assert.ok(
     !/Update\s*Info/i.test(source),
-    "the public Information window must not offer an editor link",
+    "the green 'Update Info' text link must be gone",
   );
   assert.ok(
-    !source.includes("information/update"),
-    "the public Information window must not route to the information editor",
-  );
-  assert.ok(
-    !source.includes("can_edit"),
-    "it must not even ask whether the viewer may edit - it offers no editor",
+    !source.includes("text-chat underline"),
+    "and must not come back as a green text link in another guise",
   );
 });
 
-test("the public Information window carries no mutation control at all", () => {
+test("the Manage button uses the same treatment as the Inbox and Message Board", () => {
+  // One management control across the three windows, not three inventions.
   const source = read(INFORMATION_PAGE);
-  for (const marker of ["$http.post", "$http.put", "$http.delete", "<form", "<textarea"]) {
+  const inbox = read(path.join(SPA_SRC, "pages/Inbox.vue"));
+  const board = read(path.join(SPA_SRC, "pages/MessageBoard.vue"));
+  for (const [name, other] of [["Inbox", inbox], ["MessageBoard", board]]) {
     assert.ok(
-      !source.includes(marker),
-      `the Information window is display-only and must not contain '${marker}'`,
+      other.includes("<button class=\"btn-ui\"") && other.includes("MANAGE"),
+      `${name} should still use the btn-ui MANAGE button - update this test if it changed`,
+    );
+  }
+  for (const marker of [
+    "class=\"flex flex-row justify-center\"",
+    "class=\"flex border-4 border-black justify-center\"",
+    "<button class=\"btn-ui\"",
+  ]) {
+    assert.ok(
+      inbox.includes(marker),
+      `Inbox should still use '${marker}' - update this test if it changed`,
+    );
+    assert.ok(
+      source.includes(marker),
+      `the Information window must reuse the Inbox's '${marker}'`,
     );
   }
 });
 
-test("the Information window still displays heading, information and staffing", () => {
+test("only staff the server authorizes see the Manage button", () => {
   const source = read(INFORMATION_PAGE);
   assert.ok(
-    source.includes("<place-information"),
-    "the sanitized place information must still render",
+    /v-if="canEditInformation"/.test(source),
+    "the Manage button must be gated on the server's answer",
   );
-  assert.ok(source.includes("Leader"), "the Leader listing must still render");
-  assert.ok(source.includes("Deputies"), "the Deputies listing must still render");
+  assert.ok(
+    source.includes("information/can_edit"),
+    "that answer must come from the can_edit endpoint",
+  );
+  assert.ok(
+    source.includes("canEditInformation: false"),
+    "it must default to hidden, so a failed or anonymous request shows nothing",
+  );
+  assert.ok(
+    /catch \(e\) \{\s*this\.canEditInformation = false;/.test(source),
+    "a failed can_edit request must hide the button rather than leaving it shown",
+  );
+  assert.ok(
+    !/can_admin|\$store\.data\.user/.test(source),
+    "it must not fall back to a client-side admin flag",
+  );
+});
+
+test("the Manage button reaches the existing scoped editor", () => {
+  const source = read(INFORMATION_PAGE);
+  assert.ok(
+    source.includes("name: \"place-update-information\""),
+    "Manage must open the existing place information editor route",
+  );
+  assert.ok(
+    read(ROUTES).includes("name: \"place-update-information\""),
+    "and that route must be registered",
+  );
+});
+
+test("the Information window edits nothing itself, and never the place name", () => {
+  const source = read(INFORMATION_PAGE);
+  for (const marker of ["$http.post", "$http.put", "$http.delete", "<form", "<textarea"]) {
+    assert.ok(
+      !source.includes(marker),
+      `the Information window must not itself mutate anything ('${marker}')`,
+    );
+  }
+  // The heading is interpolated, never bound to an input.
+  assert.ok(
+    source.includes("{{ placeName }}"),
+    "the place name must render as static text",
+  );
+  assert.ok(
+    !/v-model="placeName"/.test(source),
+    "the place name must not be editable here",
+  );
+  // And the editor behind Manage writes exactly one field.
+  const editor = read(path.join(SPA_SRC, "pages/place/PlaceUpdateInformationPage.vue"));
+  const body = editor.slice(editor.indexOf("$http.put"), editor.indexOf("$http.put") + 200);
+  assert.ok(
+    body.includes("description: this.description"),
+    "the editor must send the description",
+  );
+  assert.ok(
+    !/name:\s*this\./.test(body),
+    "the editor must not send a name - place.description is the only column it writes",
+  );
+});
+
+test("the Information window renders Manage, heading, information, then staffing", () => {
+  const source = read(INFORMATION_PAGE);
+  const manage = source.indexOf("data-testid=\"place-manage\"");
+  const heading = source.indexOf("Welcome to:");
+  const description = source.indexOf("<place-information");
+  const staffing = source.indexOf("Leader<br/>");
+  for (const [name, index] of [
+    ["Manage", manage],
+    ["heading", heading],
+    ["information", description],
+    ["staffing", staffing],
+  ]) {
+    assert.ok(index > -1, `the ${name} block must be present`);
+  }
+  assert.ok(manage < heading, "Manage must sit above the place heading");
+  assert.ok(heading < description, "the heading must sit above the information");
+  assert.ok(
+    description < staffing,
+    "the information must sit above the staffing listing",
+  );
+});
+
+test("homes get no Manage button and no place heading", () => {
+  // A home is not a staff-managed place; its owner has a separate Update tool.
+  const source = read(INFORMATION_PAGE);
+  const PLACE_BRANCH =
+    "<div class=\"h-full w-full bg-black flex flex-col\" style=\"padding: 10px\" v-else>";
+  const homeBranch = source.slice(
+    source.indexOf("v-if=\"$route.params.type === 'home'\""),
+    source.indexOf(PLACE_BRANCH),
+  );
+  assert.ok(homeBranch.length > 0, "the home branch must still exist");
+  assert.ok(
+    !homeBranch.includes("place-manage"),
+    "the home branch must not carry a Manage button",
+  );
+  assert.ok(
+    !homeBranch.includes("Welcome to:"),
+    "the home branch must not carry a place heading",
+  );
+  // Server side, the same answer: information is unsupported for home, shop,
+  // storage and club, so can_edit is false and the button never appears.
+  const INFORMATION_TYPES = ["block", "hood", "colony", "public"];
+  const declared = source.match(/const INFORMATION_TYPES = \[([^\]]+)\]/);
+  assert.ok(declared, "the supported list must be declared");
+  for (const type of ["home", "shop", "storage", "club"]) {
+    assert.ok(
+      !declared![1].includes(`"${type}"`),
+      `'${type}' must not be treated as a staff-managed information place`,
+    );
+  }
+  for (const type of INFORMATION_TYPES) {
+    assert.ok(
+      declared![1].includes(`"${type}"`),
+      `'${type}' must stay supported`,
+    );
+  }
 });
 
 /* ---------------------------------------------------------------- catalogue */

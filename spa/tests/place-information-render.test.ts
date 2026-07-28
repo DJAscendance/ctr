@@ -102,13 +102,16 @@ test("place information renders above the staffing listing", () => {
 });
 
 test("the security listing also shows the place's information", () => {
+  // The jail lists staff by job rather than as Leader/Deputies, but it is still a
+  // staff-managed public place: it shares the same heading and information block,
+  // which now sits ABOVE the branch that chooses between the two listings.
   const template = read(INFORMATION_VUE);
-  const jailBlock = template.slice(
-    template.indexOf("$route.params.slug === 'jail'"),
-    template.indexOf("v-else-if=\"$route.params.type === 'home'\""),
-  );
+  const information = template.indexOf("<place-information");
+  const jail = template.indexOf("$route.params.slug === 'jail'");
+  assert.ok(information > -1, "the information block must exist");
+  assert.ok(jail > -1, "the jail listing must exist");
   assert.ok(
-    /<place-information/.test(jailBlock),
+    information < jail,
     "a staffed public place keeps its information even where the listing differs",
   );
 });

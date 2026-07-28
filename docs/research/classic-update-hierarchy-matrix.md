@@ -592,27 +592,48 @@ hub.
 "Moderation" is not used as a category anywhere — the moderation-ish tools are named
 individually, and each maps to a specific endpoint.
 
-#### Public Information windows are display-only
+#### The Information window: a classic MANAGE button, not a text link
 
-**Corrected 2026-07-27.** `spa/src/pages/Information.vue` previously offered an
-`Update Info` link when `GET /place/:id/information/can_edit` said yes. That link is gone
-from the Colony, Neighborhood, Block and public/Mall Information windows, and the page no
-longer calls `can_edit` at all — it offers no editor, so the answer would decide nothing.
+**Corrected 2026-07-27, twice.** `spa/src/pages/Information.vue` originally offered a
+green `Update Info` text link. The first correction removed it outright; Ryan's follow-up
+recorded what actually shipped in Cybertown — authorized staff had a small classic
+**MANAGE** button, the same control the Inbox and Message Board carry. So the link is gone
+and the button is there.
 
-The window now shows heading → sanitized information → Leader/Deputy staffing, and
-nothing else. This matches the original: `place/info.tmpl` and the block/neighbor
-equivalents rendered `<$TXT>` and the roles list, while every editor lived behind the
-action bar's Update button on the authenticated page.
+The window renders in one order, for every staff-managed place:
 
-`PUT /place/:placeId/information` is unchanged and still independently authorized —
-removing the link removed a link, not a gate.
+```
+   MANAGE   (authorized staff only)
+   Welcome to: <place name>
+   <sanitized place information>
+   Leader / Deputies  (or, at the jail, the staff-by-job listing)
+```
 
-> **Consequence, flagged rather than worked around:** public places (Mall, and every other
-> `type = 'public'` place) have **no Update hub** — `PlaceUpdateHubService` supports
-> colony, hood and block only. With the link gone, public/Mall information has no UI entry
-> point on this branch. The endpoint, its authorization and any stored value are untouched;
-> what is missing is a route to reach it. Building a public-place hub would be a new
-> feature, which this branch is explicitly not to add. **Deferred, and listed in §6.9.**
+- The button reuses the Inbox and Message Board treatment exactly — the same `.btn-ui`
+  chrome inside the same `flex border-4 border-black` frame — so the three windows present
+  one management control rather than three inventions.
+- It opens the existing scoped editor, `place-update-information`. No new route, no new
+  endpoint.
+- The **place name is display only.** The editor writes exactly one column,
+  `place.description`; renaming a place is not part of this tool, and a test asserts the
+  `PUT` body carries no name.
+- Visibility follows `GET /place/:id/information/can_edit`, defaulting to hidden. That is
+  presentation, not security: `PUT /place/:placeId/information` re-checks independently, so
+  a forced button or a pasted editor URL changes nothing.
+- Anonymous and unauthorized viewers get the heading, the information and the staffing,
+  and no button.
+
+Applied to every type `PlaceInformationService` supports — colony, hood, block, and public
+places including the Mall and the jail. Homes, shops, storage and clubs are **not**
+supported types, so `can_edit` is false there and no button appears; each has its own
+existing workflow.
+
+> This also settles a gap the first correction had opened: public places have no Update
+> hub (`PlaceUpdateHubService` is colony/hood/block only), so with the link removed,
+> Mall information had no UI entry point at all. The MANAGE button restores one without
+> needing a public-place hub. Verified live: `qaMallStaff` (Mall Manager, place 7) sees
+> MANAGE on `#/information/public/7/mall` and `can_edit` returns true; the same account
+> gets `false` at colony 879 and `403` from the Mall's update-hub endpoint.
 
 ### 6.4 Block creation — decided, deliberately not built
 
@@ -798,10 +819,11 @@ Four, in the order a reviewer will meet them.
    them into the hub; that was wrong, was reverted, and is now asserted against by test
    (`the permanent tool bars keep their original buttons and routes`).
 
-2. **The public Information windows no longer offer `Update Info`.** Colony, Neighborhood,
-   Block and public/Mall Information are display-only. Editing is reached from the Update
-   hub's Update Information tile. See §6.3 — including the flagged consequence that
-   public/Mall information now has no UI entry point at all.
+2. **The Information windows swap a green `Update Info` link for the classic MANAGE
+   button.** Colony, Neighborhood, Block and public/Mall Information now render
+   MANAGE → heading → information → staffing, with the button shown only to staff the
+   server authorizes. It opens the same editor the Update hub's Update Information tile
+   does. See §6.3.
 
 3. **A tool bar's Update button follows `canOpen`.** A member who holds only tool-bar or
    moderation capabilities — a Security role is exactly that — sees their bar buttons and
@@ -818,7 +840,7 @@ Four, in the order a reviewer will meet them.
 | Colony / Neighborhood **Chat Access** | Needs a new relation, migration and socket rule | `classic-chat-moderation-trace.md` §4.1 |
 | **Chat Moderation** console | Needs all of the above plus a moderator identity model | same, §4.2 |
 | **Block creation / withdrawal** | Schema and rollback design open | §6.4 |
-| **Public/Mall Information editing UI** | Public places have no Update hub, and adding one is a new feature this branch must not add. Endpoint and authorization untouched | §6.3 |
+| **A public-place Update hub** | Not needed for information — the MANAGE button reaches the editor directly (§6.3). Only relevant if public places later gain wizard-style tools of their own | §6.3 |
 | Job-wide `WRO` chat grants; Chat **Read** Access | No model in CTR at all | `classic-place-admin-followups.md` §2 |
 | `ColonyRepresentative` dead clause | Fails closed today; belongs to a security lane | §2.3 |
 | Unauthenticated `moderation` socket rebroadcast (`spa/server.js:345-349`) | Pre-existing, untouched by this branch; same security lane | `classic-chat-moderation-trace.md` §3 |
