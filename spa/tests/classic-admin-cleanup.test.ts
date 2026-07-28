@@ -450,9 +450,12 @@ test("the image is not flush against the page edges", () => {
     ),
     "the image column needs clearance from the details, the edge and the title",
   );
+  // 200px image + 24 left + 8 right. Widths are border-box, so the padding has
+  // to be ADDED to the declared width; leaving it at 200 would take the padding
+  // out of the image's own space and push it back against the edge.
   assert.ok(
-    /style="width: 200px;"/.test(template),
-    "the 200px column itself is unchanged - only its breathing room",
+    /style="width: 232px;"/.test(template),
+    "the column must be wide enough to hold a 200px image plus its padding",
   );
 });
 
