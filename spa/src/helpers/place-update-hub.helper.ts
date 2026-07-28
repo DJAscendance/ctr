@@ -1,11 +1,21 @@
 /**
- * The single catalogue of tools a scoped place Update hub can offer.
+ * Where each scoped place-administration capability belongs, and the tile
+ * catalogue for the ones that belong inside the Update hub.
  *
- * One list, consumed by the Colony, Neighborhood and Block hubs alike, so the
- * three cannot drift into three near-copies. The original kept its wizard and its
- * public map identical by building them from the same frameset (blaxxun CS 4.0
- * templates/block/wizard/place.tmpl vs templates/block/place.tmpl); this is the
- * same idea applied to the tool list.
+ * TWO SEPARATE QUESTIONS. Holding a capability says the server would honour the
+ * action. It does NOT say the action belongs on the Update page. The original
+ * drew that line and CTR keeps it: blaxxun CS 4.0's place action bars carried
+ * Group Message and Access Rights as PERMANENT buttons
+ * (templates/{community,neighbor,block}/action.tmpl), while the Update button
+ * beside them opened a wizard whose own screens were a different, smaller set -
+ * info, the child map, and the background (`strings neighbor.exe | grep wizard`
+ * -> wizardinfo, wizardpresent, wizardimage, wizardplace, wizardsubmit).
+ * Reproducing every capability as a tile would have invented an umbrella screen
+ * the original never had.
+ *
+ * So CAPABILITY_PLACEMENT below is the authority on WHERE, and HUB_TILES holds
+ * only the capabilities placed in the hub. A capability placed anywhere else has
+ * no tile, deliberately, and place-update-hub.test asserts it stays that way.
  *
  * Entries are DATA, not callbacks: a tile names its route per tier and which
  * route parameter carries the place id, and the hub builds the target. That keeps
@@ -18,7 +28,7 @@
  * tile is never the access control.
  *
  * Every entry is documented in docs/research/classic-update-hierarchy-matrix.md
- * section 3. `origin` records whether the tool restores original Cybertown
+ * section 6. `origin` records whether the tool restores original Cybertown
  * behavior or is a modern composition, so a later reader does not mistake one for
  * the other.
  */
@@ -37,6 +47,88 @@ export type UpdateCapability =
   | "manage_background"
   | "list_neighborhoods"
   | "list_blocks";
+
+/**
+ * Where a capability's control lives.
+ *
+ * - `toolbar`         - the permanent place tool bar, in its original position.
+ * - `hub`             - inside the scoped Update hub.
+ * - `moderation-page` - a dedicated moderation surface reached on its own; the
+ *                       capability is real, but it is not an Update Wizard
+ *                       function and must not be dressed as one.
+ *
+ * A fourth category exists in the docs but not in this type: structural actions
+ * unavailable in CTR (colony map editing, block creation/withdrawal). Those have
+ * no capability at all, so there is nothing here to place - see
+ * docs/research/classic-update-hierarchy-matrix.md sections 6.4 and 6.6.
+ */
+export type CapabilityPlacement = "toolbar" | "hub" | "moderation-page";
+
+export interface CapabilityPlacementEntry {
+  placement: CapabilityPlacement;
+  /** The surface that owns this control, named for a human reading a diff. */
+  where: string;
+}
+
+export const CAPABILITY_PLACEMENT: Record<
+  UpdateCapability,
+  CapabilityPlacementEntry
+> = {
+  // --- inside the Update hub ------------------------------------------------
+  update_information: {
+    placement: "hub",
+    where: "Update hub - CS 4.0 wizardinfo",
+  },
+  manage_lots: {
+    placement: "hub",
+    where: "Update hub - CS 4.0 block wizardpresent",
+  },
+  manage_background: {
+    placement: "hub",
+    where: "Update hub - CS 4.0 wizardimage",
+  },
+  list_neighborhoods: {
+    placement: "hub",
+    where: "Update hub - read-only navigation list",
+  },
+  list_blocks: {
+    placement: "hub",
+    where: "Update hub - read-only navigation list",
+  },
+
+  // --- permanent tool bar, in their original positions ----------------------
+  // These were never wizard screens. Duplicating them as tiles would put the
+  // same action in two places and make the hub look like an umbrella menu.
+  message_to_all: {
+    placement: "toolbar",
+    where: "place tool bar - CS 4.0 Group Message (bgroupmesa.gif)",
+  },
+  inbox_to_all: {
+    placement: "toolbar",
+    where: "place tool bar - beside Message to All",
+  },
+  manage_access_rights: {
+    placement: "toolbar",
+    where: "place tool bar - CS 4.0 Access Rights (baccess.gif, #ifdef rightsaccess)",
+  },
+  check_images: {
+    placement: "toolbar",
+    where: "block tool bar - CS 4.0 block/action.tmpl third owner tool (TPL=block/plist)",
+  },
+
+  // --- their own moderation surfaces ---------------------------------------
+  // Real capabilities, reached through the Messages and Inbox windows the tool
+  // bar already opens. They are message-board and inbox moderation - NOT chat
+  // moderation, and they must never be relabelled as such.
+  moderate_messageboard: {
+    placement: "moderation-page",
+    where: "the place's Messages window",
+  },
+  moderate_inbox: {
+    placement: "moderation-page",
+    where: "the place's Inbox window",
+  },
+};
 
 export interface HubContext {
   placeId: number;
@@ -80,6 +172,14 @@ export interface HubTile {
   origin: "classic" | "modern";
 }
 
+/**
+ * The Update Wizard's own screens, and nothing else.
+ *
+ * This list is short on purpose. CS 4.0's neighborhood and block wizards had
+ * exactly three: the information form, the child map, and the background picker.
+ * Everything a place administrator could also do lived on the permanent action
+ * bar beside the Update button, and still does.
+ */
 export const HUB_TILES: HubTile[] = [
   {
     key: "update_information",
@@ -95,76 +195,7 @@ export const HUB_TILES: HubTile[] = [
     },
     paramKey: "placeId",
     // CS 4.0 place/updateinfo.{cfg,tmpl} - a single TXT attribute on the place
-    // record, gated by owneraccess.
-    origin: "classic",
-  },
-  {
-    key: "manage_access_rights",
-    image: "/assets/img/homes/updright.jpg",
-    // Named for what it actually does. The classic Owner Access axis assigns the
-    // place's leader and up to eight deputies. It is NOT chat access, and must not
-    // be labelled as such - see the matrix section 2.6.
-    label: "Access Rights",
-    description: "Assign this place's leader and deputies.",
-    types: ["colony", "hood", "block"],
-    kind: "route",
-    routeNames: {
-      colony: "worldAccessRights",
-      hood: "neighborhoodAccessRights",
-      block: "blockaccessrights",
-    },
-    // CS 4.0 common/updownerrights.{cfg,tmpl}: OWN + AS1-AS8. Archived in
-    // production 13x against DTY=B.
-    origin: "classic",
-  },
-  {
-    key: "message_to_all",
-    image: "/assets/img/homes/updpers.jpg",
-    label: "Message to All",
-    description: "Post one message to every place beneath this one.",
-    types: ["colony", "hood", "block"],
-    kind: "route",
-    routeNames: {
-      colony: "colonyMessageToAll",
-      hood: "neighborhoodMessageToAll",
-      block: "blockMessageToAll",
-    },
-    // CS 4.0 "Group Message": msb?ac=writegroup&DTY=C|N|B, gated by owneraccess.
-    origin: "classic",
-  },
-  {
-    key: "inbox_to_all",
-    image: "/assets/img/homes/updpers.jpg",
-    label: "Inbox to All",
-    description: "Send one inbox message to every place beneath this one.",
-    types: ["colony", "hood", "block"],
-    kind: "route",
-    routeNames: {
-      colony: "colonyInboxToAll",
-      hood: "neighborhoodInboxToAll",
-      block: "blockInboxToAll",
-    },
-    // No CS 4.0 counterpart - the original's group tool posted to message boards.
-    origin: "modern",
-  },
-  {
-    key: "moderate_messageboard",
-    image: "/assets/img/homes/updinfo.jpg",
-    label: "Moderate Messages",
-    description: "Read this place's message board and remove messages.",
-    types: ["colony", "hood", "block"],
-    kind: "window",
-    hrefTemplate: "#/messageboard/{placeId}",
-    origin: "classic",
-  },
-  {
-    key: "moderate_inbox",
-    image: "/assets/img/homes/updinfo.jpg",
-    label: "Moderate Inbox",
-    description: "Read this place's inbox and remove messages.",
-    types: ["colony", "hood", "block"],
-    kind: "window",
-    hrefTemplate: "#/inbox/{placeId}",
+    // record, gated by owneraccess. The wizard reached it as ac=wizardinfo.
     origin: "classic",
   },
   {
@@ -192,22 +223,17 @@ export const HUB_TILES: HubTile[] = [
       block: "blockmapbackground",
     },
     paramKey: "id",
-    // CS 4.0 {block,neighbor}/wizard/image.tmpl. The live-overlay preview CTR adds
-    // is an intentional enhancement over the original's blind thumbnails.
-    origin: "classic",
-  },
-  {
-    key: "check_images",
-    image: "/assets/img/homes/updimage.jpg",
-    label: "Check Images",
-    description: "Review the home images displayed on this block.",
-    types: ["block"],
-    kind: "window",
-    hrefTemplate: "#/home/image-check",
-    // CS 4.0 block/action.tmpl's third owner tool: edit?...&TPL=block/plist.
+    // CS 4.0 {block,neighbor}/wizard/image.tmpl, reached as ac=wizardimage. The
+    // live-overlay preview CTR adds is an intentional enhancement over the
+    // original's blind thumbnails.
     origin: "classic",
   },
 ];
+
+/** The capabilities whose control lives inside the hub, tile or not. */
+export const HUB_PLACED_CAPABILITIES: UpdateCapability[] = (
+  Object.keys(CAPABILITY_PLACEMENT) as UpdateCapability[]
+).filter((key) => CAPABILITY_PLACEMENT[key].placement === "hub");
 
 /**
  * Tiles to render, in catalogue order, for a place of `type` given the

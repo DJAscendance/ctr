@@ -21,15 +21,20 @@
 		<br />
 		<br />
     <!--
-      The tool bar keeps every button it had, in the order it had them. Update now
-      opens the scoped hub instead of jumping straight to the map background,
-      which is the original shape: blaxxun CS 4.0 templates/neighbor/action.tmpl
-      :43-44 put a single Update button behind #ifdef owneraccess opening a
-      per-place wizard. The hub also carries these same tools as tiles, so either
-      route reaches them.
+      The tool bar keeps every button it had, in the order it had them. These are
+      PERMANENT actions and they live here, not inside the Update hub: blaxxun CS
+      4.0 templates/neighbor/action.tmpl:41-44 put Group Message and Update side by
+      side on the action bar, with Access Rights beside them under #ifdef
+      rightsaccess, and the Update button opened a wizard whose own screens were a
+      smaller, different set (`strings neighbor.exe | grep wizard` -> wizardinfo,
+      wizardpresent, wizardimage). Duplicating a bar button as a wizard tile would
+      put one action in two places; the hub deliberately carries neither Message to
+      All, Inbox to All nor Access Rights.
 
       Each button is drawn from its own capability rather than one broad admin
       flag, so a button is shown only when the server would actually honour it.
+      Update follows `canOpen`, which is true only when the hub has something to
+      show.
     -->
     <div v-if="hubAvailable && this.$store.data.place.hood">
       <router-link
@@ -42,8 +47,11 @@
         :to="{ name: 'neighborhoodInboxToAll' }"
         class="btn-ui"
       >Inbox to All</router-link>
-      <router-link :to="{ name: 'neighborhoodUpdate' }" class="btn-ui">
-        Update</router-link>
+      <router-link
+        v-if="canOpen"
+        :to="{ name: 'neighborhoodUpdate' }"
+        class="btn-ui"
+      >Update</router-link>
       <router-link
         v-if="can('manage_access_rights')"
         :to="{ name: 'neighborhoodAccessRights' }"
@@ -62,6 +70,7 @@ export default Vue.extend({
   data: () => {
     return {
       hubAvailable: false,
+      canOpen: false,
       capabilities: [],
       loaded: false,
     };
@@ -74,6 +83,8 @@ export default Vue.extend({
     /**
      * Which tools this member may use at this neighborhood. 200 means at least
      * one capability was granted; 403 means none, and no admin button is drawn.
+     * `canOpen` is the server's answer to the narrower question of whether the
+     * Update wizard itself has any screen to show.
      * Presentational only - every tool re-checks server-side when used.
      */
     async checkHub() {
@@ -82,9 +93,11 @@ export default Vue.extend({
           `/place/${this.$store.data.place.hood.id}/update-hub`,
         );
         this.capabilities = response.data.hub.capabilities || [];
+        this.canOpen = response.data.hub.canOpen === true;
         this.hubAvailable = true;
       } catch (e) {
         this.capabilities = [];
+        this.canOpen = false;
         this.hubAvailable = false;
       }
     },

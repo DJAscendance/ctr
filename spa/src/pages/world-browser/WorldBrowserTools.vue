@@ -38,10 +38,14 @@
     </div>
     <div v-if="canAdmin">
       <!--
-        The tool bar keeps every button it had, in the order it had them. For a
-        colony, Update now opens the scoped hub instead of being a dead <span>;
-        the hub also carries these same tools as tiles, so either route reaches
-        them. Other place types have no scoped hub and are untouched.
+        The tool bar keeps every button it had, in the order it had them. These
+        are PERMANENT actions and they live here, not inside the Update hub:
+        blaxxun CS 4.0 templates/community/action.tmpl:48-56 put Group Message
+        under #ifdef owneraccess and Access Rights under #ifdef rightsaccess, both
+        on the bar. For a colony, Update now opens the scoped hub instead of being
+        a dead <span>, and that hub deliberately carries neither Message to All,
+        Inbox to All nor Access Rights - it would be the same action in two
+        places. Other place types have no scoped hub and are untouched.
       -->
       <span v-if="$store.data.place.type === 'colony'">
         <router-link v-if="can('message_to_all')"
@@ -52,7 +56,7 @@
                      class="btn-ui">Inbox to All</router-link>
       </span>
       <router-link
-        v-if="$store.data.place.type === 'colony' && hubAvailable"
+        v-if="$store.data.place.type === 'colony' && canOpen"
         :to="{ name: 'colonyUpdate' }"
         class="btn-ui"
       >Update</router-link>
@@ -84,6 +88,7 @@ export default Vue.extend({
       loaded: false,
       canAdmin: false,
       hubAvailable: false,
+      canOpen: false,
       capabilities: [],
       data: null,
       mallId: null,
@@ -99,11 +104,14 @@ export default Vue.extend({
     },
     /**
      * Which tools this member may use at this colony. 200 means at least one
-     * capability was granted; 403 means none. Presentational only - every tool
-     * re-checks server-side when used. Only colonies have a scoped hub.
+     * capability was granted; 403 means none. `canOpen` is the server's answer to
+     * the narrower question of whether the Update wizard itself has any screen to
+     * show. Presentational only - every tool re-checks server-side when used.
+     * Only colonies have a scoped hub.
      */
     async checkHub() {
       this.hubAvailable = false;
+      this.canOpen = false;
       this.capabilities = [];
       if (this.$store.data.place.type !== "colony") {
         return;
@@ -113,9 +121,11 @@ export default Vue.extend({
           `/place/${this.$store.data.place.id}/update-hub`,
         );
         this.capabilities = response.data.hub.capabilities || [];
+        this.canOpen = response.data.hub.canOpen === true;
         this.hubAvailable = true;
       } catch (error) {
         this.capabilities = [];
+        this.canOpen = false;
         this.hubAvailable = false;
       }
     },

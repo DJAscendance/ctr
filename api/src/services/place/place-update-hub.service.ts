@@ -44,13 +44,43 @@ export type UpdateCapability =
   | 'list_neighborhoods'
   | 'list_blocks';
 
+/**
+ * The capabilities whose control lives INSIDE the Update hub.
+ *
+ * Holding a capability and belonging on the Update page are different questions.
+ * Message to All, Inbox to All, Access Rights and Check Images are permanent
+ * tool-bar buttons - in blaxxun CS 4.0 they sat on the action bar BESIDE the
+ * Update button, not inside the wizard it opened. Message-board and inbox
+ * moderation are reached through their own windows. The wizard's own screens were
+ * information, the child map and the background, which is what this list holds.
+ *
+ * The client keeps the matching table in spa/src/helpers/place-update-hub.helper
+ * (CAPABILITY_PLACEMENT); this copy exists so `canOpen` is decided by the server
+ * rather than inferred from a list length.
+ */
+const HUB_PLACED_CAPABILITIES: readonly UpdateCapability[] = [
+  'update_information',
+  'manage_lots',
+  'manage_background',
+  'list_neighborhoods',
+  'list_blocks',
+];
+
 export interface PlaceUpdateHub {
   placeId: number;
   name: string;
   /** Read from the stored row. Never taken from the request. */
   type: HubPlaceType;
   slug: string | null;
-  /** True when at least one capability is granted. */
+  /**
+   * True when at least one capability whose control lives in the hub is granted.
+   *
+   * A member may hold only tool-bar or moderation capabilities - a Security role
+   * holds exactly those - and for them the Update page has nothing to show. The
+   * endpoint still answers 200 with the full list so the tool bars can gate their
+   * own buttons; `canOpen` is what decides whether the Update button appears and
+   * whether the hub renders.
+   */
   canOpen: boolean;
   capabilities: UpdateCapability[];
 }
@@ -91,6 +121,13 @@ export type UpdateHubResult =
  * Chat Access is absent outside homes: `HomeService.canChatInPlace` is home-scoped
  * by construction and there is no place-tier chat ACL to expose. A tile with no
  * authoritative backend would be a lie about what the button does.
+ *
+ * Chat MODERATION is absent for the same reason and is a different feature again.
+ * The original's Moderate Chat button opened a Java applet against a separate
+ * moderation daemon (blaxxun CS 4.0 templates/place/moderate.tmpl); CTR has no
+ * such service, no per-place moderator grant and no socket-side rule to enforce
+ * one. The message-board and inbox capabilities below are NOT it and must never
+ * be relabelled as it - see docs/research/classic-chat-moderation-trace.md.
  */
 @Service()
 export class PlaceUpdateHubService {
@@ -138,7 +175,9 @@ export class PlaceUpdateHubService {
         name: place.name,
         type: place.type,
         slug: place.slug || null,
-        canOpen: true,
+        canOpen: capabilities.some(
+          (capability) => HUB_PLACED_CAPABILITIES.indexOf(capability) !== -1,
+        ),
         capabilities,
       },
     };

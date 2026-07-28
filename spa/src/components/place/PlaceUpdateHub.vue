@@ -19,16 +19,20 @@
       -->
       <div class="text-center mb-3">
         <h3>Update the {{ tierNoun }} '{{ hub.name }}'</h3>
-        <p>
-          Here you can change this {{ tierNoun }}'s information, access rights and
-          more ...!
-        </p>
+        <p>Here you can change this {{ tierNoun }}'s information and more ...!</p>
       </div>
 
       <!--
         The tool list comes from the catalogue in helpers/place-update-hub.helper,
         filtered by the capabilities the SERVER granted. Colony, Neighborhood and
         Block all render through this one component so they cannot drift apart.
+
+        It is deliberately SHORT. Only capabilities placed in the hub appear here
+        (CAPABILITY_PLACEMENT in that helper). Message to All, Inbox to All,
+        Access Rights and Check Images are permanent tool-bar buttons and stay
+        there; message-board and inbox moderation are reached from the place's own
+        Messages and Inbox windows. A member may well hold those capabilities and
+        still see only one or two tiles - that is correct, not a bug.
 
         Nothing here is an access control. Every route and popup below is
         independently authorized by its own endpoint; this only decides what to
@@ -216,7 +220,11 @@ export default Vue.extend({
       try {
         const response = await this.$http.get(`/place/${this.placeId}/update-hub`);
         const hub = response.data.hub;
-        if (!hub || hub.type !== this.expectedType) {
+        // `canOpen` is narrower than "the endpoint answered 200": the server
+        // grants it only when a capability whose control lives IN the hub was
+        // granted. A member holding just tool-bar or moderation capabilities has
+        // no wizard to open, and is refused rather than shown an empty page.
+        if (!hub || hub.type !== this.expectedType || hub.canOpen !== true) {
           this.denied = true;
           return;
         }
