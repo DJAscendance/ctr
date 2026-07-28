@@ -358,6 +358,128 @@ describe('PlaceUpdateHubService', () => {
     });
   });
 
+  /**
+   * Placement, which is a different question from authorization.
+   *
+   * Holding a capability says the server would honour the action. `canOpen` says
+   * the Update wizard has a screen of its own to show. Message to All, Inbox to
+   * All, Access Rights and Check Images are permanent tool-bar buttons; the
+   * message-board and inbox capabilities belong to their own windows. None of
+   * them, alone or together, is a reason to open the wizard.
+   */
+  describe('canOpen', () => {
+    /** Capabilities whose control lives inside the hub. */
+    const HUB_PLACED = [
+      'update_information',
+      'manage_lots',
+      'manage_background',
+      'list_neighborhoods',
+      'list_blocks',
+    ];
+
+    /** Capabilities that exist but are reached somewhere else entirely. */
+    const NOT_IN_THE_HUB = [
+      'message_to_all',
+      'inbox_to_all',
+      'manage_access_rights',
+      'check_images',
+      'moderate_messageboard',
+      'moderate_inbox',
+    ];
+
+    it('covers every capability exactly once between the two placements', () => {
+      // If a capability is added later, it must be classified. An unplaced
+      // capability fails here rather than silently defaulting into the wizard.
+      expect([...HUB_PLACED, ...NOT_IN_THE_HUB].sort())
+        .toEqual([...ALLOWED_CAPABILITIES].sort());
+    });
+
+    it('is false for an actor holding only tool-bar and moderation capabilities',
+      async () => {
+        // A Security role is exactly this actor: real authority, no wizard screen.
+        memberService.getAccessLevel.mockResolvedValue(['security'] as any);
+
+        const result = await hubFor(place({ type: 'block', id: 892 }));
+        if (result.status !== 'success') throw new Error('expected success');
+
+        expect(result.hub.canOpen).toBe(false);
+        // The capability list is still returned in full - the tool bar needs it.
+        expect(result.hub.capabilities).toContain('message_to_all');
+        for (const capability of result.hub.capabilities) {
+          expect(HUB_PLACED).not.toContain(capability);
+        }
+      });
+
+    it('is true as soon as one hub-placed capability is granted', async () => {
+      // Information alone, with no scoped admin role at all.
+      placeInformationService.canEdit.mockResolvedValue(true);
+
+      const result = await hubFor(place({ type: 'hood', id: 31, slug: null }));
+      if (result.status !== 'success') throw new Error('expected success');
+      expect(result.hub.capabilities).toEqual(['update_information']);
+      expect(result.hub.canOpen).toBe(true);
+    });
+
+    it('is true for the scoped leader of each tier', async () => {
+      const cases: Array<[any, () => void]> = [
+        [place(), () => {
+          colonyService.canAdmin.mockResolvedValue(true);
+          colonyService.canManageAccess.mockResolvedValue(true);
+          placeInformationService.canEdit.mockResolvedValue(true);
+        }],
+        [place({ id: 31, type: 'hood', slug: null }), () => {
+          hoodService.canAdmin.mockResolvedValue(true);
+          hoodService.canManageAccess.mockResolvedValue(true);
+          placeInformationService.canEdit.mockResolvedValue(true);
+        }],
+        [place({ id: 892, type: 'block', slug: null }), () => {
+          blockService.canAdmin.mockResolvedValue(true);
+          blockService.canManageAccess.mockResolvedValue(true);
+          placeInformationService.canEdit.mockResolvedValue(true);
+        }],
+      ];
+      for (const [row, setup] of cases) {
+        setup();
+        const result = await hubFor(row);
+        if (result.status !== 'success') throw new Error('expected success');
+        expect(result.hub.canOpen).toBe(true);
+      }
+    });
+
+    it('never grants a chat or chat-moderation capability at any tier', async () => {
+      // Place-tier chat access and chat moderation are both unimplemented. The
+      // message-board and inbox capabilities are NOT them and must not be
+      // renamed into them - see docs/research/classic-chat-moderation-trace.md.
+      const forbidden = [
+        'chat_access',
+        'manage_chat_access',
+        'chat_moderation',
+        'manage_chat_moderation',
+        'moderate_chat',
+      ];
+      for (const row of [
+        place(),
+        place({ id: 31, type: 'hood', slug: null }),
+        place({ id: 892, type: 'block', slug: null }),
+      ]) {
+        colonyService.canAdmin.mockResolvedValue(true);
+        colonyService.canManageAccess.mockResolvedValue(true);
+        hoodService.canAdmin.mockResolvedValue(true);
+        hoodService.canManageAccess.mockResolvedValue(true);
+        blockService.canAdmin.mockResolvedValue(true);
+        blockService.canManageAccess.mockResolvedValue(true);
+        placeInformationService.canEdit.mockResolvedValue(true);
+        memberService.getAccessLevel.mockResolvedValue(['admin', 'security'] as any);
+
+        const result = await hubFor(row);
+        if (result.status !== 'success') throw new Error('expected success');
+        for (const capability of forbidden) {
+          expect(result.hub.capabilities).not.toContain(capability);
+        }
+      }
+    });
+  });
+
   describe('place resolution', () => {
     it('reports not_found for a place that does not exist', async () => {
       placeRepository.findById.mockResolvedValue(undefined as any);
