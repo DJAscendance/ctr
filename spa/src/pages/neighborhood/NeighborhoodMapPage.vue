@@ -1,37 +1,30 @@
 <template>
 	<div class="h-full w-full bg-black flex flex-col" v-if="loaded">
 		<div class="w-full flex-1 text-center">
-			<div class="inline-block mx-auto">
-				<div
-					:style="{
-						padding: '16px 19px 13px 10px',
-						width: '540px',
-						height: '300px',
-						'background-image': mapBackground
-					}"
-					class="grid grid-cols-6 gap-0"
-				>
-					<div v-for="index in 30" :key="index" style="height:53px;">
-						<template v-if="blocks.find(b => b.location === index)">
-							<router-link
-								:to="
-									'/block/' +
-										blocks.find(b => b.location === index)
-											.id
-								"
-								class="w-full h-full block text-center flex items-center justify-center"
-								:style="{
-									'background-image': blockBackground
-								}"
-							>
-								<span>{{
-									blocks.find(b => b.location === index).name
-								}}</span>
-							</router-link>
-						</template>
-					</div>
-				</div>
-			</div>
+			<!--
+				Geometry and cell placement now come from the shared HoodBlockMap
+				renderer, which the background chooser's preview also uses. The
+				markup below is only what a block LOOKS like here - a link into the
+				block - so the two surfaces cannot drift apart about where a block
+				sits or which icon it carries.
+			-->
+			<hood-block-map
+				:blocks="blocks"
+				:background="mapBackground"
+				:theme="mapTheme"
+				aria-label="Neighborhood map"
+			>
+				<template v-slot:block="{ block, icon }">
+					<router-link
+						v-if="block"
+						:to="'/block/' + block.id"
+						class="w-full h-full block text-center flex items-center justify-center"
+						:style="{ 'background-image': icon }"
+					>
+						<span>{{ block.name }}</span>
+					</router-link>
+				</template>
+			</hood-block-map>
 			<br />
 			<small
 				>Click a block on the Neighborhood map above to go to the
@@ -47,19 +40,13 @@
 <script lang="ts">
 import Vue from "vue";
 import Chat from "../../components/Chat.vue";
+import HoodBlockMap from "@/components/neighborhood/HoodBlockMap.vue";
 import { NeighborhoodData } from "./neighborhood-data.interface";
-import { colonyDataHelper } from "@/helpers";
-
-function mapBackgroundFilename(index: number | null | undefined): string {
-  if (!Number.isInteger(index) || (index as number) <= 0) {
-    return "Pimg2D000.gif";
-  }
-  return "Pimg2D" + (index as number).toString().padStart(3, "0") + ".gif";
-}
+import { colonyDataHelper, hoodBackgroundStyle } from "@/helpers";
 
 export default Vue.extend({
   name: "NeighborhoodMapPage",
-  components: { Chat },
+  components: { Chat, HoodBlockMap },
   data: (): NeighborhoodData => {
     return {
       loaded: false,
@@ -105,23 +92,17 @@ export default Vue.extend({
   },
   watch: {},
   computed: {
-    mapBackground() {
-      const theme = colonyDataHelper[this.colony.slug].map_theme;
-      const defaultUrl = `/assets/img/map_themes/${theme}/hood/Pimg2D000.gif`;
-      const selectedFilename = mapBackgroundFilename(this.hood.map_background_index);
-      if (selectedFilename === "Pimg2D000.gif") {
-        return `url('${defaultUrl}')`;
-      }
-      const selectedUrl = `/assets/img/map_themes/${theme}/hood/${selectedFilename}`;
-      // Layered so a missing/failed selected file falls back to the default underneath it.
-      return `url('${selectedUrl}'), url('${defaultUrl}')`;
+    mapTheme() {
+      return colonyDataHelper[this.colony.slug].map_theme;
     },
-    blockBackground() {
-      return (
-        `url('/assets/img/map_themes/${ 
-          colonyDataHelper[this.colony.slug].map_theme 
-        }/hood/Picon2D000.gif')`
-      );
+    mapBackground() {
+      // Layered so a missing/failed selected file falls back to the default
+      // underneath it. See @/helpers/hood-map.helper.ts. The theme is looked up
+      // here rather than read off the sibling computed: `data` is typed as
+      // NeighborhoodData, so computed-to-computed access is not visible to the
+      // template type checker.
+      const theme = colonyDataHelper[this.colony.slug].map_theme;
+      return hoodBackgroundStyle(theme, this.hood.map_background_index);
     },
   },
   mounted() {

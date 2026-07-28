@@ -1,4 +1,5 @@
 export * from "./block-map.helper";
+export * from "./hood-map.helper";
 export * from "./debug-message.helper";
 export * from "./environment.helper";
 export * from "./colony-data.helper";

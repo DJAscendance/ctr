@@ -1,5 +1,7 @@
 <template>
-  <div v-if="loaded">
+  <!-- p-2: these wizard pages have no wrapper padding of their own, so without
+       it the heading and the Back link sit flush against the window edge. -->
+  <div class="p-2" v-if="loaded">
     <p>
       <strong>Map Background for neighborhood '{{ hood.name }}'</strong>
     </p>

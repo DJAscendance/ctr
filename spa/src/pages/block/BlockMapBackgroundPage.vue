@@ -1,5 +1,7 @@
 <template>
-  <div v-if="block">
+  <!-- p-2: matches the neighborhood background editor; these wizard pages have no
+       wrapper padding of their own. -->
+  <div class="p-2" v-if="block">
     <p>
       <strong
         >Map Background for block '{{ block.name }}'</strong
