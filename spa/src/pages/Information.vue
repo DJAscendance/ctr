@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <!--
+    w-full on the ROOT, which is the flex item the router places into the page's
+    flex row. Without it this wrapper takes its width from its content, and the
+    `w-full` on each branch below then resolves against that shrink-wrapped box
+    rather than the page - which is what centered the heading over the
+    information text instead of over the window.
+  -->
+  <div class="w-full">
     <!--
       A home's Information is the free text its owner wrote. It is rendered through Vue's
       text interpolation (never v-html), so any markup a citizen types is escaped and
