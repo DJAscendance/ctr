@@ -35,15 +35,20 @@
       common/inforoles.tmpl (Owner/Assistants) and the Leaders/Deputies lists
       directly beneath it - see docs/research/classic-place-admin-re-evidence.md
       section 4.3.
+
+      This window is DISPLAY ONLY. It is the public face of a place - heading,
+      information, staffing - and carries no control that changes anything, for
+      anyone, at any privilege level. The original was the same: place/info.tmpl
+      and its block/neighbor equivalents rendered <$TXT> and the roles list, while
+      every editor lived behind the action bar's Update button on the authenticated
+      page. Editing is reached from the scoped Update hub instead; the update
+      endpoint authorizes independently, so nothing is lost by not linking it here.
+
+      Do not add an edit link, an inline editor, or any other mutation control to
+      this window.
     -->
     <div class="h-full w-full bg-black flex flex-col" style="padding: 10px" v-else>
       <place-information :description="placeDescription"></place-information>
-      <div v-if="canEditInformation" style="padding-bottom: 10px">
-        <router-link
-          class="text-chat underline"
-          :to="'/place/' + $route.params.id + '/information/update'"
-        >Update Info</router-link>
-      </div>
       <div>
         Leader<br/>
         <span style="color: #00df00; text-decoration: underline; cursor: pointer;"
@@ -87,7 +92,6 @@ export default Vue.extend({
       securityInfo: {},
       homeDescription: null,
       placeDescription: "",
-      canEditInformation: false,
     };
   },
   computed: {
@@ -102,6 +106,9 @@ export default Vue.extend({
      * The value is already sanitized server-side, and PlaceInformation renders it
      * as HTML on that basis. Failures degrade to no information rather than
      * blocking the staffing listing, which is the more important content here.
+     *
+     * Read only. This window deliberately does not ask whether the viewer may
+     * edit - it offers no editor, so the answer would decide nothing.
      */
     async getPlaceInformation(): Promise<void> {
       if (!this.supportsPlaceInformation) {
@@ -113,16 +120,6 @@ export default Vue.extend({
         this.placeDescription = response.data.description || "";
       } catch (e) {
         this.placeDescription = "";
-      }
-      // Purely to decide whether to offer the editor link. The update endpoint
-      // re-checks independently, so a stale or spoofed answer here grants nothing.
-      try {
-        const response = await this.$http.get(
-          `/place/${placeId}/information/can_edit`,
-        );
-        this.canEditInformation = response.data.result === true;
-      } catch (e) {
-        this.canEditInformation = false;
       }
     },
     async getData(): Promise<void> {
