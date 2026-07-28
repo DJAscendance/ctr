@@ -32,7 +32,27 @@
         </div>
 
         <div class="text-center">
-          <input type="file" @change="setFile" accept="image/*" :disabled="busy" />
+          <input
+            ref="fileInput"
+            type="file"
+            @change="setFile"
+            accept="image/*"
+            :disabled="busy"
+          />
+        </div>
+
+        <!--
+          The chosen file, confirmed back to the citizen in the same green the
+          page already uses for "this worked". `File.name` is the base name only -
+          browsers never expose the local directory - so nothing about the
+          citizen's filesystem is shown beyond what they picked.
+
+          This is a SELECTION confirmation, not an upload confirmation: nothing has
+          been sent yet. Errors stay in their own red line below so the two can
+          never be mistaken for one another.
+        -->
+        <div v-if="selectedFileName" class="text-center text-green mt-3">
+          Selected: {{ selectedFileName }}
         </div>
 
         <div v-if="showError" class="text-center text-red-500 mt-3">{{ error }}</div>
@@ -77,6 +97,15 @@ export default Vue.extend({
       busy: false,
     };
   },
+  computed: {
+    /**
+     * Base name of the pending file, or "" when nothing is chosen. Browsers only
+     * ever expose the base name on a File, so this cannot leak a local path.
+     */
+    selectedFileName(): string {
+      return (this.imageFile && this.imageFile.name) || "";
+    },
+  },
   methods: {
     async getHome() {
       try {
@@ -97,8 +126,33 @@ export default Vue.extend({
     setFile(e) {
       const files = e.target.files || e.dataTransfer.files;
       this.imageFile = files[0] || null;
-      // Reset the native input so choosing the same file again still fires change.
-      e.target.value = "";
+      // A fresh choice supersedes the previous outcome: clear the old messages so
+      // "uploaded", "removed" or a stale validation error cannot sit next to a
+      // file that has not been sent yet.
+      this.showError = false;
+      this.showRemoved = false;
+      this.showUploaded = false;
+      this.error = "";
+      // Deliberately NOT resetting e.target.value here. The reset used to happen
+      // on every selection so that re-picking the SAME file still fired `change`,
+      // but it also blanked the widget's own label - so a citizen who had chosen
+      // a file was told "No file chosen" right up to a successful upload.
+      //
+      // The reset is only actually needed when we drop `imageFile` while the
+      // input still holds it, which is exactly what clearSelection() does after an
+      // upload or a removal. Doing it there keeps re-picking the same file working
+      // without ever contradicting the citizen about what is selected.
+    },
+    /**
+     * Drops the pending file and puts the native input back in step with that.
+     * Called only where `imageFile` is actually consumed or discarded.
+     */
+    clearSelection() {
+      this.imageFile = null;
+      const input = this.$refs.fileInput as HTMLInputElement | undefined;
+      if (input) {
+        input.value = "";
+      }
     },
     async upload() {
       if (this.busy) return;
@@ -120,7 +174,7 @@ export default Vue.extend({
         }, true);
 
         this.imagePending = true;
-        this.imageFile = null;
+        this.clearSelection();
         this.showUploaded = true;
       } catch (e) {
         this.error = e.response?.data?.error
@@ -142,7 +196,7 @@ export default Vue.extend({
         await this.$http.post("/home/remove-image");
         this.currentImage = null;
         this.imagePending = false;
-        this.imageFile = null;
+        this.clearSelection();
         this.showRemoved = true;
       } catch (e) {
         this.error = e.response?.data?.error
