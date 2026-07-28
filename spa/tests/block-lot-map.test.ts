@@ -422,6 +422,54 @@ test("the chooser is one paged row, not a wall of every option", () => {
   );
 });
 
+test("the overlay distinguishes loading, empty and failed", () => {
+  const source = read(BACKGROUND_SELECTOR);
+  // Four states, not two. "This neighborhood has no blocks on its map yet" is a
+  // claim about the neighborhood, so it may only be made after a response that
+  // actually said so - printing it beside a failure told the leader two
+  // contradictory things at once.
+  assert.ok(
+    /overlayLoaded: false,/.test(source),
+    "a successful-response flag is what separates empty from failed",
+  );
+  assert.ok(
+    /overlayReady\(\): boolean \{\s*return this\.overlayLoaded && !this\.overlayError;/.test(
+      source,
+    ),
+    "the summary may only show on a successful response with no error",
+  );
+  for (const gate of [
+    "v-if=\"showsLotOverlay && overlayReady\"",
+    "v-if=\"showsBlockOverlay && overlayReady\"",
+  ]) {
+    assert.ok(source.includes(gate), `the summary must be gated: ${gate}`);
+  }
+  // Retry from failure must start from "nothing known".
+  const loadOverlay = source.slice(
+    source.indexOf("async loadOverlay()"),
+    source.indexOf("async submit("),
+  );
+  assert.ok(
+    /this\.overlayError = "";\s*this\.overlayLoaded = false;/.test(loadOverlay),
+    "a retry must clear BOTH flags before it starts",
+  );
+  const successes = loadOverlay.match(/this\.overlayLoaded = true;/g) || [];
+  assert.strictEqual(
+    successes.length,
+    2,
+    "exactly the two success paths - block lots and hood blocks - may set it",
+  );
+  // A stale overlay from a previous success must not be left looking current.
+  assert.ok(
+    /this\.locations = \[\];[\s\S]{0,120}this\.overlayError =/.test(loadOverlay),
+    "a failed lot fetch must clear the rows as well as flag the error",
+  );
+  assert.ok(
+    /this\.blocks = \[\];[\s\S]{0,120}this\.overlayError =/.test(loadOverlay),
+    "a failed block fetch must clear the rows as well as flag the error",
+  );
+});
+
 test("a neighborhood preview shows its real blocks, names and icons", () => {
   const source = read(BACKGROUND_SELECTOR);
   const overlay = source.slice(

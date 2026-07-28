@@ -239,6 +239,51 @@ test("the background editors and their hubs have inner padding", () => {
 
 // ------------------------------------------------------ 4. Button-order audit
 
+/**
+ * Position of the button whose LABEL matches `word`, in `template`.
+ *
+ * Throws when there is no such button. That is the point: the earlier version
+ * returned "" for a missing control, and `indexOf("")` is 0, so a form that had
+ * lost its primary button entirely still "passed" the ordering assertion with
+ * 0 < cancelAt. A missing control must fail loudly, not silently sort first.
+ *
+ * Matching is on the label text, not the whole element: the place-information
+ * editor's error-state "Back" buttons carry @click="cancel", and matching
+ * attributes would find one of those instead of the real Cancel.
+ */
+export function buttonPosition(template: string, word: string, context: string): number {
+  const buttons = template.match(/<button[\s\S]*?<\/button>/g) || [];
+  const labelOf = (button: string): string =>
+    button.slice(button.indexOf(">") + 1, button.lastIndexOf("</button>"));
+  const matches = buttons.filter(b => new RegExp(word, "i").test(labelOf(b)));
+  if (matches.length === 0) {
+    throw new Error(`${context}: no button labelled ${word}`);
+  }
+  const at = template.indexOf(matches[0]);
+  if (at < 0) {
+    throw new Error(`${context}: could not locate the ${word} button in the template`);
+  }
+  return at;
+}
+
+test("a missing button fails the ordering check instead of passing vacuously", () => {
+  // Regression guard for the guard. A template with a Cancel but no primary
+  // must raise, not report position 0.
+  const noPrimary = "<div><button type=\"button\">Cancel</button></div>";
+  assert.throws(
+    () => buttonPosition(noPrimary, "Update", "fixture"),
+    /no button labelled Update/,
+    "a missing primary button must fail loudly",
+  );
+  // And the check still works on a well-formed fixture, in both orders.
+  const good =
+    "<div><button>Update</button><button type=\"button\">Cancel</button></div>";
+  const bad =
+    "<div><button type=\"button\">Cancel</button><button>Update</button></div>";
+  assert.ok(buttonPosition(good, "Update", "f") < buttonPosition(good, "Cancel", "f"));
+  assert.ok(buttonPosition(bad, "Update", "f") > buttonPosition(bad, "Cancel", "f"));
+});
+
 test("every audited edit form puts its primary action before Cancel", () => {
   const forms: Array<[string, string, string]> = [
     ["Message to All", MESSAGE_TO_ALL, "POST"],
@@ -256,18 +301,15 @@ test("every audited edit form puts its primary action before Cancel", () => {
     // All and Inbox to All shout their labels (POST / CANCEL) - the ORDER is
     // what is being pinned, not the casing.
     const template = markup(file);
-    const buttons = template.match(/<button[\s\S]*?<\/button>/g) || [];
-    // Match the button's LABEL, not its attributes: the place-information
-    // editor's error-state "Back" buttons carry @click="cancel", so testing
-    // the whole element would find one of those instead of the real Cancel.
-    const labelOf = (button: string): string =>
-      button.slice(button.indexOf(">") + 1, button.lastIndexOf("</button>"));
-    const withLabel = (word: string): string =>
-      buttons.filter(b => new RegExp(word, "i").test(labelOf(b)))[0] || "";
-    const primaryAt = template.indexOf(withLabel(primary));
-    const cancelAt = template.indexOf(withLabel("Cancel"));
-    assert.ok(primaryAt > -1, `${label} must offer ${primary}`);
-    assert.ok(cancelAt > -1, `${label} must offer Cancel`);
+    // Both lookups throw if their control is absent, so presence is proved
+    // before order is compared.
+    const primaryAt = buttonPosition(template, primary, label);
+    const cancelAt = buttonPosition(template, "Cancel", label);
+    assert.notStrictEqual(
+      primaryAt,
+      cancelAt,
+      `${label}: ${primary} and Cancel must be two distinct controls`,
+    );
     // Source order is DOM order is tab order: asserting it here keeps anyone
     // from reordering visually with CSS while leaving keyboard order wrong.
     assert.ok(
@@ -301,25 +343,10 @@ test("no Cancel button can be taken for a submit", () => {
   }
 });
 
-test("Cancel never mutates on the audited forms", () => {
-  for (const [label, file, handler] of [
-    ["Message to All", MESSAGE_TO_ALL, "switchView(): void {"],
-    ["Inbox to All", INBOX_TO_ALL, "switchView(): void {"],
-  ] as Array<[string, string, string]>) {
-    const source = read(file);
-    const start = source.indexOf(handler);
-    assert.ok(start > -1, `${label} must have a Cancel handler`);
-    const body = source.slice(start, source.indexOf("},", start));
-    assert.ok(
-      !/\$http\./.test(body),
-      `${label}: Cancel must issue no request`,
-    );
-    assert.ok(
-      /\$router\.push/.test(body),
-      `${label}: Cancel must navigate back to where it came from`,
-    );
-  }
-});
+// Cancel's NAVIGATION is proved behaviorally against a real vue-router in
+// place-form-cancel.test.ts - a source string could only ever show that a push
+// was written, not that it arrived, which is exactly how the duplicate-navigation
+// defect survived here.
 
 // -------------------------------------------- 5. Home-image selected filename
 
@@ -404,13 +431,64 @@ test("no upload happens before Update is pressed", () => {
 
 // ------------------------------------------------------ 6. Block CHECK button
 
-test("tool bar controls have a pointer cursor and a keyboard-only focus ring", () => {
+test("pointer and focus are scoped to genuinely interactive controls", () => {
   const styles = read(STYLES);
   const rule = styles.slice(styles.indexOf(".btn-ui {"), styles.indexOf(".btn-ui-inline"));
-  assert.ok(/cursor: pointer;/.test(rule), "every bar control must read as clickable");
+  const markup = rule.replace(/\/\/[^\n]*/g, "");
+  // `.btn-ui` is the classic button LOOK, worn by inert placeholders too - the
+  // neighborhood Vote control and the non-colony Update label are handler-less
+  // spans. Clickability must attach to elements that DO something.
+  const ROLE_BUTTON = `.btn-ui[role=${JSON.stringify("button")}]`;
+  for (const selector of ["a.btn-ui", "button.btn-ui", ROLE_BUTTON]) {
+    assert.ok(
+      markup.includes(selector),
+      `${selector} must be named explicitly rather than styling the class itself`,
+    );
+  }
+  const base = markup.slice(0, markup.indexOf("}"));
   assert.ok(
-    /\.btn-ui:focus-visible/.test(rule),
-    "keyboard users need a visible focus indicator",
+    !/cursor:/.test(base),
+    "the bare .btn-ui rule must not make every element wearing it look clickable",
+  );
+  assert.ok(
+    /a\.btn-ui:focus-visible/.test(markup),
+    "keyboard users need a visible focus indicator on real controls",
+  );
+  assert.ok(
+    /:disabled|aria-disabled/.test(markup),
+    "a disabled control must not claim it can be used",
+  );
+});
+
+test("no .btn-ui span is left pretending to be a control", () => {
+  // Both known inert spans - Vote and the non-colony Update - carry the class
+  // for its chrome alone. Neither has a handler, and there is no role="button"
+  // anywhere, so the scoped selectors leave both correctly inert. If one ever
+  // needs to act, it must become a <button> or <router-link> rather than have
+  // the selector widened back to the class.
+  const offenders: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.name.endsWith(".vue")) continue;
+      const source = fs.readFileSync(full, "utf8");
+      const spans = source.match(/<span[^>]*class="[^"]*\bbtn-ui\b[^"]*"[^>]*>/g) || [];
+      for (const span of spans) {
+        if (/@click|v-on:click|role="button"/.test(span)) {
+          offenders.push(`${path.relative(SPA_SRC, full)}: ${span.trim()}`);
+        }
+      }
+    }
+  };
+  walk(SPA_SRC);
+  assert.deepStrictEqual(
+    offenders,
+    [],
+    "an interactive .btn-ui span must be converted to real semantic markup",
   );
 });
 

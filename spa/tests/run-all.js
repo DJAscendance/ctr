@@ -17,6 +17,7 @@ const SUITES = [
   "tests/.compiled/tests/place-information-render.test.js",
   "tests/.compiled/tests/place-update-hub.test.js",
   "tests/.compiled/tests/classic-admin-cleanup.test.js",
+  "tests/.compiled/tests/place-form-cancel.test.js",
 ];
 
 let failed = false;
