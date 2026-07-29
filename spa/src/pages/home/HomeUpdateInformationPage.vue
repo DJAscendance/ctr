@@ -18,12 +18,26 @@
           </p>
         </div>
 
+        <!--
+          No `maxlength`. The limit the server enforces is measured on the
+          CANONICAL value - the sanitized string it actually stores - and the SPA
+          cannot compute that without shipping a second copy of the sanitizer,
+          which is precisely what must not happen. A hard cap here would state a
+          verdict the client is not able to reach: sanitizing can GROW a value
+          (`<br>` becomes `<br />`) so a 3,500-character input can be refused,
+          and it can shrink one (a dropped `<script>`) so a longer input can be
+          accepted.
+
+          So the counter is a guide, the server is the authority, and its refusal
+          is shown through the same error line every other failure uses. What the
+          UI must never do is show an input as valid that the server will reject,
+          and it no longer does.
+        -->
         <div class="text-center">
           <textarea
             class="input-text"
             rows="6"
             cols="60"
-            :maxlength="maxLength"
             v-model="houseDescription"
           ></textarea>
           <p class="mt-1">{{ houseDescription.length }} / {{ maxLength }}</p>
@@ -58,8 +72,10 @@ export default Vue.extend({
       complete: false,
       hasHome: false,
       houseDescription: "",
-      // Mirrors HomeService.INFORMATION_MAX_LENGTH. The server is the boundary; this only
-      // stops the field before a round trip that would be rejected anyway.
+      // Mirrors the shared INFORMATION_MAX_LENGTH (api/src/libs/canonical-information).
+      // Shown in the counter as a guide only - the server measures the sanitized
+      // value, which this side cannot compute, so it is not used as a hard cap.
+      // Counted in UTF-16 code units, the same unit the server uses.
       maxLength: 3500,
     };
   },

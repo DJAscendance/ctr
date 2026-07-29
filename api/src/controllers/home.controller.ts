@@ -4,6 +4,10 @@ import validator from 'validator';
 import * as badwords from 'badwords-list';
 
 import {
+  canonicalizeInformation,
+  informationTooLongMessage,
+} from '../libs';
+import {
   MemberService,
   HomeService,
 } from '../services';
@@ -490,10 +494,16 @@ export class HomeController {
 
       const description = houseDescription || '';
 
-      if (description.length > HomeService.INFORMATION_MAX_LENGTH) {
-        throw new Error(
-          `Description must be ${HomeService.INFORMATION_MAX_LENGTH} characters or fewer.`,
-        );
+      // The limit is checked on the CANONICAL value - the sanitized string that
+      // will actually be stored - not on the raw submission. Checking the raw
+      // text let a value through that the sanitizer then GREW past the limit
+      // (875 `<br>` tags is 3,500 raw characters and 5,250 canonical ones), so
+      // the stored value could not be saved again unchanged. The service applies
+      // the same check on the way to the database; this one exists so the
+      // request is refused before the banned-word scan and before any write.
+      const canonical = canonicalizeInformation(description);
+      if (canonical.status === 'too_long') {
+        throw new Error(informationTooLongMessage(canonical.limit));
       }
 
       const bannedwords = badwords.regex;

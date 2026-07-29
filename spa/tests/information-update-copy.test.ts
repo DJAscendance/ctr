@@ -140,16 +140,31 @@ test("the home Information editor offers the full 3500 characters", () => {
   assert.ok(!/maxLength: 1000/.test(page), "the old 1000 bound must be gone");
 });
 
-test("the counter reads against the same limit it enforces", () => {
+test("the counter reads against the same limit the server publishes", () => {
   const page = read(HOME_INFORMATION);
   assert.ok(
     /\{\{\s*houseDescription\.length\s*\}\}\s*\/\s*\{\{\s*maxLength\s*\}\}/
       .test(page),
     "the counter must read current / maxLength, not a second hard-coded number",
   );
+});
+
+test("the editor does not hard-cap input it cannot actually judge", () => {
+  // The server measures the SANITIZED value. The SPA has no sanitizer - and must
+  // not grow one - so a maxlength here would assert a verdict the client cannot
+  // reach: sanitizing can grow a value past the limit or shrink it under.
+  // Truncating input at 3,500 raw characters is also silent truncation, which
+  // the contract forbids.
+  const page = read(HOME_INFORMATION);
+  const template = page.slice(page.indexOf("<template>"), page.indexOf("</template>"))
+    .replace(/<!--[\s\S]*?-->/g, "");
   assert.ok(
-    /:maxlength="maxLength"/.test(page),
-    "the textarea must use the same bound as the counter",
+    !/maxlength/i.test(template),
+    "the textarea must not cap input the client cannot canonicalize",
+  );
+  assert.ok(
+    /showError/.test(page) && /e\.response\?\.data\?\.error/.test(page),
+    "the server's refusal must surface through the existing error line",
   );
 });
 

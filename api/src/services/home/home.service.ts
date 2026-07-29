@@ -14,7 +14,11 @@ import {
   MemberRepository,
   TransactionRepository,
 } from '../../repositories';
-import { sanitizeUserHtml } from '../../libs';
+import {
+  INFORMATION_MAX_LENGTH,
+  canonicalizeInformation,
+  informationTooLongMessage,
+} from '../../libs';
 import { Place, HomeDesign, Home } from '../../types/models';
 import { MemberService } from '../member/member.service';
 import { BlockService } from '../block/block.service';
@@ -77,7 +81,15 @@ export class HomeService {
     icon2d: number|null,
     homeDesignId: string|null,
   ): Promise<void> {
-
+    // Canonicalize and bound the Information FIRST, before anything is claimed
+    // or created, so an over-limit submission cannot leave a half-settled home
+    // behind. Same shared function the Information editor uses - settlement used
+    // to sanitize without applying any limit at all.
+    const canonical = canonicalizeInformation(houseDescription);
+    if (canonical.status === 'too_long') {
+      throw new Error(informationTooLongMessage(canonical.limit));
+    }
+    const canonicalInformation = canonical.value;
 
     // check the space isn't already taken
     const mapLocation = await this.mapLocationRespository.findByParentPlaceIdAndLocation(
@@ -98,9 +110,11 @@ export class HomeService {
       name: houseName,
       // The text typed while settling in IS the home's public Information, so it
       // goes to the same column the Information editor writes - not to the
-      // administrative `description`. Sanitized on the way in, like every other
-      // write to this field.
-      information: sanitizeUserHtml(houseDescription || ''),
+      // administrative `description`. Canonicalized through the SAME shared
+      // function the update route uses; this path used to sanitize but never
+      // apply the length limit, so settlement could store Information the
+      // editor would then refuse to save back.
+      information: canonicalInformation,
       map_icon_index: icon2d,
     });
 
@@ -486,16 +500,13 @@ export class HomeService {
   }
 
   /**
-   * Maximum length of the information a member may set for their home. Enforced
-   * server-side; the SPA's textarea maxlength is a convenience, not the boundary.
+   * Maximum length of a home's Information, re-exported from the shared
+   * canonicalizer so existing callers keep working.
    *
-   * Measured on the SUBMITTED text, before sanitizing, for the same reason
-   * PlaceInformationService does: checking afterwards would let someone post an
-   * arbitrarily large blob of disallowed markup that happens to sanitize down to
-   * something short. `place.information` is MySQL TEXT (65535 bytes), so 3500
-   * characters leaves ample headroom even for 4-byte UTF-8 throughout.
+   * It is measured on the CANONICAL (sanitized) value, not the raw submission -
+   * see libs/canonical-information for why, and for what "3500" counts.
    */
-  public static readonly INFORMATION_MAX_LENGTH = 3500;
+  public static readonly INFORMATION_MAX_LENGTH = INFORMATION_MAX_LENGTH;
 
   /**
    * Gets the information a home's owner has set, for display to visitors through the
@@ -538,9 +549,14 @@ export class HomeService {
       throw new Error('You don\'t have a home yet.');
     }
 
+    const canonical = canonicalizeInformation(houseDescription);
+    if (canonical.status === 'too_long') {
+      throw new Error(informationTooLongMessage(canonical.limit));
+    }
+
     await this.placeRepository.updateHomeByMemberId(
       memberId,
-      { information: sanitizeUserHtml(houseDescription) },
+      { information: canonical.value },
     );
   }
 
