@@ -205,11 +205,37 @@ export default Vue.extend({
       return `Choose an option below to update this ${this.tierNoun}.`;
     },
     /**
-     * Names the destination where it is known. Route behaviour is unchanged -
-     * this is $router.back() either way; only the label is more specific.
+     * Names the destination, and - since the correction pass - actually goes
+     * there. A label that says "Back to Dark Paradise" while calling
+     * $router.back() lies the moment the member arrived by direct entry, by
+     * refresh, or from anywhere but the block: history sends them wherever they
+     * happened to be, which may be another place entirely or off the site.
      */
     backLabel(): string {
       return this.hub && this.hub.name ? `Back to ${this.hub.name}` : "Back";
+    },
+    /**
+     * The explicit destination the label names, as a route the router can
+     * resolve, or null when there is nothing to name - a denied hub knows no
+     * place, so its plain "Back" honestly means "wherever you came from".
+     */
+    backRoute(): Record<string, unknown> | null {
+      if (!this.hub) return null;
+      if (this.hub.type === "colony") {
+        // The colony's own page is the parent route `/place/:id`, addressed by
+        // SLUG, and it is unnamed - so it is targeted by path.
+        return this.hub.slug ? { path: `/place/${this.hub.slug}` } : null;
+      }
+      if (this.hub.type === "hood") {
+        return {
+          name: "neighborhoodpage",
+          params: { id: String(this.hub.placeId) },
+        };
+      }
+      if (this.hub.type === "block") {
+        return { name: "blockmap", params: { id: String(this.hub.placeId) } };
+      }
+      return null;
     },
     showsChildren(): boolean {
       if (!this.hub) return false;
@@ -254,7 +280,16 @@ export default Vue.extend({
       this.loader.reload(this.placeId, this.expectedType);
     },
     back(): void {
-      this.$router.back();
+      const target = this.backRoute;
+      if (!target) {
+        // Nothing to name: history is the honest fallback, and the label says
+        // just "Back".
+        this.$router.back();
+        return;
+      }
+      // Already there - vue-router rejects a duplicate navigation, which is not
+      // an error worth surfacing.
+      this.$router.push(target).catch(() => undefined);
     },
   },
   mounted(): void {

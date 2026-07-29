@@ -30,14 +30,32 @@ router.beforeEach(async (to, from, next) => {
   } else {
     document.title = "Cybertown";
   }
-  if (to.fullPath.includes("/place/")) {
+  // Each branch below is keyed on the DECLARED route parameter it needs, not on a
+  // substring of the path. Matching on `fullPath.includes("/place/")` and then
+  // reading `to.params.id` fired this lookup for every route whose path merely
+  // contains "/place/" - including `/place/:placeId/information/update`, which
+  // declares `placeId`, not `id`. `to.params.id` was undefined there and the
+  // shell issued `GET /api/place/undefined` on every direct entry. The same
+  // mistake sent `GET /api/home/undefined` from `/home/update/information`,
+  // which declares no `username` at all.
+  //
+  // The identifier is required rather than assumed: no parameter, no request.
+  // That is also the fail-closed behaviour - a route that does not name a place
+  // must not leave the previous place in the store either.
+  if (to.fullPath.includes("/place/") && to.params.id) {
     await api.get<any>(`/place/${to.params.id}`)
       .then(response => {
         const Data = response.data;
         const place = { ...Data.place };
         appStore.methods.setPlace(place);
+      })
+      .catch(() => {
+        // An unresolvable identifier must not leave the PREVIOUS place on screen,
+        // and must not block navigation: the destination component runs its own
+        // authorized lookup and shows its own error.
+        appStore.methods.setPlace({});
       });
-  } else if (to.fullPath.includes("/club/")) {
+  } else if (to.fullPath.includes("/club/") && to.params.id) {
     await api.get<any>(`/place/by_id/${to.params.id}`)
       .then(response => {
         const Data = response.data;
@@ -56,7 +74,10 @@ router.beforeEach(async (to, from, next) => {
         };
         appStore.methods.setPlace(place);
       });
-  } else if (to.fullPath.includes("/inbox/") || to.fullPath.includes("/messageboard/")) {
+  } else if (
+    (to.fullPath.includes("/inbox/") || to.fullPath.includes("/messageboard/"))
+    && to.params.place_id
+  ) {
     await api.get<any>(`/place/by_id/${to.params.place_id}`)
       .then(response => {
         const Data = response.data;
@@ -87,13 +108,13 @@ router.beforeEach(async (to, from, next) => {
             });
         }
       });
-  } else if (to.fullPath.includes("/clubdoor/")) {
+  } else if (to.fullPath.includes("/clubdoor/") && to.params.id) {
     await api.get<any>(`/place/by_id/${to.params.id}`)
       .then(response => {
         const Data = response.data;
         appStore.methods.setPlace(Data.place);
       });
-  } else if (to.fullPath.includes("/home/")) {
+  } else if (to.fullPath.includes("/home/") && to.params.username) {
     await api.get<any>(`/home/${to.params.username}`)
       .then(response => {
         const Data = response.data;

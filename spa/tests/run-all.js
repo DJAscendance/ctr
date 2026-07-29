@@ -20,6 +20,7 @@ const SUITES = [
   "tests/.compiled/tests/place-form-cancel.test.js",
   "tests/.compiled/tests/place-hub-route-refresh.test.js",
   "tests/.compiled/tests/information-update-copy.test.js",
+  "tests/.compiled/tests/route-parameters.test.js",
 ];
 
 let failed = false;

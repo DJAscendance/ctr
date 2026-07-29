@@ -75,6 +75,7 @@ export default Vue.extend({
       submitting: false,
       error: "",
       name: "",
+      type: "",
       description: "",
     };
   },
@@ -91,6 +92,9 @@ export default Vue.extend({
           this.$http.get(`/place/${this.placeId}/information/can_edit`),
         ]);
         this.name = information.data.name;
+        // The STORED type, used only to send Cancel back to this place's own
+        // Information window. It is not an authorization input.
+        this.type = information.data.type || "";
         this.description = information.data.description || "";
         // Presentational only. The update endpoint performs its own check against
         // the stored place type, so this cannot be used to gain access.
@@ -122,7 +126,25 @@ export default Vue.extend({
         this.submitting = false;
       }
     },
+    /**
+     * Returns to the place's own Information window - the screen MANAGE opened
+     * this editor from - rather than to whatever is on the history stack. Direct
+     * entry and refresh both leave that stack pointing somewhere unrelated.
+     *
+     * The type comes from the loaded place, so it is the STORED type, not one
+     * the URL asserted. `slug` is optional on that route and is not part of the
+     * information payload, so it is omitted; the window resolves by id.
+     */
     cancel(): void {
+      if (this.type) {
+        this.$router
+          .push({
+            name: "information",
+            params: { type: this.type, id: String(this.placeId) },
+          })
+          .catch(() => undefined);
+        return;
+      }
       this.$router.back();
     },
   },
