@@ -16,6 +16,14 @@
  */
 import assert from "assert";
 
+import {
+  hubBackLabel,
+  hubBackRoute,
+  hubHeading,
+  hubIntro,
+  tierNoun,
+} from "../src/helpers/place-update-hub.helper";
+
 const fs = require("fs");
 const path = require("path");
 
@@ -36,59 +44,94 @@ const read = (file: string): string => fs.readFileSync(file, "utf8");
 
 // ------------------------------------------------------ Update hub wording
 
-test("the hub heading names the tier, and names a public place directly", () => {
-  const hub = read(HUB);
-  assert.ok(
-    /`Update the \$\{this\.tierNoun\} '\$\{this\.hub\.name\}'`/.test(hub),
-    "colony/neighborhood/block headings must read Update the <tier> '<name>'",
+test("the heading names the tier and the place, for every reachable tier", () => {
+  // Called, not grepped: these assert the string a real place produces.
+  assert.strictEqual(hubHeading("colony", "Games"), "Update the colony 'Games'");
+  assert.strictEqual(
+    hubHeading("hood", "The Shadows"),
+    "Update the neighborhood 'The Shadows'",
   );
-  assert.ok(
-    /`Update '\$\{this\.hub\.name\}'`/.test(hub),
-    "a public place has no tier word a citizen would recognise - name it directly",
+  assert.strictEqual(
+    hubHeading("block", "Dark Paradise"),
+    "Update the block 'Dark Paradise'",
   );
 });
 
+test("the tier nouns are the words citizens see, not the stored types", () => {
+  assert.strictEqual(tierNoun("colony"), "colony");
+  assert.strictEqual(tierNoun("hood"), "neighborhood",
+    "'hood' is the stored type, never the word shown to a citizen");
+  assert.strictEqual(tierNoun("block"), "block");
+});
+
 test("the intro matches how many options are actually offered", () => {
-  const hub = read(HUB);
+  assert.strictEqual(
+    hubIntro("colony", 1),
+    "Use the option below to update this colony.",
+  );
+  assert.strictEqual(
+    hubIntro("hood", 2),
+    "Choose an option below to update this neighborhood.",
+  );
+  assert.strictEqual(
+    hubIntro("block", 3),
+    "Choose an option below to update this block.",
+  );
+  // A hub can legitimately render zero tiles; it must still not invite a choice.
+  assert.strictEqual(
+    hubIntro("block", 0),
+    "Use the option below to update this block.",
+  );
+});
+
+test("no heading exists for a tier that has no hub", () => {
+  // Public places are administered through MANAGE on their Information window;
+  // there is no public Update hub and no route that could reach one. An earlier
+  // version carried a `public` heading branch tested by a case that could never
+  // run in the product - the branch is gone rather than re-tested.
+  const helper = read(path.join(SPA_SRC, "helpers/place-update-hub.helper.ts"));
   assert.ok(
-    /Use the option below to update this \$\{this\.tierNoun\}\./.test(hub),
-    "a single-option hub must not invite the reader to choose",
+    !/Update '\$\{/.test(helper),
+    "no bare `Update '<name>'` heading - that was the unreachable public branch",
   );
   assert.ok(
-    /Choose an option below to update this \$\{this\.tierNoun\}\./.test(hub),
-    "a multi-option hub must invite a choice",
+    !/"public"/.test(helper.slice(helper.indexOf("export function tierNoun"))),
+    "the copy helpers must not branch on a tier that has no hub",
   );
 });
 
 test("the vague old lead line is gone", () => {
-  // Checked against RENDERED copy only - the computed properties and their
-  // comments, which quote the old line to explain why it went, are not what a
-  // citizen reads. Documenting a rule must not trip the rule.
-  const hub = read(HUB);
-  const rendered = hub.slice(hub.indexOf("<template>"), hub.indexOf("</template>"))
-    .replace(/<!--[\s\S]*?-->/g, "");
-  assert.ok(
-    !/information and more/.test(rendered),
-    "the hub must not promise 'and more' on hubs that have no more",
-  );
-  assert.ok(
-    !/\.\.\.!/.test(rendered),
-    "no trailing ellipsis-and-exclamation in a management screen",
-  );
+  for (const type of ["colony", "hood", "block"] as const) {
+    for (const count of [1, 2, 3]) {
+      const intro = hubIntro(type, count);
+      assert.ok(!/information and more/.test(intro), `still promises more: ${intro}`);
+      assert.ok(!/\.\.\.!/.test(intro), `still trails an ellipsis: ${intro}`);
+    }
+  }
 });
 
-test("the tier nouns are the ones citizens see elsewhere", () => {
-  const hub = read(HUB);
-  for (const noun of ["colony", "neighborhood", "block"]) {
-    assert.ok(
-      new RegExp(`return "${noun}"`).test(hub),
-      `${noun} must be the word used for its tier`,
-    );
-  }
-  assert.ok(
-    !/return "hood"/.test(hub),
-    "'hood' is the stored type, never the word shown to a citizen",
+test("Back names its destination, and resolves to it", () => {
+  assert.strictEqual(hubBackLabel("Dark Paradise"), "Back to Dark Paradise");
+  assert.strictEqual(hubBackLabel(null), "Back",
+    "a denied hub knows no place, so history is the honest fallback");
+
+  assert.deepStrictEqual(
+    hubBackRoute({ type: "colony", placeId: 879, slug: "games_col" }),
+    { path: "/place/games_col" },
   );
+  assert.deepStrictEqual(
+    hubBackRoute({ type: "hood", placeId: 891 }),
+    { name: "neighborhoodpage", params: { id: "891" } },
+  );
+  assert.deepStrictEqual(
+    hubBackRoute({ type: "block", placeId: 893 }),
+    { name: "blockmap", params: { id: "893" } },
+  );
+  assert.strictEqual(hubBackRoute(null), null);
+});
+
+test("a colony with no slug names no destination rather than a broken one", () => {
+  assert.strictEqual(hubBackRoute({ type: "colony", placeId: 879, slug: null }), null);
 });
 
 test("child list headings name the child type", () => {
@@ -116,20 +159,16 @@ test("the fixed-map notice explains the limit without an apostrophe pile-up", ()
   );
 });
 
-test("Back names its destination when one is known", () => {
+test("the hub component delegates its copy and destination to the helpers", () => {
+  // The behaviour is tested above by calling the helpers. This only pins that the
+  // component actually uses them rather than growing a second copy.
   const hub = read(HUB);
+  for (const fn of ["hubHeading", "hubIntro", "hubBackLabel", "hubBackRoute"]) {
+    assert.ok(hub.includes(fn), `PlaceUpdateHub must use ${fn}`);
+  }
   assert.ok(
-    /`Back to \$\{this\.hub\.name\}`/.test(hub),
-    "Back should say where it goes",
-  );
-  assert.ok(
-    /:\s*"Back"/.test(hub),
-    "a denied hub has no place name, so it must fall back to plain Back",
-  );
-  // Route behaviour is explicitly unchanged by this lane.
-  assert.ok(
-    /this\.\$router\.back\(\)/.test(hub),
-    "the label changed, the navigation did not",
+    /this\.\$router\.push\(target\)/.test(hub),
+    "Back must navigate to the named destination, not just pop history",
   );
 });
 

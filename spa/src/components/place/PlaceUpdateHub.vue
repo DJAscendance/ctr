@@ -107,6 +107,11 @@ import Vue from "vue";
 
 import {
   childListCapability,
+  hubBackLabel,
+  hubBackRoute,
+  hubHeading,
+  hubIntro,
+  tierNoun,
   tileHref,
   tileRoute,
   visibleTiles,
@@ -172,70 +177,25 @@ export default Vue.extend({
       if (!this.hub) return [];
       return visibleTiles(this.hub.type, this.hub.capabilities);
     },
-    /** What this tier is called in the heading and lead. */
+    /**
+     * Heading, lead line, Back label and Back destination all come from pure
+     * functions in helpers/place-update-hub, so they can be tested by calling
+     * them with a place rather than by grepping this file for a string.
+     */
     tierNoun(): string {
-      if (!this.hub) return "place";
-      if (this.hub.type === "colony") return "colony";
-      if (this.hub.type === "hood") return "neighborhood";
-      if (this.hub.type === "block") return "block";
-      return "place";
+      return this.hub ? tierNoun(this.hub.type) : "place";
     },
-    /**
-     * A public place is named directly - "Update 'The Mall'" - because there is
-     * no tier word a citizen would recognise for it. The three map tiers name
-     * their tier, which is how the classic wizards read.
-     */
     heading(): string {
-      if (!this.hub) return "";
-      return this.hub.type === "public"
-        ? `Update '${this.hub.name}'`
-        : `Update the ${this.tierNoun} '${this.hub.name}'`;
+      return this.hub ? hubHeading(this.hub.type, this.hub.name) : "";
     },
-    /**
-     * Says what to do, and says it accurately: a hub offering one tool cannot
-     * honestly invite the reader to "choose". The old line promised
-     * "information and more ...!" on every hub, including the ones where there
-     * is no more.
-     */
     intro(): string {
-      if (!this.hub) return "";
-      if (this.tiles.length <= 1) {
-        return `Use the option below to update this ${this.tierNoun}.`;
-      }
-      return `Choose an option below to update this ${this.tierNoun}.`;
+      return this.hub ? hubIntro(this.hub.type, this.tiles.length) : "";
     },
-    /**
-     * Names the destination, and - since the correction pass - actually goes
-     * there. A label that says "Back to Dark Paradise" while calling
-     * $router.back() lies the moment the member arrived by direct entry, by
-     * refresh, or from anywhere but the block: history sends them wherever they
-     * happened to be, which may be another place entirely or off the site.
-     */
     backLabel(): string {
-      return this.hub && this.hub.name ? `Back to ${this.hub.name}` : "Back";
+      return hubBackLabel(this.hub && this.hub.name);
     },
-    /**
-     * The explicit destination the label names, as a route the router can
-     * resolve, or null when there is nothing to name - a denied hub knows no
-     * place, so its plain "Back" honestly means "wherever you came from".
-     */
     backRoute(): Record<string, unknown> | null {
-      if (!this.hub) return null;
-      if (this.hub.type === "colony") {
-        // The colony's own page is the parent route `/place/:id`, addressed by
-        // SLUG, and it is unnamed - so it is targeted by path.
-        return this.hub.slug ? { path: `/place/${this.hub.slug}` } : null;
-      }
-      if (this.hub.type === "hood") {
-        return {
-          name: "neighborhoodpage",
-          params: { id: String(this.hub.placeId) },
-        };
-      }
-      if (this.hub.type === "block") {
-        return { name: "blockmap", params: { id: String(this.hub.placeId) } };
-      }
-      return null;
+      return hubBackRoute(this.hub);
     },
     showsChildren(): boolean {
       if (!this.hub) return false;

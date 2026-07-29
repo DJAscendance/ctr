@@ -44,7 +44,7 @@ describe('HomeService.createHome Information handling', () => {
   });
 
   const settle = (description: string) => service.createHome(
-    5, 'Ryan', 'B', 10, 3, "Ryan's Home", description, 1, null,
+    5, 'Ryan', 'B', 10, 3, 'Ryan\'s Home', description, 1, null,
   );
 
   describe('over the limit', () => {

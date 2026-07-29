@@ -116,7 +116,7 @@ const FIXTURES = [
   },
   // A home: description was only ever its Information.
   {
-    id: 857, name: "BassMekanik's Home", slug: null, type: 'home',
+    id: 857, name: 'BassMekanik\'s Home', slug: null, type: 'home',
     description: 'Welcome to my <b>house boat</b><script>alert(1)</script>',
   },
   // An administrative description with no Information editor at all.

@@ -167,7 +167,7 @@ describe('the user-HTML allowlist is shared by every consumer', () => {
     ]) {
       const source = fs.readFileSync(path.join(API_SRC, consumer), 'utf8');
       expect(source).toContain('sanitizeUserHtml');
-      expect(source).not.toContain("from 'sanitize-html'");
+      expect(source).not.toContain('from \'sanitize-html\'');
     }
   });
 });

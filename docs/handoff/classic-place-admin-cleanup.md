@@ -96,7 +96,13 @@ inside 1100px.
 The manager-authored HTML stays **outside** the centered section, so a place keeps
 whatever alignment its author gave it. `center` is in the shared allowlist, so an
 author who wants centered text can still say so. The place name is display-only —
-the editor behind MANAGE writes `place.description` and nothing else.
+the editor behind MANAGE writes `place.information` and nothing else.
+
+> **Updated by `fix/classic-information-update-followup`.** This editor originally
+> wrote `place.description`, which the Admin Panel also edits as the administrative
+> Description; the two competed and either could destroy the other. Public
+> Information now lives in its own `place.information` column. `description` is
+> administrator-controlled and is never written by an Information editor.
 
 ### 3.2 Stale Information on route change
 

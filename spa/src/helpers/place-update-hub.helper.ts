@@ -281,3 +281,72 @@ export function childListCapability(
   if (type === "hood") return "list_blocks";
   return null;
 }
+
+/**
+ * The words and the destination an Update hub shows, as pure functions.
+ *
+ * They live here rather than as computeds in the component so they can be tested
+ * by CALLING them: this harness has no .vue compiler, so anything left in the
+ * component can only be checked by reading its source, which proves the text
+ * exists somewhere in a file rather than that the right text is produced for a
+ * given place.
+ *
+ * There is deliberately no branch for a public place. Public places have no
+ * Update hub - they are administered through MANAGE on their Information window
+ * - so a heading for one would be a branch no route can reach, and an earlier
+ * version of this code carried exactly that, tested by a case that could never
+ * run in the product.
+ */
+
+/** What a tier is called in a heading. */
+export function tierNoun(type: HubPlaceType): string {
+  if (type === "colony") return "colony";
+  if (type === "hood") return "neighborhood";
+  return "block";
+}
+
+/** `Update the neighborhood 'The Shadows'` */
+export function hubHeading(type: HubPlaceType, name: string): string {
+  return `Update the ${tierNoun(type)} '${name}'`;
+}
+
+/**
+ * The lead line. A hub offering ONE tool cannot honestly invite a choice, and
+ * the line it replaced ("...information and more ...!") promised a "more" that
+ * several hubs do not have.
+ */
+export function hubIntro(type: HubPlaceType, tileCount: number): string {
+  const verb = tileCount <= 1 ? "Use the option" : "Choose an option";
+  return `${verb} below to update this ${tierNoun(type)}.`;
+}
+
+/** `Back to Dark Paradise`, or plain `Back` when no place is known. */
+export function hubBackLabel(name?: string | null): string {
+  return name ? `Back to ${name}` : "Back";
+}
+
+/**
+ * Where Back actually goes. A label naming a destination must not depend on
+ * history: after direct entry or a refresh the stack points somewhere the label
+ * never mentioned.
+ *
+ * Returns null when there is nothing to name - a denied hub knows no place - and
+ * the caller falls back to history, matching the plain "Back" label.
+ */
+export function hubBackRoute(
+  hub: { type: HubPlaceType; placeId: number; slug?: string | null } | null,
+): Record<string, unknown> | null {
+  if (!hub) return null;
+  if (hub.type === "colony") {
+    // A colony's own page is the parent route `/place/:id`, addressed by SLUG,
+    // and it is unnamed - so it is targeted by path.
+    return hub.slug ? { path: `/place/${hub.slug}` } : null;
+  }
+  if (hub.type === "hood") {
+    return { name: "neighborhoodpage", params: { id: String(hub.placeId) } };
+  }
+  if (hub.type === "block") {
+    return { name: "blockmap", params: { id: String(hub.placeId) } };
+  }
+  return null;
+}

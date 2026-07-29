@@ -96,11 +96,14 @@ absence, so adding one fails rather than ships.
 `InboxService` now lives once in `api/src/libs/sanitize-user-html.ts`, unchanged.
 **Do not widen it.** Sanitize on write; never at render time.
 
-**Two Information trust models, deliberately separate — do not merge them:**
-a *home* description is citizen-typed and renders through escaping text interpolation
-(`spa/src/pages/Information.vue`, guarded by `spa/tests/information-render.test.ts`);
-a *place* description is staff-written, server-sanitized, and renders as HTML in
-`spa/src/components/place/PlaceInformation.vue`.
+**Two Information trust models — SUPERSEDED by `fix/classic-information-update-followup`.**
+This lane recorded that a *home* description was citizen-typed and rendered through
+escaping text interpolation, while a *place* description was staff-written and
+server-sanitized. The follow-up lane brought home Information under the **same** shared
+allowlist as Messageboard, Inbox and Place Information (sanitize on write, render through
+`spa/src/components/place/PlaceInformation.vue`), and moved all public Information out of
+`place.description` into `place.information`. `place.description` is now
+administrator-controlled only. Do not restore the split.
 
 ### Deliberately deferred — recorded, not forgotten
 

@@ -5,13 +5,17 @@ export interface Place extends Model {
   id: number;
   assets_dir?: string;
   /** Administrator-controlled metadata. Never written by an Information editor. */
-  description?: string;
+  description?: string | null;
   /**
    * Manager/owner-authored public content shown by the Information window.
    * Sanitized on write against the shared allowlist; never written by an
    * administrator surface.
+   *
+   * Nullable, and typed that way: the column is nullable, the migration clears
+   * it to NULL for homes, and every place that has never been given Information
+   * reads back as NULL rather than an empty string.
    */
-  information?: string;
+  information?: string | null;
   name: string;
   slug?: string;
   status: number;
