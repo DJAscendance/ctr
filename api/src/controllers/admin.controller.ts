@@ -17,7 +17,9 @@ import {
 import { Place } from 'models/place.model';
 import * as badwordlist from 'badwords-list';
 
-class AdminController {
+// Exported so the authorization guards can be tested at the real controller
+// boundary, as HomeController already is.
+export class AdminController {
   constructor(
     private adminService: AdminService, 
     private memberService: MemberService, 
@@ -525,11 +527,27 @@ class AdminController {
     }
   }
 
+  /**
+   * Admin Panel place editor.
+   *
+   * AUTHORIZATION. `getAccessLevel` returns an ARRAY - `['admin']`, `['leader']`,
+   * or `[]` for a member with no elevated access at all. This guard used to read
+   * `if (!admin)`, and an empty array is TRUTHY in JavaScript, so the check
+   * rejected nobody: a colony leader, a deputy or an ordinary member could edit
+   * any place in the city, including the Mall. The endpoint now requires the
+   * 'admin' entry explicitly, matching the check already used by the other
+   * administrator-only handlers in this controller.
+   *
+   * This is the GLOBAL editor - it is administrator-only by design. Scoped staff
+   * edit their own place's Information through
+   * PUT /place/:placeId/information, which runs its own per-place check and is
+   * deliberately untouched by this.
+   */
   public async placesUpdate(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
-    const admin = await this.memberService.getAccessLevel(session.id);
-    if (!admin) {
+    const accessLevel = await this.memberService.getAccessLevel(session.id);
+    if (!accessLevel.includes('admin')) {
       response.status(403).json({message: 'Access Denied'});
       return;
     }
