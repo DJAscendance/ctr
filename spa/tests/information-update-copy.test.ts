@@ -24,6 +24,7 @@ const HUB = path.join(SPA_SRC, "components/place/PlaceUpdateHub.vue");
 const HOME_INFORMATION = path.join(
   SPA_SRC, "pages/home/HomeUpdateInformationPage.vue",
 );
+const HOME_UPDATE = path.join(SPA_SRC, "pages/home/HomeUpdateHomePage.vue");
 
 type Test = { name: string; run: () => void };
 const tests: Test[] = [];
@@ -209,6 +210,53 @@ test("Update and Cancel keep their order, and Cancel still mutates nothing", () 
   assert.ok(
     /@click="\$router\.back\(\)"/.test(page),
     "Cancel must only navigate",
+  );
+});
+
+// ------------------------------------------------- house selector semantics
+
+test("every house option is a label wrapping its own radio", () => {
+  // 46 radios previously had no associated label at all: screen readers
+  // announced them unnamed, and clicking the picture of the house you wanted did
+  // nothing. Browser behaviour (a label activates the control it contains) is
+  // what fixes both, so the markup shape IS the fix - verified live in the
+  // browser as well, where the a11y tree now reports "2D house style 5".
+  const page = read(HOME_UPDATE);
+  // lastIndexOf: this file nests <template v-for> blocks, so the FIRST
+  // </template> closes an inner one and slicing there finds no radios at all.
+  const template = page.slice(page.indexOf("<template>"), page.lastIndexOf("</template>"))
+    .replace(/<!--[\s\S]*?-->/g, "");
+
+  const radios = (template.match(/<input type="radio"/g) || []).length;
+  const labels = (template.match(/<label/g) || []).length;
+  assert.ok(radios > 0, "expected radio inputs");
+  assert.strictEqual(labels, radios,
+    "each radio must be wrapped by exactly one label");
+  assert.ok(
+    !/<div>\s*<input type="radio"/.test(template),
+    "no radio may sit in a bare div - it would have no accessible name",
+  );
+});
+
+test("every house thumbnail carries alt text, which names its radio", () => {
+  const page = read(HOME_UPDATE);
+  const images = page.match(/<img[\s\S]*?\/>/g) || [];
+  const thumbnails = images.filter(img => /Picon(2D|3D)/.test(img));
+  assert.ok(thumbnails.length > 0, "expected house thumbnails");
+  for (const img of thumbnails) {
+    assert.ok(/:alt=/.test(img), `thumbnail without alt text: ${img.slice(0, 60)}`);
+  }
+});
+
+test("the selector keeps its tightened layout and 40px thumbnails", () => {
+  const page = read(HOME_UPDATE);
+  assert.ok(
+    /flex flex-wrap justify-center/.test(page),
+    "the wrapped centered layout must stay",
+  );
+  assert.ok(
+    !/w-\d+ h-\d+" *:src="'\/assets\/img\/map_themes/.test(page),
+    "thumbnails must not be given explicit sizes - they are 40px source images",
   );
 });
 

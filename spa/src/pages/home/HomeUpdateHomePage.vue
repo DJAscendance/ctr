@@ -39,36 +39,45 @@
             right of the window with the radio a long way from its image. Wrapping
             packs them at their natural size and keeps each radio beside the
             thumbnail it selects. Thumbnail sizes are untouched.
+
+            Each option is a <label> wrapping its own radio, which is what makes
+            the thumbnail clickable and gives the radio an accessible name from
+            the image's alt text. Before this the 46 radios had no associated
+            label at all: a screen reader announced them as unnamed, and clicking
+            the picture of the house you wanted did nothing.
           -->
           <div class="flex flex-wrap justify-center gap-x-5 gap-y-2 mx-auto max-w-xl">
             <template v-if="colonyData[colony.slug].map_theme === 'grass'">
               <template v-for="index in 33">
-                <div>
+                <label :key="'grass-'+index" class="cursor-pointer">
                   <input type="radio" :value="index" v-model="icon2d" class="mr-3">
                   <img
+                    :alt="'2D house style '+index"
                     :src="'/assets/img/map_themes/grass/block/Picon2D'+
                     (index-1).toString().padStart(3,'0')+'.gif'" />
-                </div>
+                </label>
               </template>
             </template>
             <template v-else-if="colonyData[colony.slug].map_theme === 'desert'">
               <template v-for="index in 7">
-                <div>
+                <label :key="'desert-'+index" class="cursor-pointer">
                   <input type="radio" :value="index" v-model="icon2d" class="mr-3">
                   <img
+                    :alt="'2D house style '+index"
                     :src="'/assets/img/map_themes/desert/block/Picon2D'+
                     (index-1).toString().padStart(3,'0')+'.gif'" />
-                </div>
+                </label>
               </template>
             </template>
             <template v-else-if="colonyData[colony.slug].map_theme === 'cyberhood'">
               <template v-for="index in 5">
-                <div>
+                <label :key="'cyberhood-'+index" class="cursor-pointer">
                   <input type="radio" :value="index" v-model="icon2d" class="mr-3">
                   <img
+                    :alt="'2D house style '+index"
                     :src="'/assets/img/map_themes/cyberhood/block/Picon2D'+
                     (index-1).toString().padStart(3,'0')+'.gif'" />
-                </div>
+                </label>
               </template>
             </template>
           </div>
@@ -90,19 +99,21 @@
             gone with it.
           -->
           <div class="flex flex-wrap justify-center gap-x-6 gap-y-4 mx-auto max-w-2xl">
-            <div class="w-full text-center">
+            <label class="w-full text-center cursor-pointer">
               <input type="radio" v-model="home3d" class="mr-3"/>None
-            </div>
+            </label>
 
             <template v-for="(item,key) in homeData" >
-              <div class="w-44 text-center">
+              <label :key="key" class="w-44 text-center cursor-pointer">
                 <input type="radio" :value="key" v-model="home3d" class="mr-3"/>
-                <img :src="'/assets/img/homes/Picon3D' + key + '.gif'" /><br />
+                <img
+                  :alt="'3D house ' + key + ', ' + item.price + ' credits'"
+                  :src="'/assets/img/homes/Picon3D' + key + '.gif'" /><br />
                 Price: <strong>{{ item.price }}cc</strong>
                 <span v-show="key==='championhome' && donorLevel==='Champion'">
                   <br />Thank you for your donation!
                 </span>
-              </div>
+              </label>
             </template>
           </div>
 
