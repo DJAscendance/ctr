@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { HomeService } from '../services/home/home.service';
 import { InboxService } from '../services/inbox/inbox.service';
 import { MessageboardService } from '../services/messageboard/messageboard.service';
 import { PlaceInformationService } from '../services/place/place-information.service';
@@ -10,12 +11,18 @@ import { sanitizeUserHtml } from './sanitize-user-html';
  * Cross-consumer guard for the single user-HTML allowlist.
  *
  * sanitize-user-html.spec.ts pins WHAT the policy allows. This suite pins that
- * all three surfaces which accept author-written HTML actually go through it,
+ * all FOUR surfaces which accept author-written HTML actually go through it,
  * and produce byte-identical output for the same input:
  *
  *   - message board posts   (MessageboardService)
  *   - inbox messages        (InboxService)
  *   - place information     (PlaceInformationService)
+ *   - home information      (HomeService)
+ *
+ * Home information joined this list in the Information/Update follow-up lane.
+ * Before it, a home's text was stored verbatim and escaped at render time - a
+ * second, incompatible contract. It now uses the same allowlist as everything
+ * else, and this is what stops a home-only variant reappearing.
  *
  * The failure this exists to catch is a fourth, slightly-different copy of the
  * allowlist appearing behind one of them - which is exactly the state the
@@ -53,7 +60,7 @@ const REPRESENTATIVE_INPUT = [
 describe('the user-HTML allowlist is shared by every consumer', () => {
   const expected = sanitizeUserHtml(REPRESENTATIVE_INPUT);
 
-  it('cleans a representative input identically through all three services', async () => {
+  it('cleans a representative input identically through all four services', async () => {
     const messageboard = await new MessageboardService(
       null as any,
     ).sanitize(REPRESENTATIVE_INPUT);
@@ -68,7 +75,7 @@ describe('the user-HTML allowlist is shared by every consumer', () => {
     const place = { id: 7, type: 'block', description: '' };
     const placeRepository = {
       findById: jest.fn().mockResolvedValue(place),
-      updateDescription: jest.fn().mockResolvedValue(undefined),
+      updateInformation: jest.fn().mockResolvedValue(undefined),
     };
     const service = new PlaceInformationService(
       placeRepository as any, null as any, null as any, null as any, null as any,
@@ -86,7 +93,25 @@ describe('the user-HTML allowlist is shared by every consumer', () => {
       throw new Error(`expected a successful update, got ${result.status}`);
     }
     expect(result.description).toEqual(expected);
-    expect(placeRepository.updateDescription).toHaveBeenCalledWith(place.id, expected);
+    expect(placeRepository.updateInformation).toHaveBeenCalledWith(place.id, expected);
+
+    // HomeService sanitizes inside updateHomeInformation, on the value written to
+    // the database. Driven the same way: stub the repository, read back what it
+    // was asked to store.
+    const homePlaceRepository = {
+      findHomeByMemberId: jest.fn().mockResolvedValue({ id: 42 }),
+      updateHomeByMemberId: jest.fn().mockResolvedValue(undefined),
+    };
+    const homeService = new HomeService(
+      homePlaceRepository as any, null as any, null as any, null as any,
+      null as any, null as any, null as any, null as any, null as any,
+      null as any,
+    );
+    await homeService.updateHomeInformation(1, REPRESENTATIVE_INPUT);
+    expect(homePlaceRepository.updateHomeByMemberId).toHaveBeenCalledWith(
+      1, { information: expected },
+    );
+
     expect(messageboard).toEqual(expected);
     expect(inbox).toEqual(expected);
     // Stated positively as well, so a future change that made all three equally

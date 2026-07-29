@@ -32,7 +32,15 @@
           <hr class="my-5" />
           <h3 class="font-bold mb-3">Choose a free 2D House</h3>
 
-          <div class="grid grid-cols-3 gap-4">
+          <!--
+            A wrapping, centred row rather than three page-wide columns. The
+            fixed 3-column grid stretched each cell to a third of the content
+            pane, so three small icons sat marooned at the far left, middle and
+            right of the window with the radio a long way from its image. Wrapping
+            packs them at their natural size and keeps each radio beside the
+            thumbnail it selects. Thumbnail sizes are untouched.
+          -->
+          <div class="flex flex-wrap justify-center gap-x-5 gap-y-2 mx-auto max-w-xl">
             <template v-if="colonyData[colony.slug].map_theme === 'grass'">
               <template v-for="index in 33">
                 <div>
@@ -75,14 +83,19 @@
             it's really tough to get a loan around here.</p>
 
 
-          <div class="grid grid-cols-2 gap-5">
-            <div>
+          <!--
+            Same treatment as the 2D row. Each option is a fixed-width cell so
+            the price stays under its own house rather than drifting toward the
+            next column, and the empty spacer cell the 2-column grid needed is
+            gone with it.
+          -->
+          <div class="flex flex-wrap justify-center gap-x-6 gap-y-4 mx-auto max-w-2xl">
+            <div class="w-full text-center">
               <input type="radio" v-model="home3d" class="mr-3"/>None
             </div>
-            <div></div>
 
             <template v-for="(item,key) in homeData" >
-              <div>
+              <div class="w-44 text-center">
                 <input type="radio" :value="key" v-model="home3d" class="mr-3"/>
                 <img :src="'/assets/img/homes/Picon3D' + key + '.gif'" /><br />
                 Price: <strong>{{ item.price }}cc</strong>

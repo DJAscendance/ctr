@@ -6,21 +6,22 @@
 import Vue from "vue";
 
 /**
- * Renders a place's staff-authored information above its staffing listing.
+ * Renders authored Information as HTML, above a place's staffing listing.
  *
- * This is the one component in CTR that intentionally renders place information
- * as HTML, and it lives apart from Information.vue for a reason: a HOME's
- * description is arbitrary text a citizen typed and is rendered through text
- * interpolation so markup is escaped and shown literally. A PLACE's description
- * is different - it is written by staff and sanitized on the server before it is
- * stored (PlaceInformationService.updateInformation -> sanitizeUserHtml), so the
- * value that arrives here has already been through the shared allowlist.
+ * This is the one component in CTR that intentionally renders Information as
+ * HTML. It now serves BOTH kinds, because both reach it under the same contract:
+ * a place's information is written by staff and a home's by its owner, and each
+ * is sanitized on the server against the shared allowlist before it is stored
+ * (PlaceInformationService.updateInformation and
+ * HomeService.updateHomeInformation, both -> sanitizeUserHtml - the same one
+ * Messageboard and Inbox use). What arrives here has already been filtered.
  *
  * Two rules that keep that true:
  *
- *   1. `description` must only ever be assigned from GET /place/:id/information.
- *      Never interpolate anything else into it, and never accept it from a route
- *      parameter or another user-controlled source.
+ *   1. `description` must only ever be assigned from GET /place/:id/information
+ *      or GET /home/information/:placeId. Never interpolate anything else into
+ *      it, and never accept it from a route parameter or another user-controlled
+ *      source.
  *   2. Sanitizing happens on WRITE, not here. Rendering-time cleaning would leave
  *      the unsafe value sitting in the database for the next reader that forgets.
  *

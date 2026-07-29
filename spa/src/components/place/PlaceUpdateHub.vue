@@ -3,7 +3,7 @@
     <template v-if="denied">
       <p class="text-center text-red-500">Insufficient access rights.</p>
       <p class="text-center">
-        <button type="button" class="btn" @click="back">Back</button>
+        <button type="button" class="btn" @click="back">{{ backLabel }}</button>
       </p>
     </template>
 
@@ -18,8 +18,8 @@
         inventing a second look.
       -->
       <div class="text-center mb-3">
-        <h3>Update the {{ tierNoun }} '{{ hub.name }}'</h3>
-        <p>Here you can change this {{ tierNoun }}'s information and more ...!</p>
+        <h3>{{ heading }}</h3>
+        <p>{{ intro }}</p>
       </div>
 
       <!--
@@ -39,7 +39,8 @@
         draw.
       -->
       <div
-        class="mx-auto max-w-2xl grid grid-cols-3 gap-4"
+        class="mx-auto max-w-2xl grid gap-4"
+        :class="tiles.length === 1 ? 'grid-cols-1 justify-items-center' : 'grid-cols-3'"
         data-testid="update-hub-tiles"
       >
         <div
@@ -89,13 +90,13 @@
       -->
       <p v-if="hub.type === 'colony'" class="mt-4 text-center" data-testid="colony-map-notice">
         <small>
-          The colony map's layout is fixed. Adding, removing or repositioning a
-          neighborhood is not done from this page.
+          The colony map layout is fixed. Neighborhoods cannot be added, removed or
+          repositioned from this page.
         </small>
       </p>
 
       <p class="text-center mt-4">
-        <button type="button" class="btn" @click="back">Back</button>
+        <button type="button" class="btn" @click="back">{{ backLabel }}</button>
       </p>
     </template>
   </div>
@@ -176,7 +177,39 @@ export default Vue.extend({
       if (!this.hub) return "place";
       if (this.hub.type === "colony") return "colony";
       if (this.hub.type === "hood") return "neighborhood";
-      return "block";
+      if (this.hub.type === "block") return "block";
+      return "place";
+    },
+    /**
+     * A public place is named directly - "Update 'The Mall'" - because there is
+     * no tier word a citizen would recognise for it. The three map tiers name
+     * their tier, which is how the classic wizards read.
+     */
+    heading(): string {
+      if (!this.hub) return "";
+      return this.hub.type === "public"
+        ? `Update '${this.hub.name}'`
+        : `Update the ${this.tierNoun} '${this.hub.name}'`;
+    },
+    /**
+     * Says what to do, and says it accurately: a hub offering one tool cannot
+     * honestly invite the reader to "choose". The old line promised
+     * "information and more ...!" on every hub, including the ones where there
+     * is no more.
+     */
+    intro(): string {
+      if (!this.hub) return "";
+      if (this.tiles.length <= 1) {
+        return `Use the option below to update this ${this.tierNoun}.`;
+      }
+      return `Choose an option below to update this ${this.tierNoun}.`;
+    },
+    /**
+     * Names the destination where it is known. Route behaviour is unchanged -
+     * this is $router.back() either way; only the label is more specific.
+     */
+    backLabel(): string {
+      return this.hub && this.hub.name ? `Back to ${this.hub.name}` : "Back";
     },
     showsChildren(): boolean {
       if (!this.hub) return false;

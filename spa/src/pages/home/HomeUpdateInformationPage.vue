@@ -60,7 +60,7 @@ export default Vue.extend({
       houseDescription: "",
       // Mirrors HomeService.INFORMATION_MAX_LENGTH. The server is the boundary; this only
       // stops the field before a round trip that would be rejected anyway.
-      maxLength: 1000,
+      maxLength: 3500,
     };
   },
   methods: {
@@ -69,7 +69,7 @@ export default Vue.extend({
         const homeResponse = await this.$http.get("/home");
         this.hasHome = !!homeResponse.data.homeData;
         if (this.hasHome) {
-          this.houseDescription = homeResponse.data.homeData.description || "";
+          this.houseDescription = homeResponse.data.homeData.information || "";
         }
         this.loaded = true;
       } catch (e) {

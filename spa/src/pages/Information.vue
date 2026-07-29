@@ -8,9 +8,20 @@
   -->
   <div class="w-full">
     <!--
-      A home's Information is the free text its owner wrote. It is rendered through Vue's
-      text interpolation (never v-html), so any markup a citizen types is escaped and
-      displayed literally rather than executed. pre-wrap preserves the owner's line breaks.
+      A home's Information is what its owner wrote, and it renders through the SAME
+      component - and therefore the same contract - as a place's: sanitized on WRITE
+      against the shared allowlist (HomeService.updateHomeInformation ->
+      sanitizeUserHtml, the same one Messageboard, Inbox and Place Information use),
+      never cleaned at render time.
+
+      This used to be text interpolation because a home's text was stored verbatim.
+      It is not anymore: every write is sanitized, and the migration that introduced
+      place.information sanitized all pre-existing rows on the way across, so there is
+      no unsanitized home text left to render. If that ever stops being true, fix the
+      WRITE - do not escape here, or the database keeps the unsafe value for the next
+      reader that forgets.
+
+      pre-wrap still preserves the owner's line breaks for the plain-text majority.
 
       Homes are not staff-managed places: no Manage button, no place heading. They have
       their own owner-facing Update tool.
@@ -19,7 +30,13 @@
       class="h-full w-full bg-black flex flex-col"
       style="padding: 10px; white-space: pre-wrap;"
       v-if="$route.params.type === 'home'"
-    >{{ homeDescription || 'This citizen has not added any information yet.' }}</div>
+    >
+      <place-information
+        v-if="homeDescription"
+        :description="homeDescription"
+      ></place-information>
+      <template v-else>This citizen has not added any information yet.</template>
+    </div>
     <!--
       Every staff-managed place - colony, neighborhood, block, and the public places
       including the Mall and the jail - renders in one order:
@@ -34,7 +51,8 @@
       section 4.3.
 
       The place NAME is display only. The editor behind Manage writes exactly one
-      column, place.description; renaming a place is not part of this tool.
+      column, place.information; renaming a place is an administrator's tool, not
+      this one - and the administrative Description is a different column again.
     -->
     <!--
       Block layout, not a flex column, and deliberately so. The original rendered
@@ -77,8 +95,9 @@
           </div>
         </div>
         <!--
-          Display only. The editor behind MANAGE writes place.description and
-          nothing else - editing a place's information never renames it.
+          Display only. The editor behind MANAGE writes place.information and
+          nothing else - editing a place's information never renames it, and never
+          touches the administrative Description.
         -->
         <h2 v-if="placeName">Welcome to: {{ placeName }}</h2>
       </div>

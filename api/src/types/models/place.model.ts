@@ -4,7 +4,14 @@ import { Model } from './model';
 export interface Place extends Model {
   id: number;
   assets_dir?: string;
+  /** Administrator-controlled metadata. Never written by an Information editor. */
   description?: string;
+  /**
+   * Manager/owner-authored public content shown by the Information window.
+   * Sanitized on write against the shared allowlist; never written by an
+   * administrator surface.
+   */
+  information?: string;
   name: string;
   slug?: string;
   status: number;

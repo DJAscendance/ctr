@@ -164,7 +164,7 @@ describe('HomeController home information', () => {
 
       expect(homeService.updateHomeInformation).not.toHaveBeenCalled();
       expect(response.status).toHaveBeenCalledWith(400);
-      expect(response.json.mock.calls[0][0].error).toContain('1000 characters or fewer');
+      expect(response.json.mock.calls[0][0].error).toContain('3500 characters or fewer');
     });
 
     it('rejects a non-string description rather than passing it through', async () => {

@@ -14,6 +14,7 @@ import {
   MemberRepository,
   TransactionRepository,
 } from '../../repositories';
+import { sanitizeUserHtml } from '../../libs';
 import { Place, HomeDesign, Home } from '../../types/models';
 import { MemberService } from '../member/member.service';
 import { BlockService } from '../block/block.service';
@@ -95,7 +96,11 @@ export class HomeService {
       type: 'home',
       member_id: memberId,
       name: houseName,
-      description: houseDescription,
+      // The text typed while settling in IS the home's public Information, so it
+      // goes to the same column the Information editor writes - not to the
+      // administrative `description`. Sanitized on the way in, like every other
+      // write to this field.
+      information: sanitizeUserHtml(houseDescription || ''),
       map_icon_index: icon2d,
     });
 
@@ -426,7 +431,9 @@ export class HomeService {
       // Clear the visible customisations back to a freshly-settled home.
       await this.placeRepository.updateHomeByMemberIdWithin(trx, memberId, {
         name: `${member.username}'s Home`,
-        description: '',
+        // Clears the owner's Information, which is what a reset is for. The
+        // administrative `description` is not the owner's to clear.
+        information: '',
         map_icon_index: HomeService.DEFAULT_MAP_ICON_INDEX,
       });
 
@@ -479,16 +486,26 @@ export class HomeService {
   }
 
   /**
-   * Maximum length of the description a member may set for their home. Enforced
+   * Maximum length of the information a member may set for their home. Enforced
    * server-side; the SPA's textarea maxlength is a convenience, not the boundary.
+   *
+   * Measured on the SUBMITTED text, before sanitizing, for the same reason
+   * PlaceInformationService does: checking afterwards would let someone post an
+   * arbitrarily large blob of disallowed markup that happens to sanitize down to
+   * something short. `place.information` is MySQL TEXT (65535 bytes), so 3500
+   * characters leaves ample headroom even for 4-byte UTF-8 throughout.
    */
-  public static readonly INFORMATION_MAX_LENGTH = 1000;
+  public static readonly INFORMATION_MAX_LENGTH = 3500;
 
   /**
-   * Gets the description a home's owner has set, for display to visitors through the
+   * Gets the information a home's owner has set, for display to visitors through the
    * "Information" tool. Returns an empty string for a place that does not exist or is not
    * a home, so a caller can never use this endpoint to read a club's or block's
-   * description through the home route.
+   * information through the home route.
+   *
+   * The value is already sanitized - it is cleaned on write, and the migration
+   * that introduced `place.information` sanitized every pre-existing row on the
+   * way across - so it is safe to render as HTML.
    * @param placeId id of the home's place record
    */
   public async getHomeInformation(placeId: number): Promise<string> {
@@ -496,7 +513,7 @@ export class HomeService {
     if (!place || place.type !== 'home') {
       return '';
     }
-    return place.description || '';
+    return place.information || '';
   }
 
   /**
@@ -504,9 +521,16 @@ export class HomeService {
    * authenticated member id - never from a client-supplied place or member id - so a
    * caller can only ever edit their own home, and a member without a home is rejected
    * rather than silently updating nothing.
+   * The text is passed through the SHARED sanitizer - the same allowlist Place
+   * Information, Messageboard and Inbox use - and only the sanitized result is
+   * stored. This is silent normalization, not validation: disallowed markup is
+   * dropped and the save still succeeds, exactly as it does for a message board
+   * post. Nothing tells the member their markup was altered, and no separate
+   * home allowlist exists.
+   *
    * @param memberId id of the home's owner
-   * @param houseDescription new description text (an empty string is a valid, intentional
-   *   value that clears the description)
+   * @param houseDescription new information text (an empty string is a valid,
+   *   intentional value that clears it)
    */
   public async updateHomeInformation(memberId: number, houseDescription: string): Promise<void> {
     const home = await this.placeRepository.findHomeByMemberId(memberId);
@@ -516,7 +540,7 @@ export class HomeService {
 
     await this.placeRepository.updateHomeByMemberId(
       memberId,
-      { description: houseDescription },
+      { information: sanitizeUserHtml(houseDescription) },
     );
   }
 

@@ -31,7 +31,9 @@ describe('PlaceInformationService', () => {
     name: 'Mall',
     slug: 'mall',
     type: 'public',
-    description: '',
+    // The STORED column. The response DTO still calls it `description`, so the
+    // public API shape is unchanged - only where the value lives has moved.
+    information: '',
     ...overrides,
   });
 
@@ -57,13 +59,13 @@ describe('PlaceInformationService', () => {
     blockService.canAdmin.mockResolvedValue(true);
     hoodService.canAdmin.mockResolvedValue(true);
     colonyService.canAdmin.mockResolvedValue(true);
-    placeRepository.updateDescription.mockResolvedValue(undefined as any);
+    placeRepository.updateInformation.mockResolvedValue(undefined as any);
   });
 
   describe('reading', () => {
     it('returns the stored description for a place', async () => {
       placeRepository.findById.mockResolvedValue(
-        place({ description: '<p>Open daily.</p>' }),
+        place({ information: '<p>Open daily.</p>' }),
       );
 
       await expect(service.getInformation(7)).resolves.toEqual({
@@ -75,7 +77,7 @@ describe('PlaceInformationService', () => {
     });
 
     it('represents a place that has never been given information as empty', async () => {
-      placeRepository.findById.mockResolvedValue(place({ description: null }));
+      placeRepository.findById.mockResolvedValue(place({ information: null }));
 
       const info = await service.getInformation(7);
 
@@ -160,17 +162,17 @@ describe('PlaceInformationService', () => {
         status: 'success',
         description: '<p>Open <b>daily</b>.</p>',
       });
-      expect(placeRepository.updateDescription)
+      expect(placeRepository.updateInformation)
         .toHaveBeenCalledWith(7, '<p>Open <b>daily</b>.</p>');
     });
 
     it('allows clearing the information', async () => {
-      placeRepository.findById.mockResolvedValue(place({ description: '<p>x</p>' }));
+      placeRepository.findById.mockResolvedValue(place({ information: '<p>x</p>' }));
 
       const result = await service.updateInformation(7, MEMBER_ID, '');
 
       expect(result).toEqual({ status: 'success', description: '' });
-      expect(placeRepository.updateDescription).toHaveBeenCalledWith(7, '');
+      expect(placeRepository.updateInformation).toHaveBeenCalledWith(7, '');
     });
 
     it('refuses an unauthorized member and writes nothing', async () => {
@@ -179,7 +181,7 @@ describe('PlaceInformationService', () => {
 
       await expect(service.updateInformation(7, MEMBER_ID, 'hi'))
         .resolves.toEqual({ status: 'forbidden' });
-      expect(placeRepository.updateDescription).not.toHaveBeenCalled();
+      expect(placeRepository.updateInformation).not.toHaveBeenCalled();
     });
 
     it('refuses an unsupported place type and writes nothing', async () => {
@@ -187,7 +189,7 @@ describe('PlaceInformationService', () => {
 
       await expect(service.updateInformation(7, MEMBER_ID, 'hi'))
         .resolves.toEqual({ status: 'unsupported' });
-      expect(placeRepository.updateDescription).not.toHaveBeenCalled();
+      expect(placeRepository.updateInformation).not.toHaveBeenCalled();
     });
 
     it('reports a missing place without consulting any staff check', async () => {
@@ -196,7 +198,7 @@ describe('PlaceInformationService', () => {
       await expect(service.updateInformation(7, MEMBER_ID, 'hi'))
         .resolves.toEqual({ status: 'not_found' });
       expect(placeService.canAdmin).not.toHaveBeenCalled();
-      expect(placeRepository.updateDescription).not.toHaveBeenCalled();
+      expect(placeRepository.updateInformation).not.toHaveBeenCalled();
     });
 
     it('measures length on the SUBMITTED text, before sanitizing', async () => {
@@ -207,7 +209,7 @@ describe('PlaceInformationService', () => {
 
       await expect(service.updateInformation(7, MEMBER_ID, padding))
         .resolves.toEqual({ status: 'too_long' });
-      expect(placeRepository.updateDescription).not.toHaveBeenCalled();
+      expect(placeRepository.updateInformation).not.toHaveBeenCalled();
     });
 
     it('accepts text exactly at the limit', async () => {
@@ -220,7 +222,7 @@ describe('PlaceInformationService', () => {
     });
 
     it('stays well under the TEXT column capacity', () => {
-      // place.description is MySQL TEXT: 65535 bytes. The limit is a usability
+      // place.information is MySQL TEXT: 65535 bytes. The limit is a usability
       // bound on a staff notice, deliberately far below the storage bound.
       expect(PlaceInformationService.INFORMATION_MAX_LENGTH).toBeLessThan(65535);
     });

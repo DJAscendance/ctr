@@ -86,15 +86,19 @@ test("the rendered value can only come from the server endpoint", () => {
   );
 });
 
-test("the home description path still escapes markup", () => {
+test("the home description path goes through the sanitized-HTML component", () => {
+  // The contract changed in the Information/Update follow-up lane: a home's text
+  // is sanitized ON WRITE against the shared allowlist now, so it renders through
+  // PlaceInformation like a place's does. What still must never happen is a raw
+  // binding here that bypasses that one documented component.
   const page = read(INFORMATION_VUE);
   assert.ok(
-    /\{\{\s*homeDescription\s*\|\|/.test(page),
-    "a home description must stay on text interpolation",
+    /<place-information[\s\S]*?:description="homeDescription"/.test(page),
+    "a home description must render through PlaceInformation",
   );
   assert.ok(
     !/v-html\s*=\s*"homeDescription"/.test(page),
-    "a home description must never be rendered as HTML",
+    "never bind a home description to v-html directly - go through PlaceInformation",
   );
 });
 

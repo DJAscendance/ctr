@@ -58,7 +58,7 @@ describe('HomeService home information', () => {
   describe('getHomeInformation', () => {
     it('returns the description of a home place', async () => {
       placeRepository.findById.mockResolvedValue(
-        { id: 42, type: 'home', description: 'Welcome to my home!' } as any,
+        { id: 42, type: 'home', information: 'Welcome to my home!' } as any,
       );
 
       await expect(service.getHomeInformation(42)).resolves.toBe('Welcome to my home!');
@@ -80,7 +80,7 @@ describe('HomeService home information', () => {
       // A club/block description must not become readable just because the caller asked
       // for it via /home/information/:placeId.
       placeRepository.findById.mockResolvedValue(
-        { id: 7, type: 'club', description: 'Private club notes' } as any,
+        { id: 7, type: 'club', information: 'Private club notes' } as any,
       );
 
       await expect(service.getHomeInformation(7)).resolves.toBe('');
@@ -95,7 +95,7 @@ describe('HomeService home information', () => {
 
       expect(placeRepository.updateHomeByMemberId).toHaveBeenCalledWith(
         5,
-        { description: 'A new description' },
+        { information: 'A new description' },
       );
     });
 
@@ -107,7 +107,7 @@ describe('HomeService home information', () => {
       // The only identifier reaching the repository is the authenticated member id.
       const [memberId, props] = placeRepository.updateHomeByMemberId.mock.calls[0];
       expect(memberId).toBe(5);
-      expect(props).toEqual({ description: 'text' });
+      expect(props).toEqual({ information: 'text' });
       expect(placeRepository.findHomeByMemberId).toHaveBeenCalledWith(5);
     });
 
@@ -118,7 +118,7 @@ describe('HomeService home information', () => {
 
       expect(placeRepository.updateHomeByMemberId).toHaveBeenCalledWith(
         5,
-        { description: '' },
+        { information: '' },
       );
     });
 

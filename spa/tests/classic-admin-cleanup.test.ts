@@ -66,9 +66,12 @@ function markup(file: string): string {
 // ------------------------------------------- 1. Information window centering
 
 test("only the Manage control and the place heading are centered", () => {
+  // Scoped to the staff-managed branch. The home branch above it renders its own
+  // <place-information> and has no centered section, so an unscoped search finds
+  // that one and reports the two in the wrong order.
   const template = markup(INFORMATION);
   const centered = template.indexOf("<div class=\"text-center\">");
-  const centeredEnd = template.indexOf("<place-information");
+  const centeredEnd = template.indexOf("<place-information", centered);
   assert.ok(centered > -1, "expected a centered section");
   assert.ok(centeredEnd > centered, "expected the information after it");
 

@@ -137,20 +137,56 @@ export class PlaceRepository {
   }
 
   /**
-   * Writes a place's staff-authored information text. The value must already be
-   * sanitized - this layer stores exactly what it is given.
+   * Writes a place's manager/owner-authored public information. The value must
+   * already be sanitized - this layer stores exactly what it is given.
+   *
+   * Deliberately a separate method from the administrative Description: the two
+   * fields are owned by different people and must never be written by the same
+   * call.
    */
-  public async updateDescription(placeId: number, description: string): Promise<void> {
+  public async updateInformation(placeId: number, information: string): Promise<void> {
     await this.db.place
       .where({ id: placeId })
-      .update({ description });
+      .update({ information });
   }
 
+  /**
+   * Columns the Admin Panel may write. Anything absent from this list is
+   * ignored, however the request was shaped.
+   *
+   * This used to spread the request body straight into the UPDATE, which meant
+   * the admin endpoint could write ANY column that existed - including
+   * `information`, the manager-authored field the Information editors own. An
+   * allowlist is what keeps the two surfaces from competing for the same rows;
+   * `information` is absent from it on purpose, and must stay absent.
+   */
+  private static readonly ADMIN_EDITABLE_COLUMNS = [
+    'name',
+    'description',
+    'slug',
+    'assets_dir',
+    'world_filename',
+    'map_icon_index',
+    'map_background_index',
+    'private',
+    'status',
+    'type',
+  ];
+
   public async updatePlaces(placeinfo: any): Promise<void> {
-    const { id, created_at, updated_at, ...updateData } = placeinfo;
+    const updateData: Record<string, unknown> = {};
+    for (const column of PlaceRepository.ADMIN_EDITABLE_COLUMNS) {
+      if (Object.prototype.hasOwnProperty.call(placeinfo, column)) {
+        updateData[column] = placeinfo[column];
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return;
+    }
 
     await this.db.knex('place')
-      .where('id', id)
+      .where('id', placeinfo.id)
       .update(updateData);
     return;
   }

@@ -22,8 +22,24 @@
         class="flex flex-row flex-grow"
         :style="$store.data.isUser && this.$route.meta.wrapper ? 'height: calc(100vh - 70px) !important' : 'height: 100vh !important'"
       >
-        <!--Content-->
-        <div class="flex flex-1">
+        <!--
+          Content.
+
+          min-w-0 / min-h-0 and overflow-auto are load-bearing, not tidying. A
+          flex item defaults to min-height: auto, which refuses to shrink below
+          its content - so a tall page (the 2D/3D house chooser is the worst
+          case, ~70 thumbnails) pushed this column past the row's
+          calc(100vh - 70px) and the DOCUMENT became the scroller. That scrolled
+          the whole shell, carrying the Control Panel beside it out of view.
+
+          min-h-0 lets the column be bounded by the row again, and overflow-auto
+          makes THIS pane the scroller instead of the document, which is what
+          keeps the header and the Control Panel fixed while long content moves.
+          min-w-0 is the same fix on the other axis: without it a wide child
+          (the world browser) can widen the column and push the sidebar off
+          screen instead of scrolling inside it.
+        -->
+        <div class="flex flex-1 min-w-0 min-h-0 overflow-auto">
           <router-view
             v-if="this.$route.name !== 'world-browser' &&
             this.$route.name !== 'user-home'" />

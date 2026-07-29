@@ -389,10 +389,13 @@ test("the Information window edits nothing itself, and never the place name", ()
 
 test("the Information window renders Manage, heading, information, then staffing", () => {
   const source = read(INFORMATION_PAGE);
-  const manage = source.indexOf("data-testid=\"place-manage\"");
-  const heading = source.indexOf("Welcome to:");
-  const description = source.indexOf("<place-information");
-  const staffing = source.indexOf("Leader<br/>");
+  // Scoped to the staff-managed branch: the home branch above it renders its own
+  // <place-information>, and this test is about the ORDER inside the place view.
+  const placeBranch = source.slice(source.indexOf("data-testid=\"place-manage\""));
+  const manage = placeBranch.indexOf("data-testid=\"place-manage\"");
+  const heading = placeBranch.indexOf("Welcome to:");
+  const description = placeBranch.indexOf("<place-information");
+  const staffing = placeBranch.indexOf("Leader<br/>");
   for (const [name, index] of [
     ["Manage", manage],
     ["heading", heading],
@@ -779,7 +782,11 @@ test("the block image-check route reuses the moderation page in the block frame"
 test("the hub is presented as the home Update page is", () => {
   const hub = read(HUB_COMPONENT);
   const home = read(path.join(SPA_SRC, "pages/home/HomeUpdatePage.vue"));
-  for (const marker of ["mx-auto max-w-2xl grid grid-cols-3 gap-4", "<strong>"]) {
+  // The home page has a fixed set of tools, so it can hard-code three columns.
+  // The hub's tile count varies with the capabilities the server granted, so its
+  // column count is bound rather than literal - these are the parts of the
+  // presentation that must still be shared.
+  for (const marker of ["mx-auto max-w-2xl grid", "gap-4", "<strong>"]) {
     assert.ok(
       home.includes(marker),
       `the home Update page should still use '${marker}' - update this test if it changed`,
@@ -790,8 +797,26 @@ test("the hub is presented as the home Update page is", () => {
     );
   }
   assert.ok(
+    hub.includes("grid-cols-3"),
+    "a multi-tile hub must still lay out in the home Update page's three columns",
+  );
+  assert.ok(
     hub.includes(":src=\"tile.image\""),
     "the hub must render the classic tile art, like the home Update page",
+  );
+});
+
+test("a hub with a single tile centers it instead of leaving a gap", () => {
+  const hub = read(HUB_COMPONENT);
+  // A one-tile hub in a three-column grid parks its only tile in the left
+  // column, reading as though two more were expected and failed to load.
+  assert.ok(
+    /tiles\.length === 1[\s\S]{0,80}justify-items-center/.test(hub),
+    "a single-tile hub must center its tile",
+  );
+  assert.ok(
+    /tiles\.length === 1\s*\?\s*'grid-cols-1/.test(hub),
+    "a single-tile hub must drop to one column rather than keep three",
   );
 });
 

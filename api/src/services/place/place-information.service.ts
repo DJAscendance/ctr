@@ -43,8 +43,13 @@ export type UpdateInformationResult =
  * Owner/Assistants/Leaders/Deputies listing (blaxxun CS 4.0
  * templates/place/updateinfo.{cfg,tmpl}, rendered by block/info.tmpl and
  * neighbor/info.tmpl; see docs/research/classic-place-admin-re-evidence.md
- * section 4). CTR already has that column - `place.description` - so this reuses
- * it rather than adding a parallel field.
+ * section 4). This reads and writes `place.information`.
+ *
+ * It used to reuse `place.description`, which the Admin Panel also edits as the
+ * administrative Description - so manager-authored HTML surfaced as raw text in
+ * the admin place list and either surface could overwrite the other. The two are
+ * now separate columns and this service touches only `information`; nothing here
+ * may write `description`.
  *
  * Two deliberate departures from the original:
  *
@@ -72,7 +77,7 @@ export class PlaceInformationService {
   ) {}
 
   /**
-   * Matches the `place.description` column, which is MySQL TEXT (65535 bytes).
+   * Matches the `place.information` column, which is MySQL TEXT (65535 bytes).
    * The limit here is a usability bound on a staff notice, not a storage bound -
    * it is set well under the column capacity so that sanitizing (which can only
    * shrink the value) can never push a previously-accepted value over the edge.
@@ -93,7 +98,7 @@ export class PlaceInformationService {
       placeId: place.id,
       name: place.name,
       type: place.type,
-      description: place.description || '',
+      description: place.information || '',
     };
   }
 
@@ -151,7 +156,7 @@ export class PlaceInformationService {
     }
 
     const clean = sanitizeUserHtml(description);
-    await this.placeRepository.updateDescription(placeId, clean);
+    await this.placeRepository.updateInformation(placeId, clean);
     return { status: 'success', description: clean };
   }
 }
