@@ -79,9 +79,13 @@ export class HoodService {
     }
     // Both branches previously removed the old owner identically, so the removal is
     // hoisted out rather than duplicated.
+    // Members whose displayed role may need re-checking once every write below has landed.
+    // Reconciling inline here cleared the owner's badge on a save that did not even change
+    // the owner: the assignment was removed, read as absent, and only then re-added.
+    const touched = new Set<number>();
     if (oldOwner !== 0) {
       await this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldOwner, ownerCode);
-      await this.roleAssignmentService.reconcilePrimaryRole(oldOwner);
+      touched.add(oldOwner);
     }
     if (newOwner !== 0) {
       await this.roleAssignmentRepository.addIdToAssignment(hoodId, newOwner, ownerCode);
@@ -92,7 +96,8 @@ export class HoodService {
       newDeputyIds.push(await this.updateDeputyId(givenDeputy));
     }
     await this.roleAssignmentService
-      .syncDeputies(hoodId, deputyCode, oldDeputyIds, newDeputyIds);
+      .syncDeputies(hoodId, deputyCode, oldDeputyIds, newDeputyIds, touched);
+    await this.roleAssignmentService.reconcilePrimaryRoles(touched);
   }
   
   public async getColony(hoodId: number): Promise<Place> {

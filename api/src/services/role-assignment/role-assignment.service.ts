@@ -24,9 +24,18 @@ export class RoleAssignmentService {
   /**
    * Clears member.primary_role_id if it is no longer a role the member holds.
    *
-   * Call after any change to a member's role assignments. role_assignment is the
-   * authority for what a member holds; primary_role_id only records which of those they
-   * chose to display, so it has to be re-checked whenever assignments change.
+   * Call after the COMPLETE set of assignment changes has landed, never between a remove
+   * and the add that replaces it. This method reads role_assignment to decide what is still
+   * held, so calling it mid-sequence lets it observe a state that never settles. The
+   * callers used to do exactly that: postAccessInfo removed the owner's assignment,
+   * reconciled, and only then re-added it -- so re-saving an access page WITHOUT changing
+   * the owner cleared that owner's displayed role, because at the moment of the read they
+   * genuinely held nothing. They kept the role and lost the badge, with nothing in the
+   * request to explain it.
+   *
+   * role_assignment is the authority for what a member holds; primary_role_id only records
+   * which of those they chose to display, so it has to be re-checked whenever assignments
+   * change.
    *
    * Replaces a block that was copy-pasted across the hood, block, colony, place and
    * admin services. That version compared the *revoked* role against primary_role_id
@@ -89,6 +98,13 @@ export class RoleAssignmentService {
     deputyRoleId: number | null | undefined,
     oldDeputyIds: number[],
     newDeputyIds: number[],
+    /**
+     * Optional collector for members whose displayed role needs re-checking. Given one, this
+     * method defers reconciliation instead of doing it, so a caller that is also changing
+     * the owner can reconcile everything once after ALL of its writes rather than partway
+     * through.
+     */
+    deferTo?: Set<number>,
   ): Promise<void> {
     if (deputyRoleId === undefined || deputyRoleId === null) return;
 
@@ -98,12 +114,13 @@ export class RoleAssignmentService {
     const oldIds = asIdSet(oldDeputyIds);
     const newIds = asIdSet(newDeputyIds.slice(0, RoleAssignmentService.DEPUTY_SLOTS));
 
+    const removed: number[] = [];
     for (const memberId of oldIds) {
       if (newIds.has(memberId)) continue;
       try {
         await this.roleAssignmentRepository
           .removeIdFromAssignment(placeId, memberId, deputyRoleId);
-        await this.reconcilePrimaryRole(memberId);
+        removed.push(memberId);
       } catch (e) {
         console.error(e);
       }
@@ -113,6 +130,38 @@ export class RoleAssignmentService {
       if (oldIds.has(memberId)) continue;
       try {
         await this.roleAssignmentRepository.addIdToAssignment(placeId, memberId, deputyRoleId);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Reconciled only once every write above has landed. reconcilePrimaryRole reads
+    // role_assignment to decide whether the displayed role is still held, so running it
+    // between the removes and the adds let it observe a state that never settles -- see
+    // reconcilePrimaryRoles.
+    //
+    // When the caller passes a collector, reconciliation is deferred to it instead, so a
+    // place update that also changes the owner reconciles the whole set exactly once at the
+    // very end rather than once per axis.
+    if (deferTo) {
+      removed.forEach(memberId => deferTo.add(memberId));
+      return;
+    }
+    await this.reconcilePrimaryRoles(removed);
+  }
+
+  /**
+   * Reconciles several members' displayed roles, after all assignment writes are done.
+   *
+   * Deduplicated because the same member can be touched on more than one axis of a single
+   * update -- losing a deputy slot while also being the outgoing owner, say -- and
+   * reconciling them twice is just a second round trip to reach the same answer.
+   */
+  public async reconcilePrimaryRoles(memberIds: Iterable<number>): Promise<void> {
+    for (const memberId of new Set(memberIds)) {
+      if (!memberId) continue;
+      try {
+        await this.reconcilePrimaryRole(memberId);
       } catch (e) {
         console.error(e);
       }

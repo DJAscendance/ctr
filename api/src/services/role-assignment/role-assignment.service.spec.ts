@@ -172,6 +172,35 @@ describe('RoleAssignmentService', () => {
       expect(roleAssignmentRepository.addIdToAssignment).not.toHaveBeenCalled();
     });
 
+    /**
+     * The ordering guarantee. reconcilePrimaryRole reads role_assignment to decide whether
+     * the displayed role is still held, so it must not run until every write has landed --
+     * otherwise it observes a state that never settles.
+     */
+    it('reconciles only after every add has landed', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A], [C]);
+      const lastAdd = Math.max(
+        ...roleAssignmentRepository.addIdToAssignment.mock.invocationCallOrder,
+      );
+      const firstReconcileRead = Math.min(
+        ...memberRepository.getPrimaryRoleId.mock.invocationCallOrder,
+      );
+      expect(firstReconcileRead).toBeGreaterThan(lastAdd);
+    });
+
+    it('defers reconciliation to a collector when given one', async () => {
+      const touched = new Set<number>();
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A], [C], touched);
+      expect([...touched]).toEqual([A]);
+      expect(memberRepository.getPrimaryRoleId).not.toHaveBeenCalled();
+    });
+
+    it('does not collect a member who merely moved position', async () => {
+      const touched = new Set<number>();
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A, B], [B, A], touched);
+      expect([...touched]).toEqual([]);
+    });
+
     /** One failing row must not abandon the rest of the reconciliation. */
     it('continues past a failed write', async () => {
       roleAssignmentRepository.addIdToAssignment
@@ -179,6 +208,42 @@ describe('RoleAssignmentService', () => {
         .mockResolvedValue(undefined as any);
       await service.syncDeputies(PLACE, DEPUTY_ROLE, [], [B, C]);
       expect(roleAssignmentRepository.addIdToAssignment).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('reconcilePrimaryRoles', () => {
+    const MEMBER_A = 201;
+    const MEMBER_B = 202;
+
+    beforeEach(() => {
+      memberRepository.getPrimaryRoleId.mockResolvedValue(null);
+      roleAssignmentRepository.getByMemberId.mockResolvedValue([] as any);
+    });
+
+    /** The same member can be touched on more than one axis of a single update. */
+    it('reconciles each member once even when listed repeatedly', async () => {
+      await service.reconcilePrimaryRoles([MEMBER_A, MEMBER_A, MEMBER_B, MEMBER_A]);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(2);
+    });
+
+    /** 0 is the empty-slot sentinel and is not a member id. */
+    it('skips falsy ids', async () => {
+      await service.reconcilePrimaryRoles([0, MEMBER_A]);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(1);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(MEMBER_A);
+    });
+
+    it('continues past a member that throws', async () => {
+      memberRepository.getPrimaryRoleId
+        .mockRejectedValueOnce(new Error('gone'))
+        .mockResolvedValue(null);
+      await service.reconcilePrimaryRoles([MEMBER_A, MEMBER_B]);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(2);
+    });
+
+    it('accepts a Set as well as an array', async () => {
+      await service.reconcilePrimaryRoles(new Set([MEMBER_A, MEMBER_B]));
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(2);
     });
   });
 });
