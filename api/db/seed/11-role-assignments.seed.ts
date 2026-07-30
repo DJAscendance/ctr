@@ -60,10 +60,25 @@ function fixtureUsername(index: number): string {
   return `${FIXTURE_PREFIX}${String(index).padStart(2, '0')}`;
 }
 
+/**
+ * Escapes the LIKE metacharacters in a literal prefix.
+ *
+ * FIXTURE_PREFIX ends in '_', which LIKE reads as "any single character" -- so the raw
+ * pattern also matched real usernames such as 'fixtures' or 'fixtureBob'. This function
+ * feeds a DELETE, so an over-match takes a real member's account, role assignments and
+ * wallet with it.
+ */
+const LIKE_ESCAPE = '!';
+function escapeLikeLiteral(value: string): string {
+  return value.replace(/[!%_]/g, character => `${LIKE_ESCAPE}${character}`);
+}
+
 async function removePreviousFixtures(knex: Knex): Promise<void> {
   const existing = await knex('member')
     .select('id', 'wallet_id')
-    .where('username', 'like', `${FIXTURE_PREFIX}%`);
+    .whereRaw(`username LIKE ? ESCAPE '${LIKE_ESCAPE}'`, [
+      `${escapeLikeLiteral(FIXTURE_PREFIX)}%`,
+    ]);
   if (!existing.length) return;
 
   const memberIds = existing.map(member => member.id);

@@ -129,7 +129,15 @@ export class HoodService {
     return this.placeAccessService.hasGeographicAuthority(hoodId, memberId);
   }
 
+  /**
+   * Kept on its own role set rather than delegated to placeAccessService: manage-access is
+   * deliberately narrower than canAdmin (Leader, not Deputy).
+   *
+   * roleMap is awaited because the constructor populates it without awaiting, so for a
+   * window after startup every lookup is undefined and a real admin is denied.
+   */
   public async canManageAccess(hoodId: number, memberId: number): Promise<boolean> {
+    await this.roleRepository.awaitRoleMap();
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     const colony = await this.getColony(hoodId);
 

@@ -263,6 +263,12 @@ export class PlaceService {
     if (newOwner !== 0) {
       await this.roleAssignmentRepository.addIdToAssignment(placeId, newOwner, ownerCode);
     }
+    // 'jail' and 'cityhall' have an owner role but no deputy role, so findRoleIdsBySlug
+    // returns deputy: undefined for them. The sync below would then write a role_assignment
+    // whose role_id is undefined -- a row pointing at no role at all. Skipped wholesale
+    // rather than guarded per-branch: a place with no deputy role has no deputies to
+    // reconcile, so there is nothing for the loop to do either way.
+    if (deputyCode === undefined || deputyCode === null) return;
     data.deputies.forEach((deputies, index) => {
       oldDeputies[index] = deputies.member_id;
     });
@@ -295,7 +301,12 @@ export class PlaceService {
     return await this.placeRepository.updatePlaces(placeinfo);
   }
 
-  private async findRoleIdsBySlug(slug: string): Promise<{ owner: number, deputy: number }> {
+  /**
+   * `deputy` is optional because it genuinely is: 'jail' and 'cityhall' below have an owner
+   * role and no deputy role. The signature previously promised a number for every slug,
+   * which is how an undefined deputy role reached a role_assignment write.
+   */
+  private async findRoleIdsBySlug(slug: string): Promise<{ owner: number, deputy?: number }> {
     const roleId = {
       bank: {
         owner: this.roleRepository.roleMap.BankManager,
