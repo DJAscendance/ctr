@@ -57,8 +57,14 @@ export class MemberDataService {
     const stored = await this.memberDataRepository
       .getByPrefix(memberId, MemberDataService.BUDDY_PREFIX);
     for (const [name, value] of Object.entries(stored)) {
-      const index = Number(name.slice(MemberDataService.BUDDY_PREFIX.length));
-      if (Number.isInteger(index) && index >= 0 && index < MemberDataService.BUDDY_SLOTS) {
+      const suffix = name.slice(MemberDataService.BUDDY_PREFIX.length);
+      // Exactly one digit, matched as text before any numeric conversion. A prefix match is
+      // not a slot name: Number('') is 0, so a bare 'BU' would otherwise land in slot 0, and
+      // Number() also accepts 'BU01' and 'BU1e0' as 1, colliding with BU1. Any future BU*
+      // attribute that is not a slot would be silently read as one too.
+      if (!/^[0-9]$/.test(suffix)) continue;
+      const index = Number(suffix);
+      if (index < MemberDataService.BUDDY_SLOTS) {
         slots[index] = value;
       }
     }

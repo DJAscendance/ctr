@@ -520,22 +520,33 @@ class MemberController {
         return;
       }
 
-      const returnUsers = [];
-      for (const entry of roster.entries) {
-        const hasHome = await this.homeService.getHome(entry.id);
-        const accessLevel = await this.memberService.getAccessLevel(entry.id);
-        returnUsers.push({
-          username: entry.username,
-          hasHome: !!hasHome,
-          security: !!accessLevel && accessLevel === 'security',
-          // Buddies render bold and the viewer's own name renders as plain text rather
-          // than a link; the client owns that markup, so it gets the flags.
-          isBuddy: entry.isBuddy,
-          isSelf: entry.isSelf,
-          // Preserved from the previous shape: member ids are not exposed here.
-          id: null,
-        });
-      }
+      // Batched rather than one getHome per entry, matching getDirectory below. The roster
+      // is every visibly-online member, so the per-entry version issued two queries per
+      // person on every poll.
+      const memberIdsWithHome = await this.homeService.findMemberIdsWithHome(
+        roster.entries.map(entry => entry.id),
+      );
+      // getAccessLevel is still one call per entry -- it fans out into canAdmin, canLeader
+      // and a role lookup, so batching it means batching those. Resolved in parallel here
+      // rather than in series; a real batch is a separate change.
+      const accessLevels = await Promise.all(
+        roster.entries.map(entry => this.memberService.getAccessLevel(entry.id)),
+      );
+      const returnUsers = roster.entries.map((entry, i) => ({
+        username: entry.username,
+        hasHome: memberIdsWithHome.has(entry.id),
+        // getAccessLevel returns string[], so the previous `accessLevel === 'security'`
+        // compared an array to a string and was never true -- the flag has been dead since
+        // it was added. Every other consumer (App.vue, admin.vue, the admin panels) already
+        // uses .includes(), which is the correct test.
+        security: accessLevels[i].includes('security'),
+        // Buddies render bold and the viewer's own name renders as plain text rather
+        // than a link; the client owns that markup, so it gets the flags.
+        isBuddy: entry.isBuddy,
+        isSelf: entry.isSelf,
+        // Preserved from the previous shape: member ids are not exposed here.
+        id: null,
+      }));
       response.status(200).json({ count: roster.count, returnUsers });
     } catch (error) {
       console.log(error);

@@ -73,6 +73,25 @@ describe('MemberDataService', () => {
       expect(slots).toHaveLength(10);
       expect(slots.filter(Boolean)).toEqual(['a']);
     });
+
+    /**
+     * The suffix must be exactly one digit, checked as text. Number() is far more permissive
+     * than the slot names are: '' is 0, and '01' and '1e0' are both 1. getByPrefix matches on
+     * prefix, so any of these can arrive from stored data or a future non-slot BU* attribute.
+     */
+    it('rejects prefix matches that are not single-digit slot names', async () => {
+      memberDataRepository.getByPrefix.mockResolvedValue({
+        BU: 'bare prefix, Number("") is 0',
+        BU01: 'leading zero, Number() reads 1',
+        BU1e0: 'exponent, Number() reads 1',
+        BU2: 'the only real slot here',
+      });
+      const slots = await service.getBuddySlots(MEMBER);
+      expect(slots[0]).toBeNull();
+      expect(slots[1]).toBeNull();
+      expect(slots[2]).toBe('the only real slot here');
+      expect(slots.filter(Boolean)).toEqual(['the only real slot here']);
+    });
   });
 
   describe('getBuddyNameSet', () => {
