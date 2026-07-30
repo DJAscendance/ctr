@@ -6,7 +6,7 @@ import validator from 'validator';
 import * as badwords from 'badwords-list';
 
 import { sendPasswordResetEmail, sendPasswordResetUnknownEmail } from '../libs';
-import { MemberService, HomeService, PlaceService } from '../services';
+import { MemberService, HomeService, PlaceService, MemberDataService } from '../services';
 import { SessionInfo } from 'session-info.interface';
 import {parseInt} from 'lodash';
 
@@ -31,7 +31,8 @@ class MemberController {
   constructor(
     private memberService: MemberService, 
     private homeService: HomeService,
-    private placeService: PlaceService) {}
+    private placeService: PlaceService,
+    private memberDataService: MemberDataService) {}
 
   public async getAdminLevel(request: Request, response: Response): Promise<object> {
     const session = this.memberService.decryptSession(request, response);
@@ -462,29 +463,91 @@ class MemberController {
     }
   }
 
-  public async getOnlineUsers(request: Request, response: Response): Promise<any> {
+  /**
+   * Reads the caller's hide-yourself flag.
+   *
+   * One boolean, because one checkbox (IMS) is the whole privacy model in the original --
+   * no per-buddy blocking, no appear-offline-to-some, no ignore list.
+   */
+  public async getPrivacy(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     try {
-      const returnUsers = [];
-      const users = await this.memberService.getOnlineUsers();
-      for (const user of users) {
-        const hasHome = await this.homeService.getHome(user.id);
-        const accessLevel = await this.memberService.getAccessLevel(user.id);
-        if(hasHome){
-          user.hasHome = true;
-        } else {
-          user.hasHome = false;
-        }
-        if(accessLevel && accessLevel === 'security'){
-          user.security = true;
-        } else {
-          user.security = false;
-        }
-        user.id = null;
-        returnUsers.push(user);
+      response.status(200).json({ hidden: await this.memberDataService.isHidden(session.id) });
+    } catch (error) {
+      console.log(error);
+      response.status(400).json({ error: 'Error reading privacy setting' });
+    }
+  }
+
+  /** Sets the caller's hide-yourself flag. Only ever affects the caller's own record. */
+  public async updatePrivacy(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+    const { hidden } = request.body;
+    if (typeof hidden !== 'boolean') {
+      response.status(400).json({ error: 'hidden must be a boolean' });
+      return;
+    }
+    try {
+      await this.memberDataService.setHidden(session.id, hidden);
+      response.status(200).json({ message: 'success', hidden });
+    } catch (error) {
+      console.log(error);
+      response.status(400).json({ error: 'Error updating privacy setting' });
+    }
+  }
+
+  /**
+   * The online roster.
+   *
+   * Serves visitors as well as members, which is why it uses peekSession rather than
+   * decryptSession -- the latter writes a 400 when no token is present, so a visitor would
+   * get an error instead of the count they are meant to see.
+   *
+   * A visitor receives `{ count, returnUsers: null }`: message/count.html in the original
+   * emits the roster link only when NNM != "Visitor", so an unauthenticated caller learns
+   * how many people are online and nothing more. `null` rather than `[]` so the client can
+   * tell "not permitted to see" from "nobody online".
+   */
+  public async getOnlineUsers(request: Request, response: Response): Promise<any> {
+    const session = this.memberService.peekSession(request);
+    try {
+      const roster = await this.memberService.getRoster(session ? session.id : null);
+
+      if (roster.entries === null) {
+        response.status(200).json({ count: roster.count, returnUsers: null });
+        return;
       }
-      response.status(200).json({ returnUsers });
+
+      // Batched rather than one getHome per entry, matching getDirectory below. The roster
+      // is every visibly-online member, so the per-entry version issued two queries per
+      // person on every poll.
+      const memberIdsWithHome = await this.homeService.findMemberIdsWithHome(
+        roster.entries.map(entry => entry.id),
+      );
+      // getAccessLevel is still one call per entry -- it fans out into canAdmin, canLeader
+      // and a role lookup, so batching it means batching those. Resolved in parallel here
+      // rather than in series; a real batch is a separate change.
+      const accessLevels = await Promise.all(
+        roster.entries.map(entry => this.memberService.getAccessLevel(entry.id)),
+      );
+      const returnUsers = roster.entries.map((entry, i) => ({
+        username: entry.username,
+        hasHome: memberIdsWithHome.has(entry.id),
+        // getAccessLevel returns string[], so the previous `accessLevel === 'security'`
+        // compared an array to a string and was never true -- the flag has been dead since
+        // it was added. Every other consumer (App.vue, admin.vue, the admin panels) already
+        // uses .includes(), which is the correct test.
+        security: accessLevels[i].includes('security'),
+        // Buddies render bold and the viewer's own name renders as plain text rather
+        // than a link; the client owns that markup, so it gets the flags.
+        isBuddy: entry.isBuddy,
+        isSelf: entry.isSelf,
+        // Preserved from the previous shape: member ids are not exposed here.
+        id: null,
+      }));
+      response.status(200).json({ count: roster.count, returnUsers });
     } catch (error) {
       console.log(error);
       response.status(400).json({ error });
@@ -613,4 +676,7 @@ class MemberController {
 const memberService = Container.get(MemberService);
 const homeService = Container.get(HomeService);
 const placeService = Container.get(PlaceService);
-export const memberController = new MemberController(memberService, homeService, placeService);
+const memberDataService = Container.get(MemberDataService);
+export const memberController = new MemberController(
+  memberService, homeService, placeService, memberDataService,
+);

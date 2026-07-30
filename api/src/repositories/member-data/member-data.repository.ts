@@ -57,6 +57,28 @@ export class MemberDataRepository {
   }
 
   /**
+   * One attribute across many members, as memberId -> value.
+   *
+   * Batched deliberately: the roster needs every online member's privacy flag at once, and
+   * fetching that per member would add an N+1 to an endpoint that already has two. Members
+   * with the attribute unset are simply absent from the map.
+   */
+  public async getForMembers(
+    memberIds: number[],
+    name: string,
+  ): Promise<Map<number, string | null>> {
+    const result = new Map<number, string | null>();
+    if (!memberIds.length) return result;
+
+    const rows = await this.db.knex('member_data')
+      .select('member_id', 'value')
+      .whereIn('member_id', memberIds)
+      .andWhere('name', name);
+    for (const row of rows) result.set(row.member_id, row.value);
+    return result;
+  }
+
+  /**
    * Sets an attribute, replacing any existing value.
    *
    * A null or empty value DELETES the row rather than storing an empty string, so

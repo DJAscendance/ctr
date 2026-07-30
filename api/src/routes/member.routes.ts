@@ -28,6 +28,12 @@ memberRoutes.get('/session', (request, response) => memberController.session(req
 memberRoutes.post('/update_password', (request, response) =>
   memberController.updatePassword(request, response),
 );
+memberRoutes.get('/get_privacy', (request, response) =>
+  memberController.getPrivacy(request, response),
+);
+memberRoutes.post('/update_privacy', (request, response) =>
+  memberController.updatePrivacy(request, response),
+);
 memberRoutes.post('/update_role', (request, response) =>
   memberController.updatePrimaryRoleId(request, response),
 );
