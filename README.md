@@ -1,5 +1,7 @@
 # Cybertown Revival
 
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/DJAscendance/ctr?utm_source=oss&utm_medium=github&utm_campaign=DJAscendance%2Fctr&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+
 This project is an attempt to resurrect and preserve Cybertown, a VRML based community from the 
 mid-90s/early-00s. This repository contains the entire codebase for the new platform, built by the community.
 
