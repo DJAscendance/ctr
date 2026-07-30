@@ -43,7 +43,7 @@ import {
   debugMsg,
   environment,
 } from "@/helpers";
-import { PresenceStore, Presence, presenceKey, isSelfPresence } from "@/presence";
+import { PresenceStore, Presence, presenceKey, isSelfPresence, isPresenceEventForRoom, avTransformPayload } from "@/presence";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -310,25 +310,21 @@ export default Vue.extend({
       await this.$socket.joinRoom(this.$store.data.place.id, this.$store.data.user.token);
       this.debugMsg("joined room success", this.$store.data.place.id);
     },
-    /** Announces our own current viewpoint once X_ITE has one to report. */
+    /** Announces our own current viewpoint once X_ITE has one to report. Also
+     * replayed after a reconnect resync so a restarted socket server relearns
+     * our real stationary position without waiting for us to move. */
     sendInitialViewpoint(): void {
       if(this.$store.data.view3d){
         const { viewpointPosition, viewpointOrientation } = X3D.getBrowser(this.browser);
-        this.$socket.emit("AV", {
-          detail: {
-            pos: [
-              viewpointPosition.x,
-              viewpointPosition.y,
-              viewpointPosition.z,
-            ],
-            rot: [
-              viewpointOrientation.x,
-              viewpointOrientation.y,
-              viewpointOrientation.z,
-              viewpointOrientation.angle,
-            ],
-          },
-        });
+        // Emit the transform TOP-LEVEL (pos/rot), matching the movement watchers
+        // and what the server (`msg.pos`/`msg.rot`) and peers (`onPresenceMoved`)
+        // actually consume. A `detail`-wrapped payload is silently ignored by
+        // both, so a reconnect-driven resend would never restore a stationary
+        // user's position on peers (they'd wait for real movement).
+        this.$socket.sendAv(avTransformPayload(
+          [viewpointPosition.x, viewpointPosition.y, viewpointPosition.z],
+          [viewpointOrientation.x, viewpointOrientation.y, viewpointOrientation.z, viewpointOrientation.angle],
+        ), { reliable: true }); // one-shot recovery packet - must not be dropped
       }
     },
     moveObject(objectId): void {
@@ -632,20 +628,33 @@ export default Vue.extend({
       }
     },
     /**
-     * Authoritative snapshot of who's in the room right now, sent once on
-     * JOIN. Reconciling (rather than blindly appending) means this same
-     * handler can be reused as-is if a future reconnect PR re-sends
-     * ROOM_STATE to resync after a drop.
+     * True when a room-scoped presence event (AV / AV:new / AV:del) is tagged
+     * for the room this page is currently in. An untagged or mismatched event
+     * (e.g. one still in flight from a room we've navigated away from) is
+     * rejected so it can't mutate the current room's presence store.
      */
-    onRoomState(event: { room: string | number; presences: Presence[] }): void {
+    isForActiveRoom(event: { room?: string | number }): boolean {
+      return isPresenceEventForRoom(event?.room, this.$store.data.place?.id);
+    },
+    /**
+     * Authoritative snapshot of who's in the room right now. Sent on the
+     * initial JOIN and again after a reconnect-driven rejoin, so reconciling
+     * (rather than appending) resynchronizes the store after a drop without
+     * duplicating roster entries or avatar loads.
+     */
+    onRoomState(event: { room: string | number; joinId?: string; presences: Presence[] }): void {
       // A ROOM_STATE for a room we're no longer in (e.g. a stale response
       // for a load superseded by a later navigation) must never overwrite
       // the current room's presence state.
       if (`${event.room}` !== `${this.$store.data.place?.id}`) return;
+      // Reconcile only for the in-flight attempt: a stale ROOM_STATE from a
+      // superseded/older attempt (same room, older joinId) must not re-reconcile.
+      if (event.joinId !== this.$socket.pendingJoinId) return;
       this.presenceStore.reconcile(event.presences);
     },
     /** A peer joined the room - renderer-independent, may run before X_ITE exists. */
     onPresenceJoined(event): void {
+      if (!this.isForActiveRoom(event)) return;
       if (typeof event.memberId === "undefined" || !event.presenceId) return;
       this.presenceStore.upsert({
         memberId: event.memberId,
@@ -657,11 +666,13 @@ export default Vue.extend({
     },
     /** A peer left the room - removes them from the authoritative store. */
     onPresenceLeft(event): void {
+      if (!this.isForActiveRoom(event)) return;
       if (typeof event.memberId === "undefined" || !event.presenceId) return;
       this.presenceStore.remove(presenceKey(event.memberId, event.presenceId));
     },
     /** A peer moved - updates the store; gestures are forwarded live only. */
     onPresenceMoved(event): void {
+      if (!this.isForActiveRoom(event)) return;
       if (typeof event.memberId === "undefined" || !event.presenceId) return;
       const key = presenceKey(event.memberId, event.presenceId);
       this.presenceStore.updateTransform(key, event.pos, event.rot);
@@ -1009,12 +1020,12 @@ export default Vue.extend({
       this.debugMsg("place changed");
     },
     position() {
-      this.$socket.emit("AV", {
+      this.$socket.sendAv({
         pos: this.position,
       });
     },
     rotation() {
-      this.$socket.emit("AV", {
+      this.$socket.sendAv({
         rot: this.rotation,
       });
     },
@@ -1030,6 +1041,14 @@ export default Vue.extend({
   },
   mounted() {
     this.startSocketListeners();
+    // WorldBrowserPage is a v-show singleton (mounted once for the app's
+    // lifetime), so this single subscription can't accumulate. On a
+    // reconnect-driven resync, re-announce our current viewpoint so a
+    // restarted socket server relearns our real position without waiting for
+    // us to move (our own presence is otherwise absent from its fresh state).
+    this.$socket.onLifecycle((event) => {
+      if (event === "resynced") this.sendInitialViewpoint();
+    });
   },
   beforeDestroy() {},
   async beforeCreate() {

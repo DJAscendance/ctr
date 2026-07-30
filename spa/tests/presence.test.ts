@@ -8,7 +8,7 @@
  */
 import assert from "assert";
 import { EventEmitter } from "events";
-import { PresenceStore, presenceKey, isSelfPresence, Presence } from "../src/presence";
+import { PresenceStore, presenceKey, isSelfPresence, isPresenceEventForRoom, avTransformPayload, Presence } from "../src/presence";
 import { joinRoomOverSocket } from "../src/join-protocol";
 
 type Test = { name: string; run: () => void | Promise<void> };
@@ -191,66 +191,127 @@ test("isSelfPresence does not match a different member using the same tab id", (
   assert.strictEqual(isSelfPresence(makePresence({ memberId: 1, presenceId: "tab-a" }), 2, "tab-a"), false);
 });
 
-describe("joinRoomOverSocket", () => {
-  function makeFakeSocket() {
-    const emitter = new EventEmitter();
-    const emitted: any[] = [];
-    const socket = {
-      on: (event: string, cb: (...args: any[]) => void) => emitter.on(event, cb),
-      off: (event: string, cb: (...args: any[]) => void) => emitter.off(event, cb),
-      emit: (event: string, ...args: any[]) => {
-        emitted.push({ event, args });
-        if (event === "JOIN") return; // client->server emit, not looped back automatically
-        emitter.emit(event, ...args);
-      },
-    };
-    return { socket, emitter, emitted };
-  }
+function makeFakeSocket() {
+  const emitter = new EventEmitter();
+  const emitted: any[] = [];
+  const socket = {
+    on: (event: string, cb: (...args: any[]) => void) => emitter.on(event, cb),
+    off: (event: string, cb: (...args: any[]) => void) => emitter.off(event, cb),
+    emit: (event: string, ...args: any[]) => {
+      emitted.push({ event, args });
+      if (event === "JOIN") return; // client->server emit, not looped back automatically
+      emitter.emit(event, ...args);
+    },
+  };
+  const lastJoin = () => emitted.filter(e => e.event === "JOIN").slice(-1)[0]?.args[0];
+  return { socket, emitter, emitted, lastJoin };
+}
 
-  test("resolves once the server confirms with a ROOM_STATE for the requested room", async () => {
-    const { socket, emitter, emitted } = makeFakeSocket();
-    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1");
+describe("joinRoomOverSocket (correlated JOIN)", () => {
+  test("emits JOIN with the joinId and resolves on a matching room+joinId ROOM_STATE", async () => {
+    const { socket, emitter, lastJoin } = makeFakeSocket();
+    const handle = joinRoomOverSocket(socket, "room-1", "token", "presence-1", "join-1");
 
-    assert.strictEqual(emitted[0].event, "JOIN");
-    assert.deepStrictEqual(emitted[0].args[0], { room: "room-1", token: "token", presenceId: "presence-1" });
+    assert.deepStrictEqual(lastJoin(), {
+      room: "room-1", token: "token", presenceId: "presence-1", joinId: "join-1",
+    });
 
-    emitter.emit("ROOM_STATE", { room: "room-1", presences: [] });
-    await promise;
+    emitter.emit("ROOM_STATE", { room: "room-1", joinId: "join-1", presences: [] });
+    await handle.promise;
+  });
+
+  test("a ROOM_STATE with the right room but a stale joinId does not resolve", async () => {
+    const { socket, emitter } = makeFakeSocket();
+    const handle = joinRoomOverSocket(socket, "room-1", "token", "presence-1", "join-2", 30);
+
+    emitter.emit("ROOM_STATE", { room: "room-1", joinId: "join-1", presences: [] }); // older attempt
+    await assert.rejects(handle.promise, /timed out/); // never confirmed -> times out
   });
 
   test("ignores a ROOM_STATE for a different room and keeps waiting", async () => {
     const { socket, emitter } = makeFakeSocket();
-    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1");
+    const handle = joinRoomOverSocket(socket, "room-1", "token", "presence-1", "join-1");
 
-    emitter.emit("ROOM_STATE", { room: "some-other-room", presences: [] });
-    emitter.emit("ROOM_STATE", { room: "room-1", presences: [] });
+    emitter.emit("ROOM_STATE", { room: "some-other-room", joinId: "join-1", presences: [] });
+    emitter.emit("ROOM_STATE", { room: "room-1", joinId: "join-1", presences: [] });
 
-    await promise; // must not hang/reject - the second, matching event resolves it
+    await handle.promise; // second, matching event resolves it
   });
 
-  test("rejects on JOIN:error instead of resolving", async () => {
+  test("rejects on a matching room+joinId JOIN:error", async () => {
     const { socket, emitter } = makeFakeSocket();
-    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1");
+    const handle = joinRoomOverSocket(socket, "room-1", "token", "presence-1", "join-1");
 
-    emitter.emit("JOIN:error", { reason: "invalid_token" });
+    emitter.emit("JOIN:error", { room: "room-1", joinId: "join-1", reason: "invalid_token" });
 
-    await assert.rejects(promise, /invalid_token/);
+    await assert.rejects(handle.promise, /invalid_token/);
+  });
+
+  test("ignores a JOIN:error correlated to a different (older) attempt", async () => {
+    const { socket, emitter } = makeFakeSocket();
+    const handle = joinRoomOverSocket(socket, "room-1", "token", "presence-1", "join-2", 30);
+
+    emitter.emit("JOIN:error", { room: "room-1", joinId: "join-1", reason: "invalid_token" });
+    await assert.rejects(handle.promise, /timed out/); // stale error ignored -> times out
   });
 
   test("rejects if no response arrives before the timeout", async () => {
     const { socket } = makeFakeSocket();
-    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1", 20);
+    const handle = joinRoomOverSocket(socket, "room-1", "token", "presence-1", "join-1", 20);
 
-    await assert.rejects(promise, /timed out/);
+    await assert.rejects(handle.promise, /timed out/);
   });
 
-  test("a late ROOM_STATE after timeout/rejection does not resolve the already-settled promise", async () => {
+  test("cancel() rejects the attempt with its reason and stops listening", async () => {
     const { socket, emitter } = makeFakeSocket();
-    const promise = joinRoomOverSocket(socket, "room-1", "token", "presence-1", 20);
+    const handle = joinRoomOverSocket(socket, "room-1", "token", "presence-1", "join-1");
 
-    await assert.rejects(promise);
-    // Should not throw or double-resolve - listeners were cleaned up on timeout.
-    emitter.emit("ROOM_STATE", { room: "room-1", presences: [] });
+    handle.cancel("superseded");
+    await assert.rejects(handle.promise, /cancelled: superseded/);
+    // A later matching ROOM_STATE must not throw or double-settle.
+    emitter.emit("ROOM_STATE", { room: "room-1", joinId: "join-1", presences: [] });
+  });
+
+  test("a late ROOM_STATE after a settled attempt does not re-settle it", async () => {
+    const { socket, emitter } = makeFakeSocket();
+    const handle = joinRoomOverSocket(socket, "room-1", "token", "presence-1", "join-1", 20);
+
+    await assert.rejects(handle.promise);
+    emitter.emit("ROOM_STATE", { room: "room-1", joinId: "join-1", presences: [] });
+  });
+});
+
+describe("isPresenceEventForRoom", () => {
+  test("accepts an event tagged for the active room (normalized compare)", () => {
+    assert.strictEqual(isPresenceEventForRoom("room-1", "room-1"), true);
+    assert.strictEqual(isPresenceEventForRoom(5, "5"), true);
+  });
+
+  test("rejects an event for a non-active room", () => {
+    assert.strictEqual(isPresenceEventForRoom("room-2", "room-1"), false);
+  });
+
+  test("rejects an untagged (missing-room) event rather than accepting it ambiguously", () => {
+    assert.strictEqual(isPresenceEventForRoom(undefined, "room-1"), false);
+    assert.strictEqual(isPresenceEventForRoom(null, "room-1"), false);
+  });
+
+  test("rejects any event when there is no active room", () => {
+    assert.strictEqual(isPresenceEventForRoom("room-1", undefined), false);
+    assert.strictEqual(isPresenceEventForRoom("room-1", null), false);
+  });
+});
+
+describe("avTransformPayload", () => {
+  test("puts pos/rot at the TOP level (never nested under detail)", () => {
+    const payload = avTransformPayload([1, 2, 3], [0, 1, 0, 0.5]);
+    // The server (msg.pos/msg.rot) and onPresenceMoved (event.pos/event.rot)
+    // read top-level only; a `detail`-wrapped transform is silently dropped and
+    // would break reconnect viewpoint recovery.
+    assert.deepStrictEqual(payload, { pos: [1, 2, 3], rot: [0, 1, 0, 0.5] });
+    assert.strictEqual((payload as any).detail, undefined);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(payload, "pos"), true);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(payload, "rot"), true);
   });
 });
 
