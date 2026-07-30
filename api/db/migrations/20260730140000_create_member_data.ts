@@ -43,10 +43,13 @@ export async function up(knex: Knex): Promise<void> {
     table.text('value');
 
     // One row per (member, attribute). Writes are upserts against this.
+    //
+    // This is also the read index: a UNIQUE constraint IS a btree index in MySQL, and
+    // because member_id leads it already serves "all attributes for this member" and a
+    // prefix scan of one family (BU%). A separate index(['member_id', 'name']) alongside it
+    // would be the same index twice -- extra storage and extra write cost on every upsert,
+    // for no additional query the optimiser could not already satisfy.
     table.unique(['member_id', 'name']);
-    // Reads are almost always "all attributes for this member", or a prefix scan of one
-    // family (BU%), so member_id leads.
-    table.index(['member_id', 'name']);
   });
 }
 

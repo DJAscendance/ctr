@@ -63,7 +63,14 @@ export class MemberDataRepository {
    * "unset" has exactly one representation. Otherwise a cleared buddy slot could read
    * back as '' from one code path and null from another.
    */
-  public async set(memberId: number, name: string, value: string | null): Promise<void> {
+  public async set(
+    memberId: number,
+    name: string,
+    // undefined is accepted alongside null, not dead defensive code: these values come from
+    // request bodies and dynamically built objects, where a missing key reads as undefined
+    // long before it reaches a typed boundary. The guard below treats it as "unset".
+    value: string | null | undefined,
+  ): Promise<void> {
     if (value === null || value === undefined || value === '') {
       await this.unset(memberId, name);
       return;
@@ -77,7 +84,7 @@ export class MemberDataRepository {
   /** Sets several attributes in one transaction, so a partial write cannot land. */
   public async setMany(
     memberId: number,
-    values: Record<string, string | null>,
+    values: Record<string, string | null | undefined>,
   ): Promise<void> {
     const entries = Object.entries(values);
     if (!entries.length) return;
