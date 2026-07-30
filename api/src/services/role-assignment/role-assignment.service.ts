@@ -83,7 +83,10 @@ export class RoleAssignmentService {
    */
   public async syncDeputies(
     placeId: number,
-    deputyRoleId: number,
+    // Optional because 'jail' and 'cityhall' have an owner role and no deputy role, so
+    // findRoleIdsBySlug genuinely returns nothing for them. The guard below relied on that
+    // while the signature denied it.
+    deputyRoleId: number | null | undefined,
     oldDeputyIds: number[],
     newDeputyIds: number[],
   ): Promise<void> {
@@ -102,7 +105,7 @@ export class RoleAssignmentService {
           .removeIdFromAssignment(placeId, memberId, deputyRoleId);
         await this.reconcilePrimaryRole(memberId);
       } catch (e) {
-        console.log(e);
+        console.error(e);
       }
     }
 
@@ -111,7 +114,7 @@ export class RoleAssignmentService {
       try {
         await this.roleAssignmentRepository.addIdToAssignment(placeId, memberId, deputyRoleId);
       } catch (e) {
-        console.log(e);
+        console.error(e);
       }
     }
   }

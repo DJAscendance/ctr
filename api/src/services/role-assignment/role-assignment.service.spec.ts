@@ -95,10 +95,15 @@ describe('RoleAssignmentService', () => {
       roleAssignmentRepository.getByMemberId.mockResolvedValue([] as any);
     });
 
+    // Numeric comparator: a bare .sort() is lexicographic, so it would put 10 before 2 and
+    // these assertions would start failing on ids that happen to differ in digit count.
+    const byValue = (a: number, b: number) => a - b;
     const removed = () =>
-      roleAssignmentRepository.removeIdFromAssignment.mock.calls.map(call => call[1]).sort();
+      roleAssignmentRepository.removeIdFromAssignment.mock.calls
+        .map(call => call[1]).sort(byValue);
     const added = () =>
-      roleAssignmentRepository.addIdToAssignment.mock.calls.map(call => call[1]).sort();
+      roleAssignmentRepository.addIdToAssignment.mock.calls
+        .map(call => call[1]).sort(byValue);
 
     /**
      * The bug this method exists to fix. The old index-paired loop saw A != B at index 0 and
