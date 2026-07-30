@@ -14,6 +14,7 @@ export * from './object/object.repository';
 export * from './object-instance/object-instance.repository';
 export * from './role/role.repository';
 export * from './role-assignment/role-assignment.repository';
+export * from './place-role-access/place-role-access.repository';
 export * from './place/place.repository';
 export * from './transaction/transaction.repository';
 export * from './vote/vote.repository';
