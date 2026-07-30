@@ -172,6 +172,35 @@ describe('RoleAssignmentService', () => {
       expect(roleAssignmentRepository.addIdToAssignment).not.toHaveBeenCalled();
     });
 
+    /**
+     * The ordering guarantee. reconcilePrimaryRole reads role_assignment to decide whether
+     * the displayed role is still held, so it must not run until every write has landed --
+     * otherwise it observes a state that never settles.
+     */
+    it('reconciles only after every add has landed', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A], [C]);
+      const lastAdd = Math.max(
+        ...roleAssignmentRepository.addIdToAssignment.mock.invocationCallOrder,
+      );
+      const firstReconcileRead = Math.min(
+        ...memberRepository.getPrimaryRoleId.mock.invocationCallOrder,
+      );
+      expect(firstReconcileRead).toBeGreaterThan(lastAdd);
+    });
+
+    it('defers reconciliation to a collector when given one', async () => {
+      const touched = new Set<number>();
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A], [C], touched);
+      expect([...touched]).toEqual([A]);
+      expect(memberRepository.getPrimaryRoleId).not.toHaveBeenCalled();
+    });
+
+    it('does not collect a member who merely moved position', async () => {
+      const touched = new Set<number>();
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A, B], [B, A], touched);
+      expect([...touched]).toEqual([]);
+    });
+
     /** One failing row must not abandon the rest of the reconciliation. */
     it('continues past a failed write', async () => {
       roleAssignmentRepository.addIdToAssignment
@@ -179,6 +208,130 @@ describe('RoleAssignmentService', () => {
         .mockResolvedValue(undefined as any);
       await service.syncDeputies(PLACE, DEPUTY_ROLE, [], [B, C]);
       expect(roleAssignmentRepository.addIdToAssignment).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('reconcilePrimaryRoles', () => {
+    const MEMBER_A = 201;
+    const MEMBER_B = 202;
+
+    beforeEach(() => {
+      memberRepository.getPrimaryRoleId.mockResolvedValue(null);
+      roleAssignmentRepository.getByMemberId.mockResolvedValue([] as any);
+    });
+
+    /** The same member can be touched on more than one axis of a single update. */
+    it('reconciles each member once even when listed repeatedly', async () => {
+      await service.reconcilePrimaryRoles([MEMBER_A, MEMBER_A, MEMBER_B, MEMBER_A]);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(2);
+    });
+
+    /** 0 is the empty-slot sentinel and is not a member id. */
+    it('skips falsy ids', async () => {
+      await service.reconcilePrimaryRoles([0, MEMBER_A]);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(1);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(MEMBER_A);
+    });
+
+    it('continues past a member that throws', async () => {
+      memberRepository.getPrimaryRoleId
+        .mockRejectedValueOnce(new Error('gone'))
+        .mockResolvedValue(null);
+      await service.reconcilePrimaryRoles([MEMBER_A, MEMBER_B]);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(2);
+    });
+
+    it('accepts a Set as well as an array', async () => {
+      await service.reconcilePrimaryRoles(new Set([MEMBER_A, MEMBER_B]));
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('syncPlaceAccess', () => {
+    const PLACE = 42;
+    const OWNER_ROLE = 18;
+    const DEPUTY_ROLE = 20;
+    const OWNER = 301;
+    const NEW_OWNER = 302;
+    const DEPUTY = 303;
+
+    beforeEach(() => {
+      memberRepository.getPrimaryRoleId.mockResolvedValue(null);
+      roleAssignmentRepository.getByMemberId.mockResolvedValue([] as any);
+    });
+
+    const base = {
+      placeId: PLACE,
+      ownerRoleId: OWNER_ROLE,
+      deputyRoleId: DEPUTY_ROLE,
+      oldOwnerId: 0,
+      newOwnerId: 0,
+      oldDeputyIds: [] as number[],
+      newDeputyIds: [] as number[],
+    };
+
+    /**
+     * The bug this whole change exists for: re-saving an access page WITHOUT changing the
+     * owner used to clear that owner's displayed role, because the assignment was removed,
+     * read as absent, and only then put back.
+     */
+    it('does not reconcile mid-swap when the owner is unchanged', async () => {
+      await service.syncPlaceAccess({ ...base, oldOwnerId: OWNER, newOwnerId: OWNER });
+      const lastWrite = Math.max(
+        ...roleAssignmentRepository.addIdToAssignment.mock.invocationCallOrder,
+      );
+      const firstRead = Math.min(
+        ...memberRepository.getPrimaryRoleId.mock.invocationCallOrder,
+      );
+      expect(firstRead).toBeGreaterThan(lastWrite);
+    });
+
+    it('reconciles the outgoing owner after the incoming one is written', async () => {
+      await service.syncPlaceAccess({ ...base, oldOwnerId: OWNER, newOwnerId: NEW_OWNER });
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(OWNER);
+      const lastWrite = Math.max(
+        ...roleAssignmentRepository.addIdToAssignment.mock.invocationCallOrder,
+      );
+      expect(
+        Math.min(...memberRepository.getPrimaryRoleId.mock.invocationCallOrder),
+      ).toBeGreaterThan(lastWrite);
+    });
+
+    it('skips the owner writes entirely when the place has no owner either side', async () => {
+      await service.syncPlaceAccess(base);
+      expect(roleAssignmentRepository.removeIdFromAssignment).not.toHaveBeenCalled();
+      expect(roleAssignmentRepository.addIdToAssignment).not.toHaveBeenCalled();
+    });
+
+    /** 'jail' and 'cityhall': an owner role and no deputy role. */
+    it('still swaps and reconciles the owner when there is no deputy role', async () => {
+      await service.syncPlaceAccess({
+        ...base, deputyRoleId: undefined, oldOwnerId: OWNER, newOwnerId: NEW_OWNER,
+      });
+      expect(roleAssignmentRepository.addIdToAssignment)
+        .toHaveBeenCalledWith(PLACE, NEW_OWNER, OWNER_ROLE);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(OWNER);
+    });
+
+    /** One member on two axes at once must not be reconciled twice. */
+    it('reconciles a member who is both outgoing owner and dropped deputy only once',
+      async () => {
+        await service.syncPlaceAccess({
+          ...base, oldOwnerId: OWNER, newOwnerId: NEW_OWNER, oldDeputyIds: [OWNER],
+        });
+        const reads = memberRepository.getPrimaryRoleId.mock.calls
+          .filter(call => call[0] === OWNER);
+        expect(reads).toHaveLength(1);
+      });
+
+    it('applies both the owner swap and the deputy set', async () => {
+      await service.syncPlaceAccess({
+        ...base, oldOwnerId: OWNER, newOwnerId: NEW_OWNER, newDeputyIds: [DEPUTY],
+      });
+      expect(roleAssignmentRepository.addIdToAssignment)
+        .toHaveBeenCalledWith(PLACE, NEW_OWNER, OWNER_ROLE);
+      expect(roleAssignmentRepository.addIdToAssignment)
+        .toHaveBeenCalledWith(PLACE, DEPUTY, DEPUTY_ROLE);
     });
   });
 });

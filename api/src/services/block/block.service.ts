@@ -82,22 +82,22 @@ export class BlockService {
         newOwner = result[0].id;
       }
     }
-    // Both branches previously removed the old owner identically, so the removal is
-    // hoisted out rather than duplicated.
-    if (oldOwner !== 0) {
-      await this.roleAssignmentRepository.removeIdFromAssignment(blockId, oldOwner, ownerCode);
-      await this.roleAssignmentService.reconcilePrimaryRole(oldOwner);
-    }
-    if (newOwner !== 0) {
-      await this.roleAssignmentRepository.addIdToAssignment(blockId, newOwner, ownerCode);
-    }
     const oldDeputyIds = data.deputies.map(deputy => deputy.member_id);
     const newDeputyIds: number[] = [];
     for (const givenDeputy of givenDeputies) {
       newDeputyIds.push(await this.updateDeputyId(givenDeputy));
     }
-    await this.roleAssignmentService
-      .syncDeputies(blockId, deputyCode, oldDeputyIds, newDeputyIds);
+    // Owner swap, deputy set and reconciliation are one sequence whose ORDER matters, so it
+    // lives in RoleAssignmentService rather than being re-implemented per place type.
+    await this.roleAssignmentService.syncPlaceAccess({
+      placeId: blockId,
+      ownerRoleId: ownerCode,
+      deputyRoleId: deputyCode,
+      oldOwnerId: oldOwner,
+      newOwnerId: newOwner,
+      oldDeputyIds,
+      newDeputyIds,
+    });
   }
 
   public async getMapLocationAndPlaces(blockId: number): Promise<any> {

@@ -252,28 +252,29 @@ export class PlaceService {
         newOwner = result[0].id;
       }
     }
-    // Both branches previously removed the old owner identically, so the removal is
-    // hoisted out rather than duplicated.
-    if (oldOwner !== 0) {
-      await this.roleAssignmentRepository.removeIdFromAssignment(placeId, oldOwner, ownerCode);
-      await this.roleAssignmentService.reconcilePrimaryRole(oldOwner);
-    }
-    if (newOwner !== 0) {
-      await this.roleAssignmentRepository.addIdToAssignment(placeId, newOwner, ownerCode);
-    }
     // 'jail' and 'cityhall' have an owner role but no deputy role, so findRoleIdsBySlug
-    // returns deputy: undefined for them. The sync below would then write a role_assignment
-    // whose role_id is undefined -- a row pointing at no role at all. Skipped wholesale
-    // rather than guarded per-branch: a place with no deputy role has no deputies to
-    // reconcile, so there is nothing for the loop to do either way.
-    if (deputyCode === undefined || deputyCode === null) return;
-    const oldDeputyIds = data.deputies.map(deputy => deputy.member_id);
+    // returns deputy: undefined for them. Resolving deputies for such a place is pointless
+    // work, and syncPlaceAccess skips the deputy half when no deputy role is given -- but it
+    // still performs the owner swap and the reconciliation, which those places do need.
+    const hasDeputyRole = deputyCode !== undefined && deputyCode !== null;
+    const oldDeputyIds = hasDeputyRole ? data.deputies.map(deputy => deputy.member_id) : [];
     const newDeputyIds: number[] = [];
-    for (const givenDeputy of givenDeputies) {
-      newDeputyIds.push(await this.updateDeputyId(givenDeputy));
+    if (hasDeputyRole) {
+      for (const givenDeputy of givenDeputies) {
+        newDeputyIds.push(await this.updateDeputyId(givenDeputy));
+      }
     }
-    await this.roleAssignmentService
-      .syncDeputies(placeId, deputyCode, oldDeputyIds, newDeputyIds);
+    // Owner swap, deputy set and reconciliation are one sequence whose ORDER matters, so it
+    // lives in RoleAssignmentService rather than being re-implemented per place type.
+    await this.roleAssignmentService.syncPlaceAccess({
+      placeId,
+      ownerRoleId: ownerCode,
+      deputyRoleId: deputyCode,
+      oldOwnerId: oldOwner,
+      newOwnerId: newOwner,
+      oldDeputyIds,
+      newDeputyIds,
+    });
   }
 
   public async updatePlaces(placeinfo: any): Promise<void> {
