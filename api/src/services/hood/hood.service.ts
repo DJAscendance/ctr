@@ -32,8 +32,13 @@ export class HoodService {
   }
   
   public async getAccessInfoByUsername(hoodId: number): Promise<object> {
-    const deputyCode = await this.roleRepository.roleMap.NeighborhoodDeputy;
-    const ownerCode = await this.roleRepository.roleMap.NeighborhoodLeader;
+    // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
+    // NUMBER, which resolves immediately and waits for nothing -- so during the startup
+    // window before population these were both undefined and the role codes below
+    // silently addressed no role at all.
+    const roleMap = await this.roleRepository.awaitRoleMap();
+    const deputyCode = roleMap.NeighborhoodDeputy;
+    const ownerCode = roleMap.NeighborhoodLeader;
     return await this.roleAssignmentRepository.getAccessInfoByUsername(
       hoodId, 
       ownerCode, 
@@ -49,8 +54,13 @@ export class HoodService {
      * old is coming from database
      * new is coming from access rights page
      */
-    const deputyCode = await this.roleRepository.roleMap.NeighborhoodDeputy;
-    const ownerCode = await this.roleRepository.roleMap.NeighborhoodLeader;
+    // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
+    // NUMBER, which resolves immediately and waits for nothing -- so during the startup
+    // window before population these were both undefined and the role codes below
+    // silently addressed no role at all.
+    const roleMap = await this.roleRepository.awaitRoleMap();
+    const deputyCode = roleMap.NeighborhoodDeputy;
+    const ownerCode = roleMap.NeighborhoodLeader;
     let oldOwner = null;
     let newOwner = 0;
     const oldDeputies = [0,0,0,0,0,0,0,0];

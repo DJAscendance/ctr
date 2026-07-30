@@ -45,10 +45,23 @@ export class RoleAssignmentRepository {
       );
   }
 
+  /**
+   * Owner and deputy holders at a place.
+   *
+   * deputyCode is optional because some places have an owner role and no deputy role at all:
+   * 'jail' (Security Chief) and 'cityhall' (City Council). Passing undefined through to
+   * `.where('role_id', undefined)` makes knex throw "Undefined binding(s) detected when
+   * compiling SELECT", which took down the entire call -- including the owner lookup, which
+   * would otherwise have been fine. A place with no deputy role has no deputies, so that
+   * query is skipped and `deputies` comes back empty instead.
+   *
+   * Guarded here rather than at each call site because every caller has the same exposure:
+   * canWrite, and postAccessInfo in the block, hood, colony and place services.
+   */
   public async getAccessInfoByID(
     placeId,
     ownerCode,
-    deputyCode): Promise<{ owner: any[]; deputies: any[] }> {
+    deputyCode?): Promise<{ owner: any[]; deputies: any[] }> {
     const owner: any[] = await this.db.knex
       .select(
         'member_id',
@@ -56,6 +69,9 @@ export class RoleAssignmentRepository {
       .from('role_assignment')
       .where('place_id', placeId)
       .where('role_id', ownerCode);
+    if (deputyCode === undefined || deputyCode === null) {
+      return { deputies: [], owner };
+    }
     const deputies: any[] = await this.db.knex
       .select(
         'member_id',

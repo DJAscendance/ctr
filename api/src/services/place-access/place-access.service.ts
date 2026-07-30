@@ -205,7 +205,10 @@ export class PlaceAccessService {
     placeId: number,
     memberId: number,
     ownerCode: number,
-    deputyCode: number,
+    // Optional: 'jail' and 'cityhall' have an owner role and no deputy role. The repository
+    // skips the deputy query rather than letting knex throw on an undefined binding, so this
+    // resolves to no deputies rather than to an error.
+    deputyCode?: number,
   ): Promise<WriteAccessResult> {
     if (!memberId) return { allowed: false, reason: 'denied' };
 

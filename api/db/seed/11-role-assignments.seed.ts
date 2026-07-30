@@ -121,9 +121,12 @@ export async function seed(knex: Knex): Promise<void> {
     'City Guide',
   ]);
 
-  await removePreviousFixtures(knex);
-  const members = await createFixtureMembers(knex);
-
+  // Every prerequisite is read and validated BEFORE anything is deleted or created. The
+  // previous order removed the existing fixtures and recreated the member pool first, so a
+  // database with no colonies threw only after the old fixtures were already gone -- leaving
+  // it emptier than before a seed that failed. Reads first, then destructive work, so a
+  // failed precondition is a no-op.
+  //
   // Ordered deterministically so re-running produces the same assignments.
   const colonies = await knex('place').select('id', 'name')
     .where('type', 'colony').orderBy('id');
@@ -137,6 +140,9 @@ export async function seed(knex: Knex): Promise<void> {
       'role_assignment seed: no colony places found. Run the place seeds (02/03/04) first.',
     );
   }
+
+  await removePreviousFixtures(knex);
+  const members = await createFixtureMembers(knex);
 
   const assignments: { member_id: number; role_id: number; place_id: number }[] = [];
   const assign = (memberIndex: number, roleId: number, placeId: number) =>

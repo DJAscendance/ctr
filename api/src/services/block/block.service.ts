@@ -37,8 +37,13 @@ export class BlockService {
   }
   
   public async getAccessInfoByUsername(blockId: number): Promise<object> {
-    const deputyCode = await this.roleRepository.roleMap.BlockDeputy;
-    const ownerCode = await this.roleRepository.roleMap.BlockLeader;
+    // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
+    // NUMBER, which resolves immediately and waits for nothing -- so during the startup
+    // window before population these were both undefined and the role codes below
+    // silently addressed no role at all.
+    const roleMap = await this.roleRepository.awaitRoleMap();
+    const deputyCode = roleMap.BlockDeputy;
+    const ownerCode = roleMap.BlockLeader;
     return await this.roleAssignmentRepository.getAccessInfoByUsername(
       blockId, 
       ownerCode, 
@@ -54,8 +59,13 @@ export class BlockService {
      * old is coming from database
      * new is coming from access rights page
      */
-    const deputyCode = await this.roleRepository.roleMap.BlockDeputy;
-    const ownerCode = await this.roleRepository.roleMap.BlockLeader;
+    // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
+    // NUMBER, which resolves immediately and waits for nothing -- so during the startup
+    // window before population these were both undefined and the role codes below
+    // silently addressed no role at all.
+    const roleMap = await this.roleRepository.awaitRoleMap();
+    const deputyCode = roleMap.BlockDeputy;
+    const ownerCode = roleMap.BlockLeader;
     let oldOwner = null;
     let newOwner = 0;
     const oldDeputies = [0,0,0,0,0,0,0,0];

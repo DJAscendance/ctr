@@ -305,8 +305,14 @@ export class PlaceService {
    * `deputy` is optional because it genuinely is: 'jail' and 'cityhall' below have an owner
    * role and no deputy role. The signature previously promised a number for every slug,
    * which is how an undefined deputy role reached a role_assignment write.
+   *
+   * roleMap is awaited here because this is the single place every slug's role codes are
+   * resolved -- all four callers get the fix from this one await. Without it the whole table
+   * below is built from an unpopulated map during the startup window, so every owner and
+   * deputy code is undefined.
    */
   private async findRoleIdsBySlug(slug: string): Promise<{ owner: number, deputy?: number }> {
+    await this.roleRepository.awaitRoleMap();
     const roleId = {
       bank: {
         owner: this.roleRepository.roleMap.BankManager,
