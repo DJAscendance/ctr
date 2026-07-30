@@ -15,6 +15,7 @@ import {
   TransactionRepository,
   WalletRepository,
 } from '../../repositories';
+import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
 
 @Service()
 export class AdminService {
@@ -32,6 +33,7 @@ export class AdminService {
    private objectInstanceRepository: ObjectInstanceRepository,
    private transactionRepository: TransactionRepository,
    private walletRepository: WalletRepository,
+   private roleAssignmentService: RoleAssignmentService,
   ) {}
   
   public async addBan(ban_member_id, time_frame, type, assigner_member_id, reason): Promise<void> {
@@ -61,14 +63,12 @@ export class AdminService {
   }
 
   public async fireRole(member_id: number, role_id: number, place_id: number): Promise<void> {
-    const response: any = await this.memberRepository.getPrimaryRoleName(member_id);
-    if (response.length !== 0) {
-      const primaryRoleId = response[0].primary_role_id;
-      if (role_id === primaryRoleId){
-        await this.memberRepository.update(member_id, {primary_role_id: null});
-      }
-    }
+    // Remove first, then reconcile. The previous version inspected primary_role_id
+    // before deleting the assignment, deciding against state it was about to change --
+    // and it only cleared the column when the fired role happened to be the displayed
+    // one, leaving a member who still held other roles with no display role at all.
     await this.roleAssignmentRepository.removeIdFromAssignment(place_id, member_id, role_id);
+    await this.roleAssignmentService.reconcilePrimaryRole(member_id);
     return;
   }
   

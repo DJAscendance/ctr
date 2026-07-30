@@ -10,6 +10,7 @@ import {
 } from '../../repositories';
 import { Place } from '../../types/models';
 import {includes} from 'lodash';
+import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
 
 /** Service for dealing with blocks */
 @Service()
@@ -21,6 +22,7 @@ export class HoodService {
     private roleAssignmentRepository: RoleAssignmentRepository,
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
+    private roleAssignmentService: RoleAssignmentService,
   ) {}
   
   public async find(hoodId: number): Promise<Place> {
@@ -65,29 +67,14 @@ export class HoodService {
         newOwner = result[0].id;
       }
     }
+    // Both branches previously removed the old owner identically, so the removal is
+    // hoisted out rather than duplicated.
+    if (oldOwner !== 0) {
+      await this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldOwner, ownerCode);
+      await this.roleAssignmentService.reconcilePrimaryRole(oldOwner);
+    }
     if (newOwner !== 0) {
-      if (oldOwner !== 0) {
-        await this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldOwner, ownerCode);
-        const response: any = await this.memberRepository.getPrimaryRoleName(oldOwner);
-        if (response.length !== 0) {
-          const primaryRoleId = response[0].primary_role_id;
-          if (ownerCode === primaryRoleId){
-            await this.memberRepository.update(oldOwner, {primary_role_id: null});
-          }
-        }
-      }
       await this.roleAssignmentRepository.addIdToAssignment(hoodId, newOwner, ownerCode);
-    } else {
-      if (oldOwner !== 0) {
-        await this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldOwner, ownerCode);
-        const response: any = await this.memberRepository.getPrimaryRoleName(oldOwner);
-        if (response.length !== 0) {
-          const primaryRoleId = response[0].primary_role_id;
-          if (ownerCode === primaryRoleId){
-            await this.memberRepository.update(oldOwner, {primary_role_id: null});
-          }
-        }
-      }
     }
     data.deputies.forEach((deputies, index) => {
       oldDeputies[index] = deputies.member_id;
@@ -95,44 +82,26 @@ export class HoodService {
     for (let i = 0; i < givenDeputies.length; i++) {
       newDeputies[i] = await this.updateDeputyId(givenDeputies[i]);
     }
-    oldDeputies.forEach((oldDeputies, index) => {
-      if (oldDeputies !== newDeputies[index]) {
-        if (newDeputies[index] === 0) {
-          try {
-            this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldDeputies, deputyCode);
-          } catch (e) {
-            console.log(e);
-          }
-          if (oldDeputies !== 0) {
-            this.memberRepository.getPrimaryRoleName(oldDeputies)
-              .then((response: any) => {
-                if (response.length !== 0) {
-                  const primaryRoleId = response[0].primary_role_id;
-                  if (primaryRoleId && deputyCode === primaryRoleId) {
-                    this.memberRepository.update(oldDeputies, {primary_role_id: null});
-                  }
-                }
-              });
-          }
-        } else {
-          try {
-            this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldDeputies, deputyCode);
-            this.memberRepository.getPrimaryRoleName(oldDeputies)
-              .then((response: any) => {
-                if (response.length !== 0) {
-                  const primaryRoleId = response[0].primary_role_id;
-                  if (deputyCode === primaryRoleId) {
-                    this.memberRepository.update(oldDeputies, {primary_role_id: null});
-                  }
-                }
-              });
-            this.roleAssignmentRepository.addIdToAssignment(hoodId, newDeputies[index], deputyCode);
-          } catch (e) {
-            console.log(e);
-          }
+    // Was a forEach containing un-awaited promise chains, so the primary-role write
+    // could land after the request had already returned. A for loop lets these await.
+    for (let index = 0; index < oldDeputies.length; index++) {
+      const oldDeputy = oldDeputies[index];
+      const newDeputy = newDeputies[index];
+      if (oldDeputy === newDeputy) continue;
+      try {
+        if (oldDeputy !== 0) {
+          await this.roleAssignmentRepository
+            .removeIdFromAssignment(hoodId, oldDeputy, deputyCode);
+          await this.roleAssignmentService.reconcilePrimaryRole(oldDeputy);
         }
+        if (newDeputy !== 0) {
+          await this.roleAssignmentRepository
+            .addIdToAssignment(hoodId, newDeputy, deputyCode);
+        }
+      } catch (e) {
+        console.log(e);
       }
-    });
+    }
   }
   
   public async getColony(hoodId: number): Promise<Place> {
