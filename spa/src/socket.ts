@@ -125,6 +125,12 @@ class SocketManager {
    * @returns promise resolved once the server confirms the (possibly retried) join
    */
   public joinRoom(roomId: string|number, userToken: string): Promise<void> {
+    // The coordinator only exists once start() has run. leaveRoom, roomReady,
+    // lifecyclePhase, pendingJoinId, currentRoom and sendAv all guard this already; joining
+    // and onLifecycle were the two that would throw on a call made before start.
+    if (!this.coordinator) {
+      return Promise.reject(new Error("socket not started - call start() before joinRoom"));
+    }
     return this.coordinator.requestRoom(roomId, userToken);
   }
 
@@ -147,6 +153,15 @@ class SocketManager {
    * resynced / failed). Returns an unsubscribe function.
    */
   public onLifecycle(listener: (event: LifecycleEvent) => void): () => void {
+    // Guarded so a pre-start() subscribe does not throw, but LOUDLY: a silent no-op here
+    // would mean the subscriber never receives "ready" and never learns the room came up,
+    // which is the same class of failure as the Chat bug this branch fixes. The no-op keeps
+    // the documented "always returns an unsubscribe function" contract intact; the error
+    // says the subscription was dropped so it is diagnosable rather than mysterious.
+    if (!this.coordinator) {
+      console.error("onLifecycle called before start() - subscription dropped");
+      return () => undefined;
+    }
     return this.coordinator.onLifecycle(listener);
   }
 
@@ -185,7 +200,11 @@ class SocketManager {
    * @returns promise to be resolved on connection
    */
   public start(): Promise<void> {
-    if (this.socket) return;
+    // Resolved promise, not a bare `return`. The signature promises a Promise, so returning
+    // undefined broke any caller that chained off it -- `.then()` on undefined throws. The
+    // only current caller awaits, and `await undefined` happens to be fine, which is why
+    // this went unnoticed rather than why it was safe.
+    if (this.socket) return Promise.resolve();
     debugMsg("starting socket...");
     this.socket = this.createSocket();
     this.coordinator = new ReconnectCoordinator({

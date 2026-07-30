@@ -306,6 +306,8 @@ interface ChatData {
   pingIntervalId: any;
   worldMembers: any[];
   chatEnabled: boolean;
+  /** Whether the one-time room activation has run for this Chat instance. */
+  roomActivated: boolean;
   unsubscribeLifecycle: (() => void) | null;
   showRole: boolean;
   showXP: boolean;
@@ -404,6 +406,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       pingIntervalId: null,
       worldMembers: [],
       chatEnabled: false,
+      roomActivated: false,
       unsubscribeLifecycle: null,
       showRole: true,
       showXP: true,
@@ -1168,12 +1171,57 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
         this.chatEnabled = false;
         this.setTimers(false);
         this.systemMessage("Reconnecting to chat server...");
+      } else if (event === "ready") {
+        // The FIRST successful join emits "ready", not "resynced" -- only a recovered
+        // rejoin emits the latter. Handling just "resynced" meant a Chat that mounted
+        // before the room was ready never enabled at all: mounted() skips activation
+        // when roomReady is still false, and nothing else set chatEnabled. Input stayed
+        // hidden and startNewChat, canAdmin, getRole, getXpAmount, joinedChat and the
+        // timers never ran. Whether it broke came down to whether the join beat the
+        // mount, which is why it presented as chat intermittently not working.
+        if (!this.roomActivated) {
+          this.activateRoom();
+          return;
+        }
+        // Already activated, so this is a rejoin that could not be resynced. Restore
+        // input without calling activateRoom -- startNewChat clears this.messages, and
+        // wiping the visible history on a reconnect is exactly what the "resynced"
+        // branch has always been careful to avoid.
+        if (this.chatEnabled) return;
+        this.chatEnabled = true;
+        this.setTimers(true);
+        this.systemMessage("Reconnected to chat server.");
       } else if (event === "resynced") {
         if (this.chatEnabled) return; // already up - don't repeat
         this.chatEnabled = true;
         this.setTimers(true);
         this.systemMessage("Reconnected to chat server.");
+      } else if (event === "failed") {
+        // Without this the user keeps the "Reconnecting to chat server..." message from
+        // the disconnect indefinitely, which stops being true the moment the coordinator
+        // gives up. Say so rather than leave a spinner that means nothing.
+        this.setTimers(false);
+        this.chatEnabled = false;
+        this.systemMessage("Could not reconnect to chat server. Please reload the page.");
       }
+    },
+    /**
+     * The one-time setup for a room, run once the room is authoritative.
+     *
+     * Called from mounted() when the room is already ready, and from the "ready"
+     * lifecycle event when it was not. Idempotent via roomActivated, because both paths
+     * can be reached and startNewChat clears the message log.
+     */
+    activateRoom(): void {
+      if (this.roomActivated) return;
+      this.roomActivated = true;
+      this.chatEnabled = true;
+      this.startNewChat();
+      this.canAdmin();
+      this.getRole();
+      this.getXpAmount();
+      this.joinedChat();
+      this.setTimers(true);
     },
     onUpdateObjectEvent(object): void {
       if([object.member_username, object.buyer_username].includes(this.$store.data.user.username) ||
@@ -1299,16 +1347,11 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
     this.subscribeToPresence();
     // Gate on authoritative room readiness, not raw transport connectivity: a
     // Chat mounted while the socket is connected but still resyncing must stay
-    // disabled until the room is confirmed. `onSocketLifecycle` flips it on the
-    // "resynced" transition if we mounted mid-resync.
+    // disabled until the room is confirmed. If we mounted first, the "ready"
+    // lifecycle event runs activateRoom instead -- "resynced" is not enough,
+    // because a first join never emits it.
     if (this.$store.data.place && this.$socket.roomReady) {
-      this.chatEnabled = true;
-      this.startNewChat();
-      this.canAdmin();
-      this.getRole();
-      this.getXpAmount();
-      this.joinedChat();
-      this.setTimers(true);
+      this.activateRoom();
     }
   },
 });
