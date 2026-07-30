@@ -78,27 +78,22 @@ export class ColonyService {
         newOwner = result[0].id;
       }
     }
-    // Both branches previously removed the old owner identically, so the removal is
-    // hoisted out rather than duplicated.
-    // Members whose displayed role may need re-checking once every write below has landed.
-    // Reconciling inline here cleared the owner's badge on a save that did not even change
-    // the owner: the assignment was removed, read as absent, and only then re-added.
-    const touched = new Set<number>();
-    if (oldOwner !== 0) {
-      await this.roleAssignmentRepository.removeIdFromAssignment(colonyId, oldOwner, ownerCode);
-      touched.add(oldOwner);
-    }
-    if (newOwner !== 0) {
-      await this.roleAssignmentRepository.addIdToAssignment(colonyId, newOwner, ownerCode);
-    }
     const oldDeputyIds = data.deputies.map(deputy => deputy.member_id);
     const newDeputyIds: number[] = [];
     for (const givenDeputy of givenDeputies) {
       newDeputyIds.push(await this.updateDeputyId(givenDeputy));
     }
-    await this.roleAssignmentService
-      .syncDeputies(colonyId, deputyCode, oldDeputyIds, newDeputyIds, touched);
-    await this.roleAssignmentService.reconcilePrimaryRoles(touched);
+    // Owner swap, deputy set and reconciliation are one sequence whose ORDER matters, so it
+    // lives in RoleAssignmentService rather than being re-implemented per place type.
+    await this.roleAssignmentService.syncPlaceAccess({
+      placeId: colonyId,
+      ownerRoleId: ownerCode,
+      deputyRoleId: deputyCode,
+      oldOwnerId: oldOwner,
+      newOwnerId: newOwner,
+      oldDeputyIds,
+      newDeputyIds,
+    });
   }
 
   /**

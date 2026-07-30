@@ -252,36 +252,29 @@ export class PlaceService {
         newOwner = result[0].id;
       }
     }
-    // Both branches previously removed the old owner identically, so the removal is
-    // hoisted out rather than duplicated.
-    // Members whose displayed role may need re-checking once every write below has landed.
-    // Reconciling inline here cleared the owner's badge on a save that did not even change
-    // the owner: the assignment was removed, read as absent, and only then re-added.
-    const touched = new Set<number>();
-    if (oldOwner !== 0) {
-      await this.roleAssignmentRepository.removeIdFromAssignment(placeId, oldOwner, ownerCode);
-      touched.add(oldOwner);
-    }
-    if (newOwner !== 0) {
-      await this.roleAssignmentRepository.addIdToAssignment(placeId, newOwner, ownerCode);
-    }
     // 'jail' and 'cityhall' have an owner role but no deputy role, so findRoleIdsBySlug
-    // returns deputy: undefined for them. The sync would then write a role_assignment whose
-    // role_id is undefined -- a row pointing at no role at all. Skipped wholesale rather
-    // than guarded per-branch: a place with no deputy role has no deputies to reconcile.
-    //
-    // A conditional rather than an early return, because the outgoing OWNER of such a place
-    // still needs reconciling and the pass that does it is below.
-    if (deputyCode !== undefined && deputyCode !== null) {
-      const oldDeputyIds = data.deputies.map(deputy => deputy.member_id);
-      const newDeputyIds: number[] = [];
+    // returns deputy: undefined for them. Resolving deputies for such a place is pointless
+    // work, and syncPlaceAccess skips the deputy half when no deputy role is given -- but it
+    // still performs the owner swap and the reconciliation, which those places do need.
+    const hasDeputyRole = deputyCode !== undefined && deputyCode !== null;
+    const oldDeputyIds = hasDeputyRole ? data.deputies.map(deputy => deputy.member_id) : [];
+    const newDeputyIds: number[] = [];
+    if (hasDeputyRole) {
       for (const givenDeputy of givenDeputies) {
         newDeputyIds.push(await this.updateDeputyId(givenDeputy));
       }
-      await this.roleAssignmentService
-        .syncDeputies(placeId, deputyCode, oldDeputyIds, newDeputyIds, touched);
     }
-    await this.roleAssignmentService.reconcilePrimaryRoles(touched);
+    // Owner swap, deputy set and reconciliation are one sequence whose ORDER matters, so it
+    // lives in RoleAssignmentService rather than being re-implemented per place type.
+    await this.roleAssignmentService.syncPlaceAccess({
+      placeId,
+      ownerRoleId: ownerCode,
+      deputyRoleId: deputyCode,
+      oldOwnerId: oldOwner,
+      newOwnerId: newOwner,
+      oldDeputyIds,
+      newDeputyIds,
+    });
   }
 
   public async updatePlaces(placeinfo: any): Promise<void> {

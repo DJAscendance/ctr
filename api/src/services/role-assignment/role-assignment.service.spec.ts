@@ -246,4 +246,92 @@ describe('RoleAssignmentService', () => {
       expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('syncPlaceAccess', () => {
+    const PLACE = 42;
+    const OWNER_ROLE = 18;
+    const DEPUTY_ROLE = 20;
+    const OWNER = 301;
+    const NEW_OWNER = 302;
+    const DEPUTY = 303;
+
+    beforeEach(() => {
+      memberRepository.getPrimaryRoleId.mockResolvedValue(null);
+      roleAssignmentRepository.getByMemberId.mockResolvedValue([] as any);
+    });
+
+    const base = {
+      placeId: PLACE,
+      ownerRoleId: OWNER_ROLE,
+      deputyRoleId: DEPUTY_ROLE,
+      oldOwnerId: 0,
+      newOwnerId: 0,
+      oldDeputyIds: [] as number[],
+      newDeputyIds: [] as number[],
+    };
+
+    /**
+     * The bug this whole change exists for: re-saving an access page WITHOUT changing the
+     * owner used to clear that owner's displayed role, because the assignment was removed,
+     * read as absent, and only then put back.
+     */
+    it('does not reconcile mid-swap when the owner is unchanged', async () => {
+      await service.syncPlaceAccess({ ...base, oldOwnerId: OWNER, newOwnerId: OWNER });
+      const lastWrite = Math.max(
+        ...roleAssignmentRepository.addIdToAssignment.mock.invocationCallOrder,
+      );
+      const firstRead = Math.min(
+        ...memberRepository.getPrimaryRoleId.mock.invocationCallOrder,
+      );
+      expect(firstRead).toBeGreaterThan(lastWrite);
+    });
+
+    it('reconciles the outgoing owner after the incoming one is written', async () => {
+      await service.syncPlaceAccess({ ...base, oldOwnerId: OWNER, newOwnerId: NEW_OWNER });
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(OWNER);
+      const lastWrite = Math.max(
+        ...roleAssignmentRepository.addIdToAssignment.mock.invocationCallOrder,
+      );
+      expect(
+        Math.min(...memberRepository.getPrimaryRoleId.mock.invocationCallOrder),
+      ).toBeGreaterThan(lastWrite);
+    });
+
+    it('skips the owner writes entirely when the place has no owner either side', async () => {
+      await service.syncPlaceAccess(base);
+      expect(roleAssignmentRepository.removeIdFromAssignment).not.toHaveBeenCalled();
+      expect(roleAssignmentRepository.addIdToAssignment).not.toHaveBeenCalled();
+    });
+
+    /** 'jail' and 'cityhall': an owner role and no deputy role. */
+    it('still swaps and reconciles the owner when there is no deputy role', async () => {
+      await service.syncPlaceAccess({
+        ...base, deputyRoleId: undefined, oldOwnerId: OWNER, newOwnerId: NEW_OWNER,
+      });
+      expect(roleAssignmentRepository.addIdToAssignment)
+        .toHaveBeenCalledWith(PLACE, NEW_OWNER, OWNER_ROLE);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(OWNER);
+    });
+
+    /** One member on two axes at once must not be reconciled twice. */
+    it('reconciles a member who is both outgoing owner and dropped deputy only once',
+      async () => {
+        await service.syncPlaceAccess({
+          ...base, oldOwnerId: OWNER, newOwnerId: NEW_OWNER, oldDeputyIds: [OWNER],
+        });
+        const reads = memberRepository.getPrimaryRoleId.mock.calls
+          .filter(call => call[0] === OWNER);
+        expect(reads).toHaveLength(1);
+      });
+
+    it('applies both the owner swap and the deputy set', async () => {
+      await service.syncPlaceAccess({
+        ...base, oldOwnerId: OWNER, newOwnerId: NEW_OWNER, newDeputyIds: [DEPUTY],
+      });
+      expect(roleAssignmentRepository.addIdToAssignment)
+        .toHaveBeenCalledWith(PLACE, NEW_OWNER, OWNER_ROLE);
+      expect(roleAssignmentRepository.addIdToAssignment)
+        .toHaveBeenCalledWith(PLACE, DEPUTY, DEPUTY_ROLE);
+    });
+  });
 });

@@ -151,6 +151,51 @@ export class RoleAssignmentService {
   }
 
   /**
+   * Applies a place's whole access update: owner swap, deputy set, then reconciliation.
+   *
+   * The ordering here is the point. reconcilePrimaryRole must not run until every write has
+   * landed, and getting that wrong is invisible -- the request succeeds and a member quietly
+   * loses their displayed role. Keeping the sequence in one place means the block, hood,
+   * colony and place services cannot each get it subtly differently, which is how the
+   * original bug survived in four copies while being fixed in none.
+   *
+   * Callers still own resolving usernames to ids; this owns the order of the writes.
+   */
+  public async syncPlaceAccess(params: {
+    placeId: number;
+    ownerRoleId: number;
+    /** Absent for places with an owner role and no deputy role ('jail', 'cityhall'). */
+    deputyRoleId?: number | null;
+    /** 0 when the place currently has no owner. */
+    oldOwnerId: number;
+    /** 0 when the update leaves the place without an owner. */
+    newOwnerId: number;
+    oldDeputyIds: number[];
+    newDeputyIds: number[];
+  }): Promise<void> {
+    const {
+      placeId, ownerRoleId, deputyRoleId, oldOwnerId, newOwnerId, oldDeputyIds, newDeputyIds,
+    } = params;
+
+    // Members whose displayed role may need re-checking once every write below has landed.
+    const touched = new Set<number>();
+
+    if (oldOwnerId !== 0) {
+      await this.roleAssignmentRepository
+        .removeIdFromAssignment(placeId, oldOwnerId, ownerRoleId);
+      touched.add(oldOwnerId);
+    }
+    if (newOwnerId !== 0) {
+      await this.roleAssignmentRepository.addIdToAssignment(placeId, newOwnerId, ownerRoleId);
+    }
+
+    // Defers into `touched` rather than reconciling, so the pass below is the only one.
+    await this.syncDeputies(placeId, deputyRoleId, oldDeputyIds, newDeputyIds, touched);
+
+    await this.reconcilePrimaryRoles(touched);
+  }
+
+  /**
    * Reconciles several members' displayed roles, after all assignment writes are done.
    *
    * Deduplicated because the same member can be touched on more than one axis of a single
