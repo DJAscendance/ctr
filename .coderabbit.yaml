@@ -1,0 +1,31 @@
+# CodeRabbit configuration for DJAscendance/ctr
+#
+# Added because auto review only runs against the default branch by default, and the work
+# on this fork is deliberately stacked: roster-privacy sits on member-data-store, deputy
+# reconciliation sits on access-rights. Every one of those PRs was skipped with "Auto
+# reviews are disabled on base/target branches other than the default branch", which meant
+# the stacked half of the work went unreviewed while only the master-based PRs got looked
+# at. The base_branches patterns below opt the feature branches in.
+#
+# Schema: https://coderabbit.ai/integrations/schema.v2.json
+
+language: en-US
+
+reviews:
+  # Terse rather than exhaustive. This repository is a reimplementation of a 2001 product
+  # and carries a lot of deliberate fidelity choices that a chattier profile flags as
+  # defects; those get explained in commit messages and PR bodies instead.
+  profile: chill
+
+  auto_review:
+    enabled: true
+    # Regex, anchored by CodeRabbit. 'master' is the default branch; the two prefixes cover
+    # the stacked feature and fix branches that PRs here are routinely based on.
+    base_branches:
+      - master
+      - 'feat/.*'
+      - 'fix/.*'
+
+  # Keep the skip notice. It is what revealed the stacked PRs were not being reviewed at
+  # all -- without it they simply looked quiet.
+  review_status: true
