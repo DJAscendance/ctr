@@ -81,4 +81,99 @@ describe('RoleAssignmentService', () => {
       });
     });
   });
+
+  describe('syncDeputies', () => {
+    const PLACE = 42;
+    const DEPUTY_ROLE = 20;
+    const A = 101;
+    const B = 102;
+    const C = 103;
+
+    /** Nobody holds a primary role by default, so reconcilePrimaryRole is a no-op. */
+    beforeEach(() => {
+      memberRepository.getPrimaryRoleId.mockResolvedValue(null);
+      roleAssignmentRepository.getByMemberId.mockResolvedValue([] as any);
+    });
+
+    const removed = () =>
+      roleAssignmentRepository.removeIdFromAssignment.mock.calls.map(call => call[1]).sort();
+    const added = () =>
+      roleAssignmentRepository.addIdToAssignment.mock.calls.map(call => call[1]).sort();
+
+    /**
+     * The bug this method exists to fix. The old index-paired loop saw A != B at index 0 and
+     * so removed A and added B, then saw B != A at index 1 and removed B -- which it had just
+     * added and which was meant to stay. Membership is unchanged here, so nothing should move.
+     */
+    it('does nothing when the same members are reordered', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A, B], [B, A]);
+      expect(roleAssignmentRepository.removeIdFromAssignment).not.toHaveBeenCalled();
+      expect(roleAssignmentRepository.addIdToAssignment).not.toHaveBeenCalled();
+    });
+
+    /** A reordered member must not have their displayed role reconciled away either. */
+    it('does not reconcile the primary role of a member who stays a deputy', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A, B], [B, A]);
+      expect(memberRepository.getPrimaryRoleId).not.toHaveBeenCalled();
+    });
+
+    it('removes only members who are no longer deputies', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A, B], [A]);
+      expect(removed()).toEqual([B]);
+      expect(added()).toEqual([]);
+    });
+
+    it('adds only members who were not deputies before', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A], [A, C]);
+      expect(added()).toEqual([C]);
+      expect(removed()).toEqual([]);
+    });
+
+    it('handles a straight swap', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A], [C]);
+      expect(removed()).toEqual([A]);
+      expect(added()).toEqual([C]);
+    });
+
+    it('reconciles the primary role of a removed deputy', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A], []);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(A);
+    });
+
+    /** 0 is the empty-slot sentinel the fixed eight-element arrays were filled with. */
+    it('ignores the 0 sentinel on both sides', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [A, 0, 0], [A, 0, 0, 0]);
+      expect(roleAssignmentRepository.removeIdFromAssignment).not.toHaveBeenCalled();
+      expect(roleAssignmentRepository.addIdToAssignment).not.toHaveBeenCalled();
+    });
+
+    /** The same person submitted twice is still one deputy, so one write. */
+    it('deduplicates repeated ids', async () => {
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [], [C, C]);
+      expect(added()).toEqual([C]);
+    });
+
+    it('caps incoming deputies at the slot count', async () => {
+      const nine = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [], nine);
+      expect(added()).toHaveLength(RoleAssignmentService.DEPUTY_SLOTS);
+      expect(added()).not.toContain(9);
+    });
+
+    /** 'jail' and 'cityhall' have an owner role and no deputy role. */
+    it('does nothing when the place has no deputy role', async () => {
+      await service.syncDeputies(PLACE, undefined, [A], [C]);
+      expect(roleAssignmentRepository.removeIdFromAssignment).not.toHaveBeenCalled();
+      expect(roleAssignmentRepository.addIdToAssignment).not.toHaveBeenCalled();
+    });
+
+    /** One failing row must not abandon the rest of the reconciliation. */
+    it('continues past a failed write', async () => {
+      roleAssignmentRepository.addIdToAssignment
+        .mockRejectedValueOnce(new Error('duplicate'))
+        .mockResolvedValue(undefined as any);
+      await service.syncDeputies(PLACE, DEPUTY_ROLE, [], [B, C]);
+      expect(roleAssignmentRepository.addIdToAssignment).toHaveBeenCalledTimes(2);
+    });
+  });
 });

@@ -238,8 +238,6 @@ export class PlaceService {
     const ownerCode = placeRoleId.owner;
     let oldOwner = null;
     let newOwner = 0;
-    const oldDeputies = [0, 0, 0, 0, 0, 0, 0, 0];
-    const newDeputies = [0, 0, 0, 0, 0, 0, 0, 0];
     const data = await this
       .roleAssignmentRepository
       .getAccessInfoByID(placeId, ownerCode, deputyCode);
@@ -269,32 +267,13 @@ export class PlaceService {
     // rather than guarded per-branch: a place with no deputy role has no deputies to
     // reconcile, so there is nothing for the loop to do either way.
     if (deputyCode === undefined || deputyCode === null) return;
-    data.deputies.forEach((deputies, index) => {
-      oldDeputies[index] = deputies.member_id;
-    });
-    for (let i = 0; i < givenDeputies.length; i++) {
-      newDeputies[i] = await this.updateDeputyId(givenDeputies[i]);
+    const oldDeputyIds = data.deputies.map(deputy => deputy.member_id);
+    const newDeputyIds: number[] = [];
+    for (const givenDeputy of givenDeputies) {
+      newDeputyIds.push(await this.updateDeputyId(givenDeputy));
     }
-    // Was a forEach containing un-awaited promise chains, so the primary-role write
-    // could land after the request had already returned. A for loop lets these await.
-    for (let index = 0; index < oldDeputies.length; index++) {
-      const oldDeputy = oldDeputies[index];
-      const newDeputy = newDeputies[index];
-      if (oldDeputy === newDeputy) continue;
-      try {
-        if (oldDeputy !== 0) {
-          await this.roleAssignmentRepository
-            .removeIdFromAssignment(placeId, oldDeputy, deputyCode);
-          await this.roleAssignmentService.reconcilePrimaryRole(oldDeputy);
-        }
-        if (newDeputy !== 0) {
-          await this.roleAssignmentRepository
-            .addIdToAssignment(placeId, newDeputy, deputyCode);
-        }
-      } catch (e) {
-        console.log(e);
-      }
-    }
+    await this.roleAssignmentService
+      .syncDeputies(placeId, deputyCode, oldDeputyIds, newDeputyIds);
   }
 
   public async updatePlaces(placeinfo: any): Promise<void> {

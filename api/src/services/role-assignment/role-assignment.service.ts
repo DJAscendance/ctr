@@ -51,8 +51,74 @@ export class RoleAssignmentService {
   }
   
   /**
-   * Grabs all payments due to users from database 50 at a time and 
-   * places them in response array sorts respone into highest cc payout 
+   * How many deputy slots a place has.
+   *
+   * Comes from the `[0,0,0,0,0,0,0,0]` arrays that block, hood, colony and place each
+   * declared. Kept as an explicit cap on incoming deputies so this change does not quietly
+   * widen how many deputies a place can be given.
+   */
+  public static readonly DEPUTY_SLOTS = 8;
+
+  /**
+   * Brings a place's deputy assignments from one set of members to another.
+   *
+   * Replaces a loop that was duplicated verbatim in the block, hood, colony and place
+   * services, and which paired old against new BY INDEX -- so it was order-sensitive.
+   * Given old [A, B] and new [B, A], index 0 saw A != B and so removed A and added B;
+   * index 1 then saw B != A and removed B, which had just been added and was meant to
+   * stay. B lost the role, and took a reconcilePrimaryRole call while still a deputy --
+   * exactly the spurious primary-role clearing that reconcilePrimaryRole exists to
+   * prevent. Reordering the slots in the UI was enough to trigger it.
+   *
+   * Membership, not position, is what a deputy assignment means, so the comparison is
+   * between sets: a member in both is left alone, which also means no needless
+   * remove/re-add churn on their row.
+   *
+   * Old ids are not capped, so deputies beyond the slot count still get cleaned up if
+   * they somehow exist; new ids are capped, matching the fixed arrays this replaces.
+   * 0 is the "empty slot" sentinel throughout this codebase and is not a member id.
+   *
+   * Failures are caught per member so one bad row does not abandon the rest of the
+   * reconciliation, which is what the loops it replaces did.
+   */
+  public async syncDeputies(
+    placeId: number,
+    deputyRoleId: number,
+    oldDeputyIds: number[],
+    newDeputyIds: number[],
+  ): Promise<void> {
+    if (deputyRoleId === undefined || deputyRoleId === null) return;
+
+    const asIdSet = (ids: number[]): Set<number> =>
+      new Set(ids.map(Number).filter(id => Number.isInteger(id) && id !== 0));
+
+    const oldIds = asIdSet(oldDeputyIds);
+    const newIds = asIdSet(newDeputyIds.slice(0, RoleAssignmentService.DEPUTY_SLOTS));
+
+    for (const memberId of oldIds) {
+      if (newIds.has(memberId)) continue;
+      try {
+        await this.roleAssignmentRepository
+          .removeIdFromAssignment(placeId, memberId, deputyRoleId);
+        await this.reconcilePrimaryRole(memberId);
+      } catch (e) {
+        console.log(e);
+      }
+    }
+
+    for (const memberId of newIds) {
+      if (oldIds.has(memberId)) continue;
+      try {
+        await this.roleAssignmentRepository.addIdToAssignment(placeId, memberId, deputyRoleId);
+      } catch (e) {
+        console.log(e);
+      }
+    }
+  }
+
+  /**
+   * Grabs all payments due to users from database 50 at a time and
+   * places them in response array sorts respone into highest cc payout
    * then drops all other payouts to the same user
    */
   public async getMembersDueRoleCredit(limit: number): Promise<any[]> {

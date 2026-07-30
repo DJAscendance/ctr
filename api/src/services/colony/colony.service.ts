@@ -64,8 +64,6 @@ export class ColonyService {
     const ownerCode = roleMap.ColonyLeader;
     let oldOwner = null;
     let newOwner = 0;
-    const oldDeputies = [0, 0, 0, 0, 0, 0, 0, 0];
-    const newDeputies = [0, 0, 0, 0, 0, 0, 0, 0];
     const data = await this
       .roleAssignmentRepository
       .getAccessInfoByID(colonyId, ownerCode, deputyCode);
@@ -89,32 +87,13 @@ export class ColonyService {
     if (newOwner !== 0) {
       await this.roleAssignmentRepository.addIdToAssignment(colonyId, newOwner, ownerCode);
     }
-    data.deputies.forEach((deputies, index) => {
-      oldDeputies[index] = deputies.member_id;
-    });
-    for (let i = 0; i < givenDeputies.length; i++) {
-      newDeputies[i] = await this.updateDeputyId(givenDeputies[i]);
+    const oldDeputyIds = data.deputies.map(deputy => deputy.member_id);
+    const newDeputyIds: number[] = [];
+    for (const givenDeputy of givenDeputies) {
+      newDeputyIds.push(await this.updateDeputyId(givenDeputy));
     }
-    // Was a forEach containing un-awaited promise chains, so the primary-role write
-    // could land after the request had already returned. A for loop lets these await.
-    for (let index = 0; index < oldDeputies.length; index++) {
-      const oldDeputy = oldDeputies[index];
-      const newDeputy = newDeputies[index];
-      if (oldDeputy === newDeputy) continue;
-      try {
-        if (oldDeputy !== 0) {
-          await this.roleAssignmentRepository
-            .removeIdFromAssignment(colonyId, oldDeputy, deputyCode);
-          await this.roleAssignmentService.reconcilePrimaryRole(oldDeputy);
-        }
-        if (newDeputy !== 0) {
-          await this.roleAssignmentRepository
-            .addIdToAssignment(colonyId, newDeputy, deputyCode);
-        }
-      } catch (e) {
-        console.log(e);
-      }
-    }
+    await this.roleAssignmentService
+      .syncDeputies(colonyId, deputyCode, oldDeputyIds, newDeputyIds);
   }
 
   /**
