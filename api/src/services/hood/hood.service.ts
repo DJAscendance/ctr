@@ -11,6 +11,7 @@ import {
 import { Place } from '../../types/models';
 import {includes} from 'lodash';
 import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
+import { PlaceAccessService } from '../place-access/place-access.service';
 
 /** Service for dealing with blocks */
 @Service()
@@ -23,6 +24,7 @@ export class HoodService {
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
     private roleAssignmentService: RoleAssignmentService,
+    private placeAccessService: PlaceAccessService,
   ) {}
   
   public async find(hoodId: number): Promise<Place> {
@@ -113,33 +115,18 @@ export class HoodService {
     return await this.hoodRepository.getBlocks(hoodId);
   }
 
+  /**
+   * Delegates to the shared hierarchy walk, which resolves the hood -> colony chain from
+   * map_location rather than fetching the colony by hand.
+   *
+   * Behaviour is unchanged: global Admin / Colony Representative, Colony Leader or Deputy
+   * at the parent colony, or Neighborhood Leader or Deputy at this hood. It also picks up
+   * a fix -- the old version read roleRepository.roleMap directly, which is populated by an
+   * un-awaited constructor call and so is empty for a window after startup, quietly
+   * denying real admins.
+   */
   public async canAdmin(hoodId: number, memberId: number): Promise<boolean> {
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-    const colony = await this.getColony(hoodId);
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([
-            this.roleRepository.roleMap.ColonyLeader,
-            this.roleRepository.roleMap.ColonyDeputy,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === colony.id) ||
-          ([
-            this.roleRepository.roleMap.NeighborhoodDeputy,
-            this.roleRepository.roleMap.NeighborhoodLeader,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === hoodId)
-        );
-      })
-    ) {
-      return true;
-    }
-    return false;
+    return this.placeAccessService.hasGeographicAuthority(hoodId, memberId);
   }
 
   public async canManageAccess(hoodId: number, memberId: number): Promise<boolean> {

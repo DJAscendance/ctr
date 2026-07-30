@@ -10,6 +10,7 @@ import { Place } from '../../types/models';
 import * as console from 'console';
 import { includes } from 'lodash';
 import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
+import { PlaceAccessService } from '../place-access/place-access.service';
 
 /** Service for dealing with colony */
 @Service()
@@ -20,6 +21,7 @@ export class ColonyService {
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
     private roleAssignmentService: RoleAssignmentService,
+    private placeAccessService: PlaceAccessService,
   ) { }
 
   public async find(colonyId: number): Promise<Place> {
@@ -105,27 +107,17 @@ export class ColonyService {
     }
   }
 
+  /**
+   * Delegates to the shared hierarchy walk. Previously open-coded here, in HoodService and
+   * in BlockService as three copies of the same logic at depths 1, 2 and 3.
+   *
+   * Behaviour is unchanged: global Admin / Colony Representative, or Colony Leader /
+   * Colony Deputy held at this colony. It also picks up a fix -- the old version read
+   * roleRepository.roleMap directly, which is populated by an un-awaited constructor call
+   * and so is empty for a window after startup, quietly denying real admins.
+   */
   public async canAdmin(colonyId: number, memberId: number): Promise<boolean> {
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([
-            this.roleRepository.roleMap.ColonyLeader,
-            this.roleRepository.roleMap.ColonyDeputy,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === colonyId)
-        );
-      })
-    ) {
-      return true;
-    }
-    else return false;
+    return this.placeAccessService.hasGeographicAuthority(colonyId, memberId);
   }
 
   public async canManageAccess(colonyId: number, memberId: number): Promise<boolean> {
