@@ -3,6 +3,7 @@ export * from './club-member.model';
 export * from './mall.model';
 export * from './map-location.model';
 export * from './member.model';
+export * from './member-data.model';
 export * from './message.model';
 export * from './store.model';
 export * from './object.model';
