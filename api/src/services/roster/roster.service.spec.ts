@@ -137,10 +137,22 @@ describe('RosterService', () => {
       expect(roster.entries).toEqual([]);
     });
 
+    /**
+     * The roster endpoint is polled, so the nobody-online case should cost nothing. This
+     * previously asserted getForMembers HAD been called with [], which contradicted the
+     * test's own name and locked in the wasted round trip.
+     */
     it('does not query attributes for an empty member list', async () => {
       online();
       await service.getRoster(null, ACTIVE_SINCE);
-      expect(memberDataRepository.getForMembers).toHaveBeenCalledWith([], 'IMS');
+      expect(memberDataRepository.getForMembers).not.toHaveBeenCalled();
+    });
+
+    it('does not fetch buddies for a member when nobody is online', async () => {
+      online();
+      const roster = await service.getRoster(VIEWER, ACTIVE_SINCE);
+      expect(memberDataService.getBuddyNameSet).not.toHaveBeenCalled();
+      expect(roster.entries).toEqual([]);
     });
   });
 });

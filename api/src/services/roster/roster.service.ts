@@ -66,6 +66,13 @@ export class RosterService {
     const online: { id: number; username: string }[] =
       await this.memberRepository.findOnlineUsers(activeWithin);
 
+    // Nobody online means there are no attributes to fetch and no buddy list to compare
+    // against. This endpoint is polled, so the empty case is worth not paying for -- and a
+    // visitor sees the same shape either way.
+    if (!online.length) {
+      return { count: 0, entries: viewerMemberId ? [] : null };
+    }
+
     // One batched read rather than a per-member lookup.
     const hiddenFlags = await this.memberDataRepository.getForMembers(
       online.map(member => member.id),
