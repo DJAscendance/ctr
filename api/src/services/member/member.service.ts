@@ -20,6 +20,7 @@ import {
 import { Member } from '../../types/models';
 import { MemberInfoView, MemberAdminView } from '../../types/views';
 import { SessionInfo } from 'session-info.interface';
+import { RosterService, RosterView } from '../roster/roster.service';
 import { Request, Response } from 'express';
 
 /** Service for dealing with members */
@@ -37,6 +38,16 @@ export class MemberService {
   public static readonly PASSWORD_RESET_EXPIRATION_DURATION = 15;
   /** Number of times to salt member passwords */
   private static readonly SALT_ROUNDS = 10;
+  /**
+   * How recently a member must have been seen to count as online.
+   *
+   * Was written out as `5 * 60000` in three separate places; centralised so there is one
+   * thing to change. NOTE: the original's value is 120 s expiry against a 30 s client
+   * heartbeat (global.cfg g_MsRefresh). Left at the existing 5 minutes here so this change
+   * is behaviour-preserving -- correcting it needs the heartbeat added at the same time,
+   * or active users would start dropping off the roster.
+   */
+  public static readonly ONLINE_WINDOW_MS = 5 * 60000;
 
   constructor(
     private avatarRepository: AvatarRepository,
@@ -50,6 +61,7 @@ export class MemberService {
     private objectInstanceRepository: ObjectInstanceRepository,
     private roleRepository: RoleRepository,
     private voteRepository: VoteRepository,
+    private rosterService: RosterService,
   ) { }
 
   public async canAdmin(memberId: number): Promise<boolean> {
@@ -517,7 +529,7 @@ export class MemberService {
   public async getActivePlaces(): Promise<any> {
     const returnPlaces = [];
     const placeIds = [];
-    const activeTime = new Date(Date.now() - 5 * 60000);
+    const activeTime = new Date(Date.now() - MemberService.ONLINE_WINDOW_MS);
     const places = await this.memberRepository.getActivePlaces(activeTime);
     for (const place of places) {
       if (placeIds.indexOf(place.place_id) === -1) {
@@ -536,6 +548,27 @@ export class MemberService {
       }
     }
     return returnPlaces;
+  }
+
+  /**
+   * Decodes the session token if one is present and valid, without responding on failure.
+   *
+   * For endpoints that serve BOTH members and visitors. decryptSession cannot be used
+   * there: it writes a 400 as a side effect when the token is missing or bad, so a visitor
+   * would receive an error instead of the visitor-shaped response. This returns null and
+   * lets the caller decide.
+   *
+   * @param request Express request object
+   * @returns session info, or null for an absent or invalid token
+   */
+  public peekSession(request: Request): SessionInfo | null {
+    const { apitoken } = request.headers;
+    if (!apitoken || typeof apitoken !== 'string') return null;
+    try {
+      return this.decodeMemberToken(apitoken) || null;
+    } catch (error) {
+      return null;
+    }
   }
 
   /**
@@ -575,14 +608,27 @@ export class MemberService {
     }
   }
 
+  /**
+   * The online roster as the viewer is allowed to see it.
+   *
+   * Delegates to RosterService, which applies the visitor/buddy/hidden rules. Pass null for
+   * an unauthenticated caller: they get a count and no names.
+   */
+  public async getRoster(viewerMemberId: number | null): Promise<RosterView> {
+    return this.rosterService.getRoster(
+      viewerMemberId,
+      new Date(Date.now() - MemberService.ONLINE_WINDOW_MS),
+    );
+  }
+
   public async getOnlineUsers(): Promise<any> {
-    const activeTime = new Date(Date.now() - 5 * 60000);
+    const activeTime = new Date(Date.now() - MemberService.ONLINE_WINDOW_MS);
     const users = await this.memberRepository.findOnlineUsers(activeTime);
     return users;
   }
 
   public async getDirectory(search: string, limit: number, offset: number): Promise<any> {
-    const activeTime = new Date(Date.now() - 5 * 60000).getTime();
+    const activeTime = new Date(Date.now() - MemberService.ONLINE_WINDOW_MS).getTime();
     const [members, total] = await Promise.all([
       this.memberRepository.searchDirectory(search, limit, offset),
       this.memberRepository.getDirectoryTotal(search),
