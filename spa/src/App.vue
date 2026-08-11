@@ -103,13 +103,15 @@
               <br />
               <router-view name="tools"></router-view>
               <button
-                v-if="accessLevel && accessLevel.length > 0"
+                v-if="accessLevel && accessLevel !== 'none' && accessLevel.length > 0"
                 class="btn-ui"
                 @click="openWindow('#/admin/')"
               >
                 <span style="color: red;">Admin</span>
               </button>
-              <br v-if="accessLevel && accessLevel.length > 0" />
+              <br
+                v-if="accessLevel && accessLevel !== 'none' && accessLevel.length > 0"
+              />
               <a
                 href="https://github.com/CybertownRevival/ctr/issues"
                 class="btn-ui"
@@ -441,6 +443,15 @@ export default Vue.extend({
     require("./libs/x_ite_mods/extend_context_menu.js");
     require("./libs/x_ite_mods/bxx_auth.js");
     //require('./libs/x_ite_mods/fix_stairs.js');
+  },
+  watch: {
+    '$store.data.isUser'(isUser: boolean): void {
+      if (isUser) {
+        this.checkAccessLevel();
+      } else {
+        this.accessLevel = null;
+      }
+    },
   },
   computed: {
 
