@@ -102,11 +102,19 @@
             <div>
               <br />
               <router-view name="tools"></router-view>
+              <button
+                v-if="accessLevel && accessLevel.length > 0"
+                class="btn-ui"
+                @click="openWindow('#/admin/')"
+              >
+                <span style="color: red;">Admin</span>
+              </button>
+              <br v-if="accessLevel && accessLevel.length > 0" />
               <a
                 href="https://github.com/CybertownRevival/ctr/issues"
                 class="btn-ui"
                 target="_blank"
-                >
+              >
                 Report a Bug
               </a>
               <br />
