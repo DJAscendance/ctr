@@ -107,6 +107,7 @@ export class InboxService {
         'hr',
         'li',
         'main',
+        'marquee',
         'ol',
         'p',
         'pre',
