@@ -160,6 +160,46 @@ export class ObjectInstanceRepository {
     return parseInt(Object.values(count[0])[0]);
   }
 
+  /**
+   * Sold counts for many objects in one query.
+   *
+   * The single-object `countByObjectId` is fine for one row, but the Out of
+   * Stock view asks about every stocked object at once, which meant one query
+   * per object. Ids not present in the result have sold nothing and are absent
+   * from the map; callers should default those to zero.
+   */
+  public async countByObjectIds(objectIds: number[]): Promise<{ [objectId: number]: number }> {
+    const counts: { [objectId: number]: number } = {};
+    if (!objectIds.length) {
+      return counts;
+    }
+    const rows = await this.db.objectInstance
+      .select('object_id')
+      .count('id as total')
+      .whereIn('object_id', objectIds)
+      .groupBy('object_id');
+    rows.forEach((row: any) => {
+      counts[row.object_id] = Number.parseInt(String(row.total), 10);
+    });
+    return counts;
+  }
+
+  /**
+   * Sold counts for every object in one query, for whole-catalogue work such as
+   * the export and the Out of Stock view.
+   */
+  public async countAllByObjectId(): Promise<{ [objectId: number]: number }> {
+    const counts: { [objectId: number]: number } = {};
+    const rows = await this.db.objectInstance
+      .select('object_id')
+      .count('id as total')
+      .groupBy('object_id');
+    rows.forEach((row: any) => {
+      counts[row.object_id] = Number.parseInt(String(row.total), 10);
+    });
+    return counts;
+  }
+
   public async findForSale(): Promise<any> {
     return this.db.objectInstance
       .count('id as count')

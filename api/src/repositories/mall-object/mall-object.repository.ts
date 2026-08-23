@@ -32,6 +32,41 @@ export class MallRepository {
     return place;
   }
 
+
+  /**
+   * The store each of many objects sits in, in one query, for list pages that
+   * would otherwise ask once per row.
+   */
+  public async getStoresByObjectIds(objectIds: number[]): Promise<{ [objectId: number]: any }> {
+    const stores: { [objectId: number]: any } = {};
+    if (!objectIds.length) {
+      return stores;
+    }
+    const rows = await this.db.mallObject
+      .select('place.*', 'mall_object.object_id')
+      .whereIn('mall_object.object_id', objectIds)
+      .join('place', 'place.id', 'mall_object.place_id');
+    rows.forEach((row: any) => {
+      if (!stores[row.object_id]) {
+        stores[row.object_id] = row;
+      }
+    });
+    return stores;
+  }
+
+  /** The store every placed object sits in, in one query. */
+  public async getAllStoresByObjectId(): Promise<{ [objectId: number]: any }> {
+    const stores: { [objectId: number]: any } = {};
+    const rows = await this.db.mallObject
+      .select('place.*', 'mall_object.object_id')
+      .join('place', 'place.id', 'mall_object.place_id');
+    rows.forEach((row: any) => {
+      if (!stores[row.object_id]) {
+        stores[row.object_id] = row;
+      }
+    });
+    return stores;
+  }
   public async findByObjectId(objectId: number): Promise<any> {
     const object = await this.db.mallObject.where({object_id: objectId});
     return object;

@@ -1,6 +1,6 @@
 import HomePage from "./pages/HomePage.vue";
 import AboutPage from "./pages/AboutPage.vue";
-import ConstitutionPage from './pages/Constitution.vue';
+import ConstitutionPage from "./pages/Constitution.vue";
 import RulesRegulationsPage from "./pages/RulesandRegulationPage.vue";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.vue";
 import BannedNotice from "./pages/Banned.vue";
@@ -94,7 +94,7 @@ import ClubMemberList from "./pages/club/Members.vue";
 import ClubDoor from "@/pages/club/ClubDoor.vue";
 import ClubUpdate from "@/pages/club/ClubUpdate.vue";
 
-import MayorElection from '@/pages/MayorElection.vue';
+import MayorElection from "@/pages/MayorElection.vue";
 
 export default [
   {
@@ -647,15 +647,6 @@ export default [
     },
   },
   {
-    path: "/mall/checker/:object_id",
-    component: MallChecker,
-    name: "mall-checker",
-    meta: {
-      title: "Mall Checker",
-      wrapper: false,
-    },
-  },
-  {
     path: "/mall/staff",
     component: MallStaffPage,
     name: "mall-staff",
@@ -702,6 +693,17 @@ export default [
         name: "MallObjectSearch",
         meta: {
           title: "Mall Object Search - Mall Staff Panel",
+        },
+      },
+      {
+        // A child of the staff panel so the checker keeps the panel chrome and
+        // inherits its can_admin gate, rather than opening as a bare popup with
+        // no way back to the list.
+        path: "/mall/checker/:object_id",
+        component: MallChecker,
+        name: "mall-checker",
+        meta: {
+          title: "Mall Checker - Mall Staff Panel",
         },
       },
     ],

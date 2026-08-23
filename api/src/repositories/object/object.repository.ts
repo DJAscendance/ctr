@@ -220,9 +220,38 @@ export class ObjectRepository {
 
   public async findMallSoldOut(): Promise<any> {
     const objects = await this.db.object
-      .select('object.*')
-      .where('status', '=', '1');
+      .select('object.*', 'member.username')
+      .leftJoin('member', 'member.id', 'object.member_id')
+      .where('object.status', '=', '1');
     return objects;
+  }
+
+  /**
+   * Every object's id, status and stock fields, for deriving the staff-panel
+   * view memberships an export publishes. Deliberately narrow: the full rows are
+   * streamed a page at a time instead.
+   */
+  public async findViewRows(): Promise<any> {
+    return this.db.object
+      .select('id', 'status', 'quantity', 'limit')
+      .orderBy('id', 'asc');
+  }
+
+  /** One page of full object rows, in the export's deterministic id order. */
+  public async findPageForExport(limit: number, offset: number): Promise<any> {
+    return this.db.object
+      .select('object.*')
+      .orderBy('id', 'asc')
+      .limit(limit)
+      .offset(offset);
+  }
+
+  /** Object counts grouped by status, for the export's reported totals. */
+  public async countGroupedByStatus(): Promise<any> {
+    return this.db.object
+      .select('status')
+      .count('id as total')
+      .groupBy('status');
   }
 
   public async getUserUploadedObjects(

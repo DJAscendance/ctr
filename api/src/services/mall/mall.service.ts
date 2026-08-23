@@ -65,19 +65,45 @@ export class MallService {
     return await this.placeRepository.findAllStores(orderBy);
   }
 
-  public async findSoldOut(){
-    const returnObjects= [];
-    const objects = await this.objectRepository.findMallSoldOut();
-    for (const obj of objects) {
-      const user = obj.member_id ? await this.memberRepository.findById(obj.member_id) : null;
-      const store = await this.mallRepository.getStore(obj.id);
-      const instances = await this.objectInstanceRepository.countByObjectId(obj.id);
-      obj.username = user?.username || 'Deleted User';
-      obj.store = store[0];
-      obj.instances = instances;
-      returnObjects.push(obj);
+  /**
+   * Attaches the creator name, the store and the sold count to a page of
+   * objects, using one query per fact for the whole page rather than one per
+   * object.
+   *
+   * The previous per-object loop issued three queries for every row, which the
+   * Out of Stock view multiplied by every stocked object in the mall. Output is
+   * unchanged, including the 'Deleted User' placeholder for objects whose
+   * creator no longer exists.
+   */
+  private async decorateObjects(objects: any[]): Promise<any[]> {
+    if (!objects.length) {
+      return objects;
     }
-    return {objects: returnObjects};
+
+    const objectIds = objects.map(object => object.id);
+    const memberIds = objects
+      .map(object => object.member_id)
+      .filter(memberId => !!memberId);
+
+    const [members, stores, counts] = await Promise.all([
+      this.memberRepository.findByIds(memberIds),
+      this.mallRepository.getStoresByObjectIds(objectIds),
+      this.objectInstanceRepository.countByObjectIds(objectIds),
+    ]);
+
+    objects.forEach(object => {
+      const member = object.member_id ? members[object.member_id] : null;
+      object.username = (member && member.username) || 'Deleted User';
+      object.store = stores[object.id];
+      object.instances = counts[object.id] || 0;
+    });
+
+    return objects;
+  }
+
+  public async findSoldOut(){
+    const objects = await this.objectRepository.findMallSoldOut();
+    return {objects: await this.decorateObjects(objects)};
   }
 
   public async getObjectsCatalog(limit: number, offset: number): Promise<any> {
@@ -100,18 +126,10 @@ export class MallService {
   }
 
   public async searchMallObjects(search: string, limit: number, offset: number): Promise<any> {
-    const returnObjects = [];
     const objects = await this.objectRepository.searchMallObjects(search, limit, offset);
-    for (const obj of objects) {
-      const user = obj.member_id ? await this.memberRepository.findById(obj.member_id) : null;
-      const instances = await this.objectInstanceRepository.countByObjectId(obj.id);
-      obj.username = user?.username || 'Deleted User';
-      obj.instances = instances;
-      returnObjects.push(obj);
-    }
     const total = await this.objectRepository.getTotal(search);
     return {
-      objects: returnObjects,
+      objects: await this.decorateObjects(objects),
       total: total,
     };
   }
@@ -122,19 +140,11 @@ export class MallService {
     status: number, 
     limit: number, 
     offset: number): Promise<any> {
-    const returnObjects = [];
     const objects = await this.objectRepository.searchAllObjects(
       search, compare, status, limit, offset);
-    for (const obj of objects) {
-      const user = obj.member_id ? await this.memberRepository.findById(obj.member_id) : null;
-      const instances = await this.objectInstanceRepository.countByObjectId(obj.id);
-      obj.username = user?.username || 'Deleted User';
-      obj.instances = instances;
-      returnObjects.push(obj);
-    }
     const total = await this.objectRepository.getSearchTotal(search, compare, status);
     return {
-      objects: returnObjects,
+      objects: await this.decorateObjects(objects),
       total: total,
     };
   }
@@ -146,22 +156,11 @@ export class MallService {
     limit: number, 
     offset: number, 
     orderBy: string){
-    const returnObjects= [];
     const objects = await this.objectRepository
       .findAllObjects(column, compare, content, limit, offset, orderBy);
-    for (const obj of objects) {
-      const user = obj.member_id ? await this.memberRepository.findById(obj.member_id) : null;
-      const store = await this.mallRepository.getStore(obj.id);
-      const instances = await this.objectInstanceRepository.countByObjectId(obj.id);
-      obj.username = user?.username || 'Deleted User';
-      obj.store = store[0];
-      obj.instances = instances;
-      returnObjects.push(obj);
-    }
-    
     const total = await this.objectRepository.total(column, compare, content);
     return {
-      objects: returnObjects,
+      objects: await this.decorateObjects(objects),
       total: total,
     };
   }

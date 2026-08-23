@@ -43,6 +43,22 @@ export class MemberRepository {
     return this.find({ id: memberId });
   }
 
+  /**
+   * Usernames for many members in one query, for list pages that would
+   * otherwise call `findById` once per row.
+   */
+  public async findByIds(memberIds: number[]): Promise<{ [memberId: number]: Member }> {
+    const members: { [memberId: number]: Member } = {};
+    if (!memberIds.length) {
+      return members;
+    }
+    const rows = await this.db.member.whereIn('id', memberIds);
+    rows.forEach((row: Member) => {
+      members[row.id] = row;
+    });
+    return members;
+  }
+
   public async findIdByUsername(username: string): Promise<any> {
     return this.db.knex
       .select('id')

@@ -4,19 +4,162 @@ import { Container } from 'typedi';
 import {
   MemberService,
   MallService,
+  MallExportService,
+  MallInspectionService,
   ObjectService,
   WalletService,
   ObjectInstanceService,
 } from '../services';
+import { createResponseWriter } from '../services/mall-export/mall-export.service';
 // Removed unused import
-class MallController {
+export class MallController {
   constructor(
     private memberService: MemberService,
     private mallService: MallService,
     private objectService: ObjectService,
     private walletService: WalletService,
     private objectInstanceService: ObjectInstanceService,
+    private mallInspectionService: MallInspectionService,
+    private mallExportService: MallExportService,
   ) {}
+
+  /**
+   * The Mall staff gate every staff-only endpoint goes through.
+   *
+   * Same token decode and same `canAdmin` role check the existing staff handlers
+   * perform inline, and the same response on failure, so authorisation behaviour
+   * stays identical across the whole mall API.
+   */
+  private async requireMallStaff(request: Request, response: Response): Promise<boolean> {
+    const { apitoken } = request.headers;
+
+    try {
+      // decodeMemberToken THROWS on a missing or malformed token rather than
+      // returning null. Without this catch the rejection escapes the async
+      // handler, Express never sends a response, and the request hangs.
+      const session = this.memberService.decodeMemberToken(<string>apitoken);
+      if (session && (await this.mallService.canAdmin(session.id))) {
+        return true;
+      }
+    } catch (error) {
+      // Fall through to the same denial the rest of the mall API returns.
+    }
+
+    response.status(400).json({
+      error: 'Invalid or missing token or access denied.',
+    });
+    return false;
+  }
+
+  /**
+   * Everything a checker needs about one object on a single screen: the CTR
+   * record, its counts and views, the stored file's real shape, its WorldInfo,
+   * and where the two disagree.
+   *
+   * Staff-only because it exposes the object's source facts. The existing
+   * `/mall/object/:id` and `/object/get_object/:id` endpoints deliberately keep
+   * their current, narrower payloads and their current authorisation.
+   */
+  public async getObjectInspection(request: Request, response: Response): Promise<void> {
+    if (!(await this.requireMallStaff(request, response))) {
+      return;
+    }
+
+    const objectId = Number.parseInt(request.params.id, 10);
+    if (!Number.isFinite(objectId)) {
+      response.status(400).json({ error: 'Invalid object id.' });
+      return;
+    }
+
+    try {
+      const inspection = await this.mallInspectionService.inspect(objectId);
+      if (!inspection) {
+        response.status(404).json({ error: 'Object not found.' });
+        return;
+      }
+      response.status(200).json({ status: 'success', inspection });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ error });
+    }
+  }
+
+  /**
+   * The decoded VRML text, so staff can read a gzip-compressed upload without
+   * downloading it and decompressing it by hand.
+   *
+   * The download filename is always the server-generated `object-<id>.wrl`, never
+   * the member-supplied object name and never the stored filename. That keeps
+   * header injection, quoting, and non-ASCII encoding out of the picture
+   * entirely.
+   */
+  /**
+   * Streams CTR's authoritative Mall dataset.
+   *
+   * The outcome is written at the END of the document as `result`, because the
+   * counts and per-object failures are not known until the work is finished.
+   * Once streaming has begun the HTTP status is already 200, so `result.status`
+   * is the authoritative outcome and consumers must check it. Failures detected
+   * before the first byte - authorisation, most obviously - still return a
+   * normal error status with no body at all.
+   */
+  public async exportMallData(request: Request, response: Response): Promise<void> {
+    if (!(await this.requireMallStaff(request, response))) {
+      return;
+    }
+
+    const includeDerived = request.query.derived === '1';
+
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.status(200);
+
+    try {
+      await this.mallExportService.export(createResponseWriter(response), { includeDerived });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      response.end();
+    }
+  }
+
+  public async getObjectSource(request: Request, response: Response): Promise<void> {
+    if (!(await this.requireMallStaff(request, response))) {
+      return;
+    }
+
+    const objectId = Number.parseInt(request.params.id, 10);
+    if (!Number.isFinite(objectId)) {
+      response.status(400).json({ error: 'Invalid object id.' });
+      return;
+    }
+
+    try {
+      const source = await this.mallInspectionService.readSourceText(objectId);
+
+      if (source.error === 'not_found' || source.error === 'missing') {
+        response.status(404).json({ error: 'Object source not found.' });
+        return;
+      }
+      if (source.error !== null || source.text === null) {
+        response.status(422).json({ error: source.error || 'unreadable' });
+        return;
+      }
+
+      response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      if (request.query.download === '1') {
+        response.setHeader(
+          'Content-Disposition',
+          `attachment; filename="object-${objectId}.wrl"`,
+        );
+      }
+      response.status(200).send(source.text);
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ error });
+    }
+  }
 
   public async canAdmin(request: Request, response: Response): Promise<void> {
     const { apitoken } = request.headers;
@@ -610,11 +753,15 @@ const mallService = Container.get(MallService);
 const objectService = Container.get(ObjectService);
 const walletService = Container.get(WalletService);
 const objectInstanceService = Container.get(ObjectInstanceService);
+const mallInspectionService = Container.get(MallInspectionService);
+const mallExportService = Container.get(MallExportService);
 export const mallController = new MallController(
   memberService,
   mallService,
   objectService,
   walletService,
   objectInstanceService,
+  mallInspectionService,
+  mallExportService,
 );
 
