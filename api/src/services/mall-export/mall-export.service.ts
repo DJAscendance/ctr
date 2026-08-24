@@ -264,6 +264,30 @@ export function exportFilename(at: Date): string {
   return `ctr-mall-export-${stamp}Z.json`;
 }
 
+/** One level of indentation in the streamed document. */
+const INDENT = '  ';
+
+/**
+ * Indents an already-serialised JSON value so it can be streamed into a
+ * pretty-printed document without ever holding the whole document in memory.
+ *
+ * Only the value's own continuation lines are padded; its first line is left
+ * bare because the caller has already written the key and the space after it.
+ * Every value passed here is bounded -- one object entry, one store list, one
+ * result record -- so this never sees the document as a whole and the export's
+ * memory profile is unchanged.
+ */
+export function indentJson(value: unknown, depth: number): string {
+  const serialised = JSON.stringify(value, null, 2);
+  if (serialised === undefined) {
+    return 'null';
+  }
+  if (depth === 0) {
+    return serialised;
+  }
+  return serialised.split('\n').join(`\n${INDENT.repeat(depth)}`);
+}
+
 function assetUrl(directory: string | null, filename: string | null): string | null {
   if (!directory || !filename) {
     return null;
@@ -326,19 +350,23 @@ export class MallExportService {
     };
 
     try {
-      await writer.write(`{"schema":${JSON.stringify(this.buildSchema(startedIso, options))}`);
+      await writer.write(
+        `{\n${INDENT}"schema": ${indentJson(this.buildSchema(startedIso, options), 1)}`,
+      );
       bodyStarted = true;
 
-      await writer.write(`,"stores":${JSON.stringify(stores.map((store: Place) => ({
+      await writer.write(`,\n${INDENT}"stores": ${indentJson(stores.map((store: Place) => ({
         id: store.id,
         name: store.name,
         slug: store.slug,
         status: store.status,
-      })))}`);
+      })), 1)}`);
 
-      await writer.write(`,"ctrViews":${JSON.stringify(this.buildViews(viewRows, allCounts))}`);
+      await writer.write(
+        `,\n${INDENT}"ctrViews": ${indentJson(this.buildViews(viewRows, allCounts), 1)}`,
+      );
 
-      await writer.write(',"objects":[');
+      await writer.write(`,\n${INDENT}"objects": [`);
       objectsOpened = true;
 
       // The identity set this export commits to is fixed here, from the
@@ -414,7 +442,9 @@ export class MallExportService {
             // from `pendingIds`, and `pendingIds` is exactly `viewRows`' ids.
             snapshot: snapshotById.get(row.id),
           });
-          await writer.write(`${first ? '' : ','}\n${JSON.stringify(entry)}`);
+          await writer.write(
+            `${first ? '' : ','}\n${INDENT.repeat(2)}${indentJson(entry, 2)}`,
+          );
           first = false;
           objectsWritten += 1;
           lastObjectId = row.id;
@@ -444,8 +474,10 @@ export class MallExportService {
         truncation.lastObjectId = lastObjectId;
       }
 
-      await writer.write(']');
-      await writer.write(`,"result":${JSON.stringify(this.buildResult({
+      // `[]` when nothing was written, rather than a bracket pair with a blank
+      // line between them.
+      await writer.write(first ? ']' : `\n${INDENT}]`);
+      await writer.write(`,\n${INDENT}"result": ${indentJson(this.buildResult({
         status,
         truncation,
         startedIso,
@@ -457,7 +489,7 @@ export class MallExportService {
         allCounts,
         includeDerived: options.includeDerived,
         derivedTally,
-      }))}}`);
+      }), 1)}\n}\n`);
     } catch (error) {
       status = 'failed';
 
@@ -472,13 +504,15 @@ export class MallExportService {
       // `objects` may not have been opened yet, in which case an empty array is
       // what keeps the document parseable.
       try {
-        const tail = objectsOpened ? ']' : ',"objects":[]';
-        await writer.write(`${tail},"result":${JSON.stringify({
+        const tail = objectsOpened
+          ? (objectsWritten === 0 ? ']' : `\n${INDENT}]`)
+          : `,\n${INDENT}"objects": []`;
+        await writer.write(`${tail},\n${INDENT}"result": ${indentJson({
           status: 'failed',
           reason: publicErrorCode(error),
           finishedAt: new Date(now()).toISOString(),
           objectsWritten,
-        })}}`);
+        }, 1)}\n}\n`);
       } catch (writeError) {
         // Nothing further can be reported to a broken stream.
       }

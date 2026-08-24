@@ -585,6 +585,90 @@ describe('MallExportService', () => {
     });
   });
 
+  describe('pretty-printed output', () => {
+    // Owner QA: the downloaded file was one enormous minified line and could
+    // not realistically be read by eye. Indentation is presentation only --
+    // every assertion here that pins the shape is paired with one proving the
+    // parsed data did not change.
+    it('indents the document with two spaces at every level', async () => {
+      const { raw } = await runExport();
+
+      expect(raw.startsWith('{\n  "schema": {\n')).toBe(true);
+      expect(raw).toContain('\n  "stores": [');
+      expect(raw).toContain('\n  "ctrViews": {');
+      expect(raw).toContain('\n  "objects": [');
+      expect(raw).toContain('\n  "result": {');
+      expect(raw.endsWith('\n}\n')).toBe(true);
+    });
+
+    it('indents each object entry inside the objects array', async () => {
+      const { raw } = await runExport();
+
+      expect(raw).toContain('\n  "objects": [\n    {\n      "id":');
+      expect(raw).toContain('\n    }\n  ],\n  "result": {');
+    });
+
+    it('never emits a minified run of the document', async () => {
+      const { raw } = await runExport();
+
+      // The old output had no newline at all between the opening brace and the
+      // result record. Any line long enough to be a whole serialised object is
+      // the regression this guards.
+      const longest = raw.split('\n').reduce((max, line) => Math.max(max, line.length), 0);
+      expect(longest).toBeLessThan(raw.length / 2);
+    });
+
+    it('parses to exactly the same data as the compact serialisation', async () => {
+      const { raw, document } = await runExport(true);
+
+      // Whitespace is not part of the contract: re-serialising the parsed
+      // document compactly and parsing that again must be indistinguishable.
+      expect(JSON.parse(JSON.stringify(document))).toEqual(document);
+      expect(JSON.parse(raw)).toEqual(document);
+      expect(document.result.status).toBe('complete');
+      expect(document.objects.length).toBe(document.result.objectsWritten);
+    });
+
+    it('writes an empty objects array without a blank line in it', async () => {
+      objectRepository.findViewRows.mockResolvedValue([]);
+      objectRepository.findRowsByIds.mockResolvedValue([]);
+      objectInstanceRepository.countByObjectIds.mockResolvedValue({});
+      mallRepository.getStoresByObjectIds.mockResolvedValue({});
+
+      const { raw, document } = await runExport();
+
+      expect(raw).toContain('"objects": [],');
+      expect(document.objects).toEqual([]);
+      expect(document.result.status).toBe('complete');
+      expect(document.result.objectsWritten).toBe(0);
+    });
+
+    it('still streams incrementally rather than buffering the document', async () => {
+      // The point of the export is that it never holds the whole document in
+      // memory. Indentation is applied per bounded value, so the number of
+      // writes must still scale with the content, not collapse to one.
+      const chunks: string[] = [];
+      const writer: ExportWriter = {
+        write(chunk: string) {
+          chunks.push(chunk);
+          return Promise.resolve();
+        },
+        isClosed() {
+          return false;
+        },
+      };
+
+      const preflight = await service.preflight();
+      await service.export(writer, { includeDerived: false }, preflight);
+
+      // schema, stores, ctrViews, objects-open, one per object, objects-close,
+      // result. Never a single write carrying everything.
+      expect(chunks.length).toBeGreaterThanOrEqual(OBJECTS.length + 6);
+      const document = JSON.parse(chunks.join(''));
+      expect(document.objects.length).toBe(OBJECTS.length);
+    });
+  });
+
   describe('export identity snapshot', () => {
     it('does not skip a later pending object when an earlier one is mutated mid-export',
       async () => {
