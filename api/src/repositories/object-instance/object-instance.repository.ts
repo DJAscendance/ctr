@@ -2,7 +2,7 @@ import { Service } from 'typedi';
 import {knex} from '../../db';
 import { Db } from '../../db/db.class';
 import { CountRow } from '../row.types';
-import { ObjectInstance, Object } from 'models';
+import { ObjectInstance } from 'models';
 
 /** One row of a `count(...) ... group by object_id` result. */
 interface GroupedCountRow {

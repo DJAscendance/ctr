@@ -24,8 +24,12 @@ function extractScriptBlock(source) {
  * @param {string} filePath absolute path to a .vue SFC
  * @param {(specifier: string) => any} [resolveImport] extra import stubs;
  *   called for any import this loader doesn't already know about
+ * @param {object} [extraGlobals] extra bindings for the sandbox's global
+ *   scope (e.g. `document`, `window`, `URL`) -- component methods are
+ *   defined inside this vm context, so free variables they close over
+ *   resolve from here, not from whatever scope later calls `.call(self)`
  */
-function loadComponentOptions(filePath, resolveImport) {
+function loadComponentOptions(filePath, resolveImport, extraGlobals) {
   const source = fs.readFileSync(filePath, "utf8");
   const scriptSource = extractScriptBlock(source);
   const transpiled = ts.transpileModule(scriptSource, {
@@ -67,6 +71,7 @@ function loadComponentOptions(filePath, resolveImport) {
     module: sandboxModule,
     exports: sandboxModule.exports,
     console,
+    ...extraGlobals,
   });
   vm.runInContext(transpiled, context, { filename: "component.transpiled.js" });
 

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import fs from 'fs';
+import path from 'path';
 import { Service } from 'typedi';
 import { Db } from '../../db/db.class';
 // Aliased so the model stops shadowing the global built-in inside this file.
@@ -27,6 +28,43 @@ export interface UploadedAssets {
   filename: string | null;
   image: string | null;
   texture: string | null;
+}
+
+/**
+ * The final path segment of a client-supplied filename, with both `/` and
+ * `\` treated as separators regardless of the server's own OS.
+ *
+ * A WRL commonly references its texture by filename, so a legitimate name
+ * like `wood.jpg` must come back byte-for-byte -- this only strips a
+ * traversal or directory prefix down to its basename, it does not replace
+ * the name with something generated. `..`, `.` and an empty result are
+ * rejected outright rather than silently coerced to something else.
+ */
+export function safeUploadBasename(rawName: string): string {
+  const segments = String(rawName || '').split(/[\\/]+/);
+  const base = segments[segments.length - 1];
+  if (!base || base === '.' || base === '..') {
+    throw new Error('Invalid upload filename');
+  }
+  return base;
+}
+
+/**
+ * Resolves `filename` under `directory` and throws if the result would land
+ * outside it.
+ *
+ * Belt-and-braces alongside `safeUploadBasename`: a single sanitized path
+ * segment can't itself escape, but this is the actual guarantee the upload
+ * path depends on, checked against the real resolved filesystem path rather
+ * than inferred from the string shape.
+ */
+export function resolveWithinUploadPath(directory: string, filename: string): string {
+  const base = path.resolve(directory);
+  const target = path.resolve(base, filename);
+  if (target !== base && !target.startsWith(base + path.sep)) {
+    throw new Error('Upload destination escapes its directory');
+  }
+  return target;
 }
 
 export interface ObjectRejection {
@@ -324,6 +362,17 @@ export class ObjectService {
     });
   }
 
+  /**
+   * Object upload directory for a given directory name (== the row's uuid).
+   *
+   * Split out so `create()` can find the same path for cleanup after this
+   * has already run, without recomputing the join logic differently in two
+   * places.
+   */
+  private objectUploadPath(directoryName: string): string {
+    return `${process.env.ASSETS_DIR}/object/${directoryName}`;
+  }
+
   public async uploadObjectFiles(
     directoryName,
     fileName,
@@ -331,24 +380,42 @@ export class ObjectService {
     imageFile,
     textureFile?,
   ): Promise<UploadedAssets> {
-    const uploadPath = `${process.env.ASSETS_DIR  }/object/${  directoryName}`;
-    const response = {
+    const uploadPath = this.objectUploadPath(directoryName);
+    const response: UploadedAssets = {
       filename: null,
       image: null,
       texture: null,
     };
 
     fs.mkdirSync(uploadPath);
-    wrlFile.mv(`${uploadPath  }/${  fileName  }.wrl`);
-    response.filename = `${fileName  }.wrl`;
+    try {
+      const wrlFilename = `${fileName}.wrl`;
+      await wrlFile.mv(resolveWithinUploadPath(uploadPath, wrlFilename));
+      response.filename = wrlFilename;
 
-    const imageExtension = imageFile.name.split('.').pop();
-    imageFile.mv(`${uploadPath  }/${  fileName  }.${  imageExtension}`);
-    response.image = `${fileName  }.${  imageExtension}`;
+      // The extension is derived from a sanitized basename, not the raw
+      // client name, so a dot-free traversal payload can't smuggle a `/`
+      // into what gets appended after `fileName`.
+      const imageExtension = safeUploadBasename(imageFile.name).split('.').pop();
+      const imageFilename = `${fileName}.${imageExtension}`;
+      await imageFile.mv(resolveWithinUploadPath(uploadPath, imageFilename));
+      response.image = imageFilename;
 
-    if (textureFile) {
-      textureFile.mv(`${uploadPath  }/${  textureFile.name}`);
-      response.texture = textureFile.name;
+      if (textureFile) {
+        // Kept byte-for-byte when it's already a safe ordinary filename --
+        // a WRL commonly references its texture by name -- and only
+        // stripped to its basename when it carries a directory or
+        // traversal prefix.
+        const textureFilename = safeUploadBasename(textureFile.name);
+        await textureFile.mv(resolveWithinUploadPath(uploadPath, textureFilename));
+        response.texture = textureFilename;
+      }
+    } catch (error) {
+      // Best-effort: an upload that fails partway through must not leave
+      // orphaned files behind for a directory name that will never be
+      // recorded in the database.
+      fs.rmSync(uploadPath, { recursive: true, force: true });
+      throw error;
     }
     return response;
   }
@@ -374,7 +441,9 @@ export class ObjectService {
    * @param price
    * @param memberId
    */
-  public async create(wrlFile, imageFile, textureFile, name, quantity, price, memberId) {
+  public async create(
+    wrlFile, imageFile, textureFile, name, quantity, price, memberId,
+  ): Promise<number> {
     const uuid = crypto.randomUUID();
     const fileName = crypto.randomBytes(8).toString('hex');
 
@@ -386,16 +455,26 @@ export class ObjectService {
       textureFile ?? null,
     );
 
-    this.objectRepository.create(
-      uuid,
-      assets.filename,
-      assets.image,
-      assets.texture,
-      name,
-      quantity,
-      price,
-      memberId,
-    );
+    try {
+      // Awaited and returned, not fired-and-forgotten: the caller charges
+      // the upload fee and reports success right after this resolves, and
+      // must not be able to do either before the row actually exists.
+      return await this.objectRepository.create(
+        uuid,
+        assets.filename,
+        assets.image,
+        assets.texture,
+        name,
+        quantity,
+        price,
+        memberId,
+      );
+    } catch (error) {
+      // The files wrote successfully but the row never will, so they would
+      // otherwise be orphaned under a uuid nothing references.
+      fs.rmSync(this.objectUploadPath(uuid), { recursive: true, force: true });
+      throw error;
+    }
   }
 
   /**

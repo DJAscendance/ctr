@@ -325,14 +325,6 @@ export class ObjectRepository {
       .offset(offset);
   }
 
-  /** Object counts grouped by status, for the export's reported totals. */
-  public async countGroupedByStatus(): Promise<{ status: number; total: number }[]> {
-    return this.db.object
-      .select('status')
-      .count<{ status: number; total: number }[]>('id as total')
-      .groupBy('status');
-  }
-
   public async getUserUploadedObjects(
     userId: number, 
     compare: string, 
