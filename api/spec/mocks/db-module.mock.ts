@@ -17,7 +17,12 @@
  * infinitely chainable, so any repository call shape works without each spec
  * having to enumerate knex's API.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeBuilder(): any {
+  // Untyped on purpose: `Proxy`'s target must be a real awaitable object here,
+  // and every property this mock's `get` trap can return is another
+  // infinitely-chainable builder -- there is no knex type this could satisfy.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resolved: any = Promise.resolve([]);
   return new Proxy(resolved, {
     get(target, property) {

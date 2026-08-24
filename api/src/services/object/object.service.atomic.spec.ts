@@ -301,6 +301,33 @@ describe('ObjectService rejection atomicity (real database)', () => {
     expect(results.filter(r => r.outcome === ObjectService.REJECT_REJECTED).length).toBe(1);
   });
 
+  dbTest('reads the refund row back through the caller\'s own trx, not a pool connection',
+    async () => {
+      // `creditWallet` used to read the just-inserted row back through the
+      // repository's own pool connection (`this.find()`) rather than the trx
+      // that inserted it. Under REPEATABLE READ, a query on a different
+      // connection opens its own snapshot and cannot see a row a still-open
+      // transaction has not committed yet, so that lookup deterministically
+      // returned undefined even though the insert had already succeeded --
+      // reproduced directly against this database before writing the fix.
+      // Calling the caller-supplied-trx path here, exactly as
+      // `rejectPendingObject` does, and asserting on what it resolves to
+      // *before* the transaction commits is what a mock cannot demonstrate:
+      // the row's visibility is a property of MySQL's isolation level, not of
+      // this repository's code shape.
+      let resolvedInsideTrx: Transaction;
+      await db.knex.transaction(async trx => {
+        resolvedInsideTrx = await transactionRepository.createObjectUploadRefundTransaction(
+          FIXTURE.walletId, EXPECTED_REFUND, trx,
+        );
+      });
+
+      expect(resolvedInsideTrx).toBeDefined();
+      expect(resolvedInsideTrx.reason).toBe('object-upload-refund');
+      expect(Number(resolvedInsideTrx.amount)).toBe(EXPECTED_REFUND);
+      expect(resolvedInsideTrx.recipient_wallet_id).toBe(FIXTURE.walletId);
+    });
+
   dbTest('pays exactly one refund when two rejections race', async () => {
     // Both start against a pending object. Without the row lock both would read
     // STATUS_PENDING and both would credit the wallet.

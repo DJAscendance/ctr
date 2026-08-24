@@ -702,8 +702,8 @@ export class MallExportService {
         _takenAt: context.startedIso,
         _definitions: {
           stores: 'place WHERE type = \'shop\' AND status = 1',
-          objects: 'COUNT(object)',
-          byStatus: 'COUNT(object) GROUP BY object.status',
+          objects: 'COUNT(object) WHERE object.status = 2',
+          byStatus: 'COUNT(object) WHERE object.status = 2 GROUP BY object.status',
           ctrViewSizes: 'length of each ctrViews list; predicates in ctrViews._definitions',
         },
         stores: context.storesCount,

@@ -364,6 +364,17 @@ describe('MallExportService', () => {
       expect(Object.keys(document.result.counts._definitions).sort())
         .toEqual(['byStatus', 'ctrViewSizes', 'objects', 'stores']);
     });
+
+    it('states the pending-only predicate in its own count definitions', async () => {
+      // `viewRows` is `findViewRows()`, which filters to status = 2, so `objects`
+      // and `byStatus` are pending-only counts. Their machine-readable
+      // definitions must say so, or a consumer following them would read a
+      // pending count as a catalogue-wide total.
+      const { document } = await runExport();
+
+      expect(document.result.counts._definitions.objects).toContain('object.status = 2');
+      expect(document.result.counts._definitions.byStatus).toContain('object.status = 2');
+    });
   });
 
   describe('field discipline', () => {

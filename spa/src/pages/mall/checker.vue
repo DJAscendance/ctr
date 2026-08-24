@@ -800,12 +800,16 @@ export default Vue.extend({
     },
 
     /**
-     * Rejection has three outcomes, and they must not be conflated.
+     * Rejection has four outcomes, and they must not be conflated.
      *
      * A failure leaves the reason typed and the object in place so it can be
-     * retried. A success that could not notify is still a completed rejection --
-     * the refund has already happened -- so it advances like any other success
-     * and warns rather than inviting a second Reject.
+     * retried. `alreadyRejected` means a concurrent request already won the
+     * row-lock race and completed the rejection -- this request did nothing,
+     * so it must not claim to have notified anyone or ask staff to follow up
+     * on a notification that was never attempted. A genuine notification
+     * failure is still a completed rejection -- the refund has already
+     * happened -- so it advances like any other success and warns rather than
+     * inviting a second Reject.
      */
     async rejectObject(reason: string): Promise<void> {
       // Captured before the request, because a success advances the queue and
@@ -823,8 +827,10 @@ export default Vue.extend({
       }
 
       this.rejectReason = "";
-      if (data && data.notified === false) {
-        // Set after the queue has advanced, so navigation does not clear it.
+      // Set after the queue has advanced, so navigation does not clear it.
+      if (data && data.alreadyRejected) {
+        this.actionSuccess = "Object was already rejected.";
+      } else if (data && data.notified === false) {
         this.actionSuccess = "Object rejected.";
         this.actionWarning = `${rejectedName} was rejected, but the uploader `
           + "could not be notified. Follow up manually.";

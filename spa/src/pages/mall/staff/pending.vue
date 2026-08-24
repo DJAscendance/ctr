@@ -259,10 +259,13 @@ export default mallActions.extend({
     },
 
     /**
-     * Rejection has three outcomes and they are not interchangeable: a failure
-     * keeps the modal open with the reason intact so it can be retried, while a
-     * success that could not notify is still a completed rejection and closes
-     * normally with a warning rather than inviting a second Reject.
+     * Rejection has four outcomes and they are not interchangeable: a failure
+     * keeps the modal open with the reason intact so it can be retried.
+     * `alreadyRejected` means a concurrent request already won the row-lock
+     * race and completed the rejection, so this request notified no one and
+     * must not be reported as if it had. A genuine notification failure is
+     * still a completed rejection and closes normally with a warning rather
+     * than inviting a second Reject.
      */
     async reject(objectId, reason): Promise<void> {
       if (this.isProcessing) return;
@@ -281,10 +284,14 @@ export default mallActions.extend({
           reason,
         });
         const data = response && response.data;
-        this.success = data && data.notified === false
-          ? `${rejectedName} was rejected, but the uploader could not be notified. `
-            + "Follow up manually."
-          : "Object rejected and the uploader notified.";
+        if (data && data.alreadyRejected) {
+          this.success = "Object was already rejected.";
+        } else if (data && data.notified === false) {
+          this.success = `${rejectedName} was rejected, but the uploader could not be notified. `
+            + "Follow up manually.";
+        } else {
+          this.success = "Object rejected and the uploader notified.";
+        }
         this.showSuccess = true;
         this.rejecting = null;
         this.rejectReason = "";

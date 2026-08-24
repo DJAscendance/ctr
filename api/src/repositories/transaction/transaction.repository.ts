@@ -205,7 +205,12 @@ export class TransactionRepository {
       reason,
       recipient_wallet_id: walletId,
     });
-    return this.find({ id: transactionId });
+    // Read back through the same `trx`, not `this.find()` -- that queries
+    // through the pool's own connection, which cannot see this row until the
+    // transaction commits, and holds the transaction open waiting on a second
+    // pool connection. Concurrent refunds could then contend the pool itself.
+    const [transaction] = await trx<Transaction>('transaction').where({ id: transactionId });
+    return transaction;
   }
 
   /**

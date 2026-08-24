@@ -13,72 +13,25 @@
  * Run with: node test/checker-navigation.test.js
  */
 
-const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
 const assert = require("assert");
-const ts = require("typescript");
+const { loadComponentOptions } = require("./support/load-vue-options");
 
 const CHECKER_PATH = path.join(__dirname, "..", "src", "pages", "mall", "checker.vue");
 
-function extractScriptBlock(source) {
-  const match = source.match(/<script[^>]*>([\s\S]*?)<\/script>/);
-  if (!match) {
-    throw new Error("Could not find a <script> block in checker.vue");
+function resolveImport(specifier) {
+  if (specifier.endsWith("ObjectViewer.vue")) {
+    return {};
   }
-  return match[1];
-}
-
-function loadComponentOptions() {
-  const source = fs.readFileSync(CHECKER_PATH, "utf8");
-  const scriptSource = extractScriptBlock(source);
-  const transpiled = ts.transpileModule(scriptSource, {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2017,
-      esModuleInterop: true,
-    },
-  }).outputText;
-
-  let captured = null;
-  const fakeVue = {
-    extend(options) {
-      captured = options;
-      return options;
-    },
-  };
-
-  const sandboxModule = { exports: {} };
-  const sandboxRequire = (specifier) => {
-    if (specifier === "vue") {
-      return fakeVue;
-    }
-    if (specifier.endsWith("ObjectViewer.vue")) {
-      return {};
-    }
-    if (specifier.endsWith("mall-actions.mixin")) {
-      // Only rejectReason validation depends on this; unrelated to navigation.
-      return {
-        REJECT_REASON_MAX: 2000,
-        objectDisplayName: (object) => (object && object.name) || "(unnamed)",
-        rejectReasonError: () => null,
-      };
-    }
-    throw new Error(`Unexpected import in test sandbox: ${specifier}`);
-  };
-
-  const context = vm.createContext({
-    require: sandboxRequire,
-    module: sandboxModule,
-    exports: sandboxModule.exports,
-    console,
-  });
-  vm.runInContext(transpiled, context, { filename: "checker.transpiled.js" });
-
-  if (!captured) {
-    throw new Error("Vue.extend was never called -- component options not captured");
+  if (specifier.endsWith("mall-actions.mixin")) {
+    // Only rejectReason validation depends on this; unrelated to navigation.
+    return {
+      REJECT_REASON_MAX: 2000,
+      objectDisplayName: (object) => (object && object.name) || "(unnamed)",
+      rejectReasonError: () => null,
+    };
   }
-  return captured;
+  return undefined;
 }
 
 /** A deferred promise, so the test controls exactly when each fetch resolves. */
@@ -98,7 +51,7 @@ function flush() {
 }
 
 async function run() {
-  const options = loadComponentOptions();
+  const options = loadComponentOptions(CHECKER_PATH, resolveImport);
   assert.strictEqual(typeof options.watch.objectId, "function", "watch.objectId must exist");
   assert.strictEqual(
     typeof options.methods.loadInspection, "function", "methods.loadInspection must exist",
