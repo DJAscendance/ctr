@@ -226,10 +226,11 @@
           The reason is required and goes to the uploader verbatim, so it is a
           full textarea rather than a prompt: staff are writing to a person.
         -->
-        <label class="block uppercase text-xs opacity-60 mb-1" for="reject-reason">
+        <label v-if="canTriage" class="block uppercase text-xs opacity-60 mb-1" for="reject-reason">
           Reason for rejection
         </label>
         <textarea
+          v-if="canTriage"
           id="reject-reason"
           v-model="rejectReason"
           class="w-full p-1 mb-2"
@@ -241,8 +242,19 @@
         ></textarea>
         <div class="flex flex-wrap items-center">
         <span class="uppercase text-xs opacity-60 mr-2">Staff actions</span>
-        <button class="btn mr-2" :disabled="isProcessing" @click="confirmApprove">Accept</button>
-        <button class="btn mr-2" :disabled="isProcessing" @click="confirmReject">Reject</button>
+        <!--
+          Accept and Reject are the Pending triage decisions. The checker is also
+          opened from Warehouse, Stocked, Out of Stock and Search, and both
+          endpoints mutate status regardless of the current one -- Reject would
+          delete and refund a stocked object. Editing stays available everywhere.
+        -->
+        <template v-if="canTriage">
+          <button class="btn mr-2" :disabled="isProcessing" @click="confirmApprove">Accept</button>
+          <button class="btn mr-2" :disabled="isProcessing" @click="confirmReject">Reject</button>
+        </template>
+        <span v-else class="text-xs opacity-60 mr-2">
+          Accept and Reject apply to pending objects only.
+        </span>
         <button class="btn-ui-inline" :disabled="isProcessing" @click="updateName">
           Edit Name
         </button>
@@ -287,8 +299,11 @@ import {
 /** Which list a checker arrived from, and the object status that list shows. */
 
 
+/** CTR status for an object awaiting Mall review. */
+const PENDING_STATUS = 2;
+
 const LIST_STATUS: { [key: string]: number } = {
-  pending: 2,
+  pending: PENDING_STATUS,
   warehouse: 3,
   stocked: 1,
 };
@@ -436,6 +451,16 @@ export default Vue.extend({
      * inspection never actually proved. Empty groups are dropped rather than
      * rendered as reassuring empty headings.
      */
+    /**
+     * Whether this object is awaiting the Pending triage decision.
+     *
+     * Read from the object's own status rather than the list it was reached
+     * from, so a stale `from` in the url cannot re-enable the buttons.
+     */
+    canTriage(): boolean {
+      return !!this.object && this.object.status === PENDING_STATUS;
+    },
+
     findingGroups(): any[] {
       const order = [
         {
