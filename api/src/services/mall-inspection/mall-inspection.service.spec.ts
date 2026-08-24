@@ -30,7 +30,7 @@ DEF Open TouchSensor {}
 DEF Spin TimeSensor {}
 `;
 
-function record(overrides: any = {}) {
+function record(overrides: { [key: string]: unknown } = {}) {
   return {
     id: 3339,
     name: 'Pocket Moon Playset',
@@ -133,7 +133,7 @@ describe('MallInspectionService', () => {
 
     it('compares WorldInfo against the CTR record', async () => {
       const inspection = await service.inspect(3339);
-      const verdicts: any = {};
+      const verdicts: { [field: string]: string } = {};
       inspection.comparisons.forEach(comparison => {
         verdicts[comparison.field] = comparison.verdict;
       });

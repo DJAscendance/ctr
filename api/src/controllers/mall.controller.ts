@@ -12,6 +12,7 @@ import {
   InboxService,
 } from '../services';
 import { PlaceRepository } from '../repositories';
+import { Object as ObjectModel } from '../types/models';
 import {
   createResponseWriter,
   EXPORT_ERROR_CODES,
@@ -264,7 +265,7 @@ export class MallController {
     }
   }
 
-  public async getObjectsCatalog(request: Request, response: Response): Promise<any> {
+  public async getObjectsCatalog(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     try {
@@ -279,7 +280,7 @@ export class MallController {
     }
   }
 
-  public async searchMallObjects(request: Request, response: Response): Promise<any> {
+  public async searchMallObjects(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.mallService.canAdmin(session.id);
@@ -301,7 +302,7 @@ export class MallController {
     }
   }
 
-  public async searchAllObjects(request: Request, response: Response): Promise<any> {
+  public async searchAllObjects(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.mallService.canAdmin(session.id);
@@ -412,8 +413,32 @@ export class MallController {
         return;
       }
 
-      await this.objectService.updateStatusApproved(
-        parseInt(request.body.objectId));
+      const objectId = parseObjectId(request.body.objectId);
+      if (objectId === null) {
+        response.status(400).json({
+          error: 'Invalid or missing object id.',
+        });
+        return;
+      }
+
+      // Same authority as Reject: the status is re-checked under a row lock, so
+      // approving is not something a stale page or a crafted request can apply
+      // to an object that was never a pending submission.
+      const approval = await this.objectService.approvePendingObject(objectId);
+
+      if (approval.outcome === ObjectService.REJECT_NOT_FOUND) {
+        response.status(400).json({
+          error: 'Invalid or missing object id.',
+        });
+        return;
+      }
+      if (approval.outcome === ObjectService.REJECT_INVALID_STATE) {
+        response.status(400).json({
+          error: 'Only a pending object can be accepted.',
+        });
+        return;
+      }
+
       response.status(200).json({ status: 'success' });
     } catch (error) {
       console.error(error);
@@ -539,7 +564,7 @@ export class MallController {
    */
   private async notifyRejection(
     staffMemberId: number,
-    objectRecord: any,
+    objectRecord: ObjectModel,
     reason: string,
   ): Promise<boolean> {
     try {
@@ -592,57 +617,43 @@ export class MallController {
         return;
       }
 
-      const objectRecord = await this.objectService.findById(parseInt(request.body.id));
-      if (!objectRecord) {
+      const objectId = parseObjectId(request.body.id);
+      if (objectId === null) {
         response.status(400).json({
           error: 'Invalid or missing object id.',
         });
         return;
       }
 
-      // A repeat request for an object that is already rejected must not refund
-      // a second time or send a second notice.
-      if (objectRecord.status === ObjectService.STATUS_DELETED) {
+      // Everything that moves state or money happens inside one transaction that
+      // locks the object row, so two staff rejecting the same object at the same
+      // moment produce exactly one refund. The service decides the outcome from
+      // the status it reads under that lock, never from what the browser thinks.
+      const rejection = await this.objectService.rejectPendingObject(objectId);
+
+      if (rejection.outcome === ObjectService.REJECT_NOT_FOUND) {
+        response.status(400).json({
+          error: 'Invalid or missing object id.',
+        });
+        return;
+      }
+      if (rejection.outcome === ObjectService.REJECT_INVALID_STATE) {
+        // A stale page, or a crafted request. Staff authorisation is not a
+        // licence to refund an object that was never a pending submission.
+        response.status(400).json({
+          error: 'Only a pending object can be rejected.',
+        });
+        return;
+      }
+      if (rejection.outcome === ObjectService.REJECT_ALREADY_REJECTED) {
         response.status(200).json({ status: 'success', notified: false, alreadyRejected: true });
         return;
       }
 
-      const sellersFee = await this.objectService.getSellerFee(
-        objectRecord.quantity,
-        objectRecord.price,
-      );
-
-      // Refund first, then the status change, and both awaited: success has to
-      // mean the rejection happened, not that it started.
-      //
-      // The order matters. `createObjectUploadRefundTransaction` already runs the
-      // wallet credit and the transaction row inside one knex transaction, so the
-      // refund is all-or-nothing on its own. Doing it first means a refund
-      // failure leaves the object still pending, so the 400 staff see is honest
-      // and their retry re-runs the whole thing correctly.
-      //
-      // Rejecting first would instead leave an object marked deleted whose
-      // uploader was never paid, and the already-rejected guard above would then
-      // turn every retry into a success -- putting the money permanently out of
-      // reach through the API.
-      //
-      // The residual window is the reverse: a refund that lands followed by a
-      // failing status update, where a retry refunds twice. That is a single-row
-      // update by primary key rather than a multi-statement transaction, so it is
-      // the far less likely of the two, it is visible in the member's transaction
-      // history, and it errs towards the uploader rather than against them.
-      // Closing it entirely needs one transaction spanning both writes, which
-      // means threading a trx through the object repository.
-      await this.objectService.performObjectUploadRefundTransaction(
-        objectRecord.member_id,
-        sellersFee,
-      );
-      await this.objectService.updateStatusRejected(objectRecord.id);
-
-      // The refund above cannot be undone and carries no idempotency key, so a
-      // failed notification must not become a 500 that invites a retry and a
-      // second refund. It is reported honestly instead.
-      const notified = await this.notifyRejection(session.id, objectRecord, reason);
+      // Only now, with the refund and the status change committed. A failure
+      // here cannot undo them, so it is reported rather than raised: a 500 would
+      // invite a retry that the guard above would answer with a bare success.
+      const notified = await this.notifyRejection(session.id, rejection.object, reason);
 
       response.status(200).json({ status: 'success', notified });
     } catch (error) {

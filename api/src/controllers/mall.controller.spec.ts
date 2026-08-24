@@ -1,3 +1,4 @@
+import { Request, Response } from 'express';
 import { createSpyObj } from 'jest-createspyobj';
 
 // Importing a controller pulls in the services barrel, which instantiates every
@@ -20,20 +21,40 @@ import {
 } from '../services';
 import { PlaceRepository } from '../repositories';
 
-function mockResponse() {
-  const response: any = {};
+/**
+ * A response double.
+ *
+ * Typed as an Express `Response` so it can be handed to the real handlers, and
+ * intersected with the jest mocks the assertions read back. The single cast in
+ * the factory is the honest part: this object only implements what the handlers
+ * under test actually call.
+ */
+type MockResponse = jest.Mocked<Response> & {
+  headers: { [name: string]: string };
+};
+
+function mockResponse(): MockResponse {
+  const response = {} as MockResponse;
   response.status = jest.fn().mockReturnValue(response);
   response.json = jest.fn().mockReturnValue(response);
   response.send = jest.fn().mockReturnValue(response);
   response.headers = {};
   response.setHeader = jest.fn((name: string, value: string) => {
     response.headers[name] = value;
-  });
+    return response;
+  }) as unknown as MockResponse['setHeader'];
   return response;
 }
 
-function request(params: any = {}, query: any = {}, apitoken = 'staff-token'): any {
-  return { params, query, headers: { apitoken } };
+/** A request double, carrying only what the handlers under test read. */
+type MockRequest = Request;
+
+function request(
+  params: { [key: string]: string } = {},
+  query: { [key: string]: string } = {},
+  apitoken = 'staff-token',
+): MockRequest {
+  return { params, query, headers: { apitoken } } as unknown as MockRequest;
 }
 
 const INSPECTION = {
@@ -409,18 +430,24 @@ describe('MallController - staff-only inspection endpoints', () => {
       status: 2,
     };
 
-    function rejectRequest(body: any = {}): any {
+    function rejectRequest(body: { [key: string]: unknown } = {}): MockRequest {
       return {
         headers: { apitoken: 'staff-token' },
         body: { id: '3339', reason: 'WorldInfo says unlimited, the Mall limit says 25.', ...body },
-      };
+      } as unknown as MockRequest;
     }
 
     beforeEach(() => {
       objectService.findById.mockResolvedValue({ ...OBJECT } as never);
       objectService.getSellerFee.mockReturnValue(100 as never);
-      objectService.updateStatusRejected.mockResolvedValue(undefined as never);
-      objectService.performObjectUploadRefundTransaction.mockResolvedValue(undefined as never);
+      // The refund, the status change and the concurrency guard now live inside
+      // one transaction in ObjectService, proven against a real database in
+      // object.service.atomic.spec.ts. What is left to prove here is that the
+      // controller maps each outcome to the right response, and only notifies
+      // after a rejection actually committed.
+      objectService.rejectPendingObject.mockResolvedValue(
+        { outcome: ObjectService.REJECT_REJECTED, object: { ...OBJECT } } as never,
+      );
       placeRepository.findHomeByMemberId.mockResolvedValue({ id: 909 } as never);
       inboxService.sanitize.mockImplementation((value: string) => Promise.resolve(value) as never);
       inboxService.postInboxMessage.mockResolvedValue(undefined as never);
@@ -432,8 +459,7 @@ describe('MallController - staff-only inspection endpoints', () => {
       await controller.rejectObject(rejectRequest({ reason: '' }), response);
 
       expect(response.status).toHaveBeenCalledWith(400);
-      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
-      expect(objectService.performObjectUploadRefundTransaction).not.toHaveBeenCalled();
+      expect(objectService.rejectPendingObject).not.toHaveBeenCalled();
       expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
     });
 
@@ -443,7 +469,7 @@ describe('MallController - staff-only inspection endpoints', () => {
       await controller.rejectObject(rejectRequest({ reason: '   \n\t  ' }), response);
 
       expect(response.status).toHaveBeenCalledWith(400);
-      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
+      expect(objectService.rejectPendingObject).not.toHaveBeenCalled();
     });
 
     it('refuses a reason longer than the accepted maximum rather than truncating', async () => {
@@ -452,62 +478,58 @@ describe('MallController - staff-only inspection endpoints', () => {
       await controller.rejectObject(rejectRequest({ reason: 'x'.repeat(2001) }), response);
 
       expect(response.status).toHaveBeenCalledWith(400);
-      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
+      expect(objectService.rejectPendingObject).not.toHaveBeenCalled();
       expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
     });
 
-    it('completes the rejection and the refund before reporting success', async () => {
+    it('completes the rejection before reporting success', async () => {
       const response = mockResponse();
 
       await controller.rejectObject(rejectRequest(), response);
 
-      expect(objectService.updateStatusRejected).toHaveBeenCalledWith(3339);
-      expect(objectService.performObjectUploadRefundTransaction).toHaveBeenCalledWith(42, 100);
+      expect(objectService.rejectPendingObject).toHaveBeenCalledWith(3339);
       expect(response.status).toHaveBeenCalledWith(200);
       expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: true });
     });
 
-    it('refunds before it marks the object rejected, so a failed refund is recoverable',
-      async () => {
-        const order: string[] = [];
-        objectService.performObjectUploadRefundTransaction.mockImplementation((() => {
-          order.push('refund');
-          return Promise.resolve();
-        }) as never);
-        objectService.updateStatusRejected.mockImplementation((() => {
-          order.push('status');
-          return Promise.resolve();
-        }) as never);
-        const response = mockResponse();
-
-        await controller.rejectObject(rejectRequest(), response);
-
-        // The other order would leave an object marked deleted whose uploader was
-        // never paid, and the already-rejected guard would make every retry a
-        // no-op success -- putting the money out of reach through the API.
-        expect(order).toEqual(['refund', 'status']);
-      });
-
-    it('leaves the object rejectable when the refund fails', async () => {
-      objectService.performObjectUploadRefundTransaction
-        .mockRejectedValue(new Error('wallet locked') as never);
+    it('refuses an object that is not a pending submission', async () => {
+      objectService.rejectPendingObject.mockResolvedValue(
+        { outcome: ObjectService.REJECT_INVALID_STATE, object: { ...OBJECT } } as never,
+      );
       const response = mockResponse();
 
       await controller.rejectObject(rejectRequest(), response);
 
-      // Nothing was marked deleted, so the guard will not short-circuit the
-      // retry and the whole rejection can be re-run.
-      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
-      expect(response.status).not.toHaveBeenCalledWith(200);
+      // Staff authorisation is not a licence to refund a stocked object because
+      // a stale page asked for it.
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(response.json).toHaveBeenCalledWith({
+        error: 'Only a pending object can be rejected.',
+      });
       expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
     });
 
-    it('does not report success if the rejection itself fails, and sends no notice', async () => {
-      objectService.updateStatusRejected.mockRejectedValue(new Error('db down') as never);
+    it('refuses an object id that does not exist', async () => {
+      objectService.rejectPendingObject.mockResolvedValue(
+        { outcome: ObjectService.REJECT_NOT_FOUND, object: null } as never,
+      );
       const response = mockResponse();
 
       await controller.rejectObject(rejectRequest(), response);
 
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+
+    it('reports no success and sends no notice when the transaction fails', async () => {
+      objectService.rejectPendingObject
+        .mockRejectedValue(new Error('deadlock') as never);
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      // The transaction rolled back, so nothing was refunded and nothing was
+      // rejected; telling the uploader anything would be a lie.
       expect(response.status).not.toHaveBeenCalledWith(200);
       expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
     });
@@ -560,9 +582,10 @@ describe('MallController - staff-only inspection endpoints', () => {
 
     it('keeps a punctuated or unicode object name intact but never lets it break the subject',
       async () => {
-        objectService.findById.mockResolvedValue(
-          { ...OBJECT, name: 'Café "Deluxe" — v2\nInjected' } as never,
-        );
+        objectService.rejectPendingObject.mockResolvedValue({
+          outcome: ObjectService.REJECT_REJECTED,
+          object: { ...OBJECT, name: 'Café "Deluxe" — v2\nInjected' },
+        } as never);
         const response = mockResponse();
 
         await controller.rejectObject(rejectRequest(), response);
@@ -578,7 +601,7 @@ describe('MallController - staff-only inspection endpoints', () => {
 
       await controller.rejectObject(rejectRequest(), response);
 
-      expect(objectService.updateStatusRejected).toHaveBeenCalledWith(3339);
+      expect(objectService.rejectPendingObject).toHaveBeenCalledWith(3339);
       expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: false });
     });
 
@@ -595,13 +618,16 @@ describe('MallController - staff-only inspection endpoints', () => {
     });
 
     it('does not refund or notify twice when the object is already rejected', async () => {
-      objectService.findById.mockResolvedValue({ ...OBJECT, status: 0 } as never);
+      objectService.rejectPendingObject.mockResolvedValue(
+        {
+          outcome: ObjectService.REJECT_ALREADY_REJECTED,
+          object: { ...OBJECT, status: 0 },
+        } as never,
+      );
       const response = mockResponse();
 
       await controller.rejectObject(rejectRequest(), response);
 
-      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
-      expect(objectService.performObjectUploadRefundTransaction).not.toHaveBeenCalled();
       expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
       expect(response.json).toHaveBeenCalledWith(
         { status: 'success', notified: false, alreadyRejected: true },
@@ -615,7 +641,7 @@ describe('MallController - staff-only inspection endpoints', () => {
       await controller.rejectObject(rejectRequest(), response);
 
       expect(response.status).toHaveBeenCalledWith(400);
-      expect(objectService.findById).not.toHaveBeenCalled();
+      expect(objectService.rejectPendingObject).not.toHaveBeenCalled();
       expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
     });
   });

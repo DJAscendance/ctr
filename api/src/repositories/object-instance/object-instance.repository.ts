@@ -1,7 +1,21 @@
 import { Service } from 'typedi';
 import {knex} from '../../db';
 import { Db } from '../../db/db.class';
+import { CountRow } from '../row.types';
 import { ObjectInstance, Object } from 'models';
+
+/** One row of a `count(...) ... group by object_id` result. */
+interface GroupedCountRow {
+  object_id: number;
+  total: number | string;
+}
+
+/** An owned object instance joined with the fields needed to render it. */
+export interface BackpackRow extends ObjectInstance {
+  filename: string;
+  directory: string;
+  name: string;
+}
 
 @Service()
 export class ObjectInstanceRepository {
@@ -95,7 +109,7 @@ export class ObjectInstanceRepository {
     });
   }
 
-  public async seizedObjects(): Promise<any> {
+  public async seizedObjects(): Promise<ObjectInstance[]> {
     const seizedObjects = await this.db.objectInstance.where({
       member_id: null,
     });
@@ -116,7 +130,7 @@ export class ObjectInstanceRepository {
   public async updateObjectInstanceOwner(
     objectId: number,
     buyerId: number,
-  ): Promise<any> {
+  ): Promise<number> {
     return knex('object_instance')
       .where('id', objectId)
       .update({
@@ -129,7 +143,7 @@ export class ObjectInstanceRepository {
   public async updateObjectInstanceName(
     objectId: number,
     objectName: string,
-  ): Promise<any> {
+  ): Promise<number> {
     return knex('object_instance')
       .where('id', objectId)
       .update({object_name: objectName});
@@ -138,7 +152,7 @@ export class ObjectInstanceRepository {
   public async updateObjectInstancePrice(
     objectId: number,
     objectPrice: string,
-  ): Promise<any> {
+  ): Promise<number> {
     return knex('object_instance')
       .where('id', objectId)
       .update({object_price: objectPrice});
@@ -147,7 +161,7 @@ export class ObjectInstanceRepository {
   public async updateObjectInstanceBuyer(
     objectId: number,
     objectBuyer: string,
-  ): Promise<any> {
+  ): Promise<number> {
     return knex('object_instance')
       .where('id', objectId)
       .update({object_buyer: objectBuyer});
@@ -175,10 +189,10 @@ export class ObjectInstanceRepository {
     }
     const rows = await this.db.objectInstance
       .select('object_id')
-      .count('id as total')
+      .count<GroupedCountRow[]>('id as total')
       .whereIn('object_id', objectIds)
       .groupBy('object_id');
-    rows.forEach((row: any) => {
+    rows.forEach((row: GroupedCountRow) => {
       counts[row.object_id] = Number.parseInt(String(row.total), 10);
     });
     return counts;
@@ -192,29 +206,29 @@ export class ObjectInstanceRepository {
     const counts: { [objectId: number]: number } = {};
     const rows = await this.db.objectInstance
       .select('object_id')
-      .count('id as total')
+      .count<GroupedCountRow[]>('id as total')
       .groupBy('object_id');
-    rows.forEach((row: any) => {
+    rows.forEach((row: GroupedCountRow) => {
       counts[row.object_id] = Number.parseInt(String(row.total), 10);
     });
     return counts;
   }
 
-  public async findForSale(): Promise<any> {
+  public async findForSale(): Promise<CountRow[]> {
     return this.db.objectInstance
-      .count('id as count')
+      .count<CountRow[]>('id as count')
       .where('object_price', '!=', '')
       .orWhere('object_price', '!=', null);
   }
 
-  public async averageForSale(): Promise<any> {
+  public async averageForSale(): Promise<{ price: number }[]> {
     return this.db.objectInstance
       .avg({price: 'object_price'})
       .where('object_price', '!=', '')
       .orWhere('object_price', '!=', null);
   }
 
-  public async highestForSale(): Promise<any> {
+  public async highestForSale(): Promise<{ price: number }[]> {
     return this.db.objectInstance
       .max({price: 'object_price'})
       .where('object_price', '!=', '')
@@ -236,7 +250,7 @@ export class ObjectInstanceRepository {
 
   public async countForSaleById(objectId: number): Promise<number> {
     const count = await this.db.objectInstance
-      .count('id as count')
+      .count<CountRow[]>('id as count')
       .where('object_id', objectId)
       .andWhere('object_price', '>=', 0)
       .andWhere('object_buyer', null);
@@ -246,7 +260,7 @@ export class ObjectInstanceRepository {
   public async countByPublicPlaces(
     objectId: number, fleamarket: number, blackmarket): Promise<number> {
     const count = await this.db.objectInstance
-      .count('id as count')
+      .count<CountRow[]>('id as count')
       .where('object_id', objectId)
       .andWhere('place_id', fleamarket)
       .orWhere('object_id', objectId)
@@ -254,7 +268,7 @@ export class ObjectInstanceRepository {
     return parseInt(Object.values(count[0])[0]);
   }
 
-  public async getMemberBackpack(memberId: number): Promise<any> {
+  public async getMemberBackpack(memberId: number): Promise<BackpackRow[]> {
     return await this.db.objectInstance
       .select('object_instance.*', 'object.filename', 'object.directory', 'object.name')
       .join('object', 'object_instance.object_id', 'object.id')

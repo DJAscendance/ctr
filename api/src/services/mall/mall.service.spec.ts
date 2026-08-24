@@ -1,4 +1,13 @@
 import { createSpyObj } from 'jest-createspyobj';
+import { ObjectWithUsername } from '../../repositories/object/object.repository';
+
+/**
+ * The fixtures carry only the columns decoration reads, not whole object rows,
+ * so the helper takes what the tests actually build.
+ */
+type FixtureObject = Partial<ObjectWithUsername> & { id: number };
+import { StoreRow } from '../../repositories/mall-object/mall-object.repository';
+import { Member } from '../../types/models';
 
 import { MallService } from './mall.service';
 import {
@@ -17,11 +26,11 @@ import {
  * provably output-preserving rather than merely plausible.
  */
 async function legacyDecorate(
-  objects: any[],
-  members: { [id: number]: any },
-  stores: { [id: number]: any },
+  objects: FixtureObject[],
+  members: { [id: number]: Pick<Member, 'id' | 'username'> },
+  stores: { [id: number]: Partial<StoreRow> },
   counts: { [id: number]: number },
-): Promise<any[]> {
+): Promise<FixtureObject[]> {
   const decorated = [];
   for (const object of objects) {
     const user = object.member_id ? members[object.member_id] : null;
@@ -107,19 +116,19 @@ describe('MallService - batched list decoration', () => {
     it('preserves object order', async () => {
       const result = await service.findSoldOut();
 
-      expect(result.objects.map((object: any) => object.id)).toEqual([10, 11, 12, 13]);
+      expect(result.objects.map((object: FixtureObject) => object.id)).toEqual([10, 11, 12, 13]);
     });
 
     it('keeps the "Deleted User" placeholder for an object with no creator', async () => {
       const result = await service.findSoldOut();
-      const orphan = result.objects.find((object: any) => object.id === 12);
+      const orphan = result.objects.find((object: FixtureObject) => object.id === 12);
 
       expect(orphan.username).toBe('Deleted User');
     });
 
     it('defaults an object with no instances to a sold count of zero', async () => {
       const result = await service.findSoldOut();
-      const unsold = result.objects.find((object: any) => object.id === 13);
+      const unsold = result.objects.find((object: FixtureObject) => object.id === 13);
 
       expect(unsold.instances).toBe(0);
       expect(unsold.store).toBeUndefined();

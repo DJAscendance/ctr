@@ -18,6 +18,12 @@ import {
   textureReferences,
 } from '../../libs';
 import { ObjectSourceService } from '../object-source/object-source.service';
+import {
+  ObjectViewRow,
+  ObjectWithUsername,
+} from '../../repositories/object/object.repository';
+import { StoreRow } from '../../repositories/mall-object/mall-object.repository';
+import { Member, Place } from '../../types/models';
 
 /**
  * Streams CTR's authoritative Mall dataset as one deterministic JSON document.
@@ -57,10 +63,82 @@ export interface ExportWriter {
 
 /** Everything global the document needs, gathered before the body opens. */
 export interface ExportPreflight {
-  stores: any[];
-  viewRows: any[];
+  stores: Place[];
+  viewRows: ObjectViewRow[];
   allCounts: { [objectId: string]: number };
-  allStores: { [objectId: string]: any };
+  allStores: { [objectId: string]: StoreRow };
+}
+
+/**
+ * The part of a Node response this writer touches.
+ *
+ * Narrower than `ServerResponse` on purpose: the specs drive it with a plain
+ * EventEmitter, and naming exactly what is used keeps that honest.
+ */
+export interface ExportResponse {
+  write(chunk: string): boolean;
+  once(event: string, listener: () => void): unknown;
+  removeListener(event: string, listener: () => void): unknown;
+  writableEnded?: boolean;
+  destroyed?: boolean;
+}
+
+/** Why a document stopped early, and where it got to. */
+export interface ExportTruncation {
+  reason: string;
+  lastObjectId: number | null;
+  limit?: number;
+  limitMs?: number;
+}
+
+/** Per-object counters the derived pass keeps. */
+export interface DerivedTally {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  failuresByReason: { [reason: string]: number };
+}
+
+/** A JSON object in the document whose keys are not read back. */
+export type JsonObject = { [key: string]: unknown };
+
+/**
+ * One object's entry in the document.
+ *
+ * The fields the derived pass reads back are declared; the rest of the entry is
+ * assembled dynamically and only ever serialised.
+ */
+export interface ExportObject extends JsonObject {
+  id: number;
+  name: string | null;
+  creator: { memberId: number | null; username: string | null };
+  price: number | null;
+  limit: number | null;
+  store: { id: number; name: string } | null;
+}
+
+/** What `buildObject` needs to know about a row beyond the row itself. */
+export interface ExportObjectContext {
+  member: Member | null;
+  sold: number;
+  store: StoreRow | null;
+  includeDerived: boolean;
+  derivedTally: DerivedTally;
+}
+
+/** What `buildResult` measures once the body is written. */
+export interface ExportResultContext {
+  status: ExportStatus;
+  now: () => number;
+  startedAt: number;
+  startedIso: string;
+  objectsWritten: number;
+  viewRows: ObjectViewRow[];
+  allCounts: { [objectId: string]: number };
+  storesCount: number;
+  truncation: ExportTruncation | null;
+  derivedTally: DerivedTally;
+  includeDerived: boolean;
 }
 
 export interface ExportOptions {
@@ -116,7 +194,7 @@ export function publicErrorCode(error: unknown): string {
   return EXPORT_ERROR_CODES.failed;
 }
 
-export function createResponseWriter(response: any): ExportWriter {
+export function createResponseWriter(response: ExportResponse): ExportWriter {
   const isClosed = (): boolean => !!(response.writableEnded || response.destroyed);
 
   return {
@@ -211,7 +289,7 @@ export class MallExportService {
     const { stores, viewRows, allCounts, allStores } = preflight;
 
     let status: ExportStatus = 'complete';
-    let truncation: any = null;
+    let truncation: ExportTruncation | null = null;
     let objectsWritten = 0;
     let bodyStarted = false;
     let objectsOpened = false;
@@ -226,7 +304,7 @@ export class MallExportService {
       await writer.write(`{"schema":${JSON.stringify(this.buildSchema(startedIso, options))}`);
       bodyStarted = true;
 
-      await writer.write(`,"stores":${JSON.stringify(stores.map((store: any) => ({
+      await writer.write(`,"stores":${JSON.stringify(stores.map((store: Place) => ({
         id: store.id,
         name: store.name,
         slug: store.slug,
@@ -272,7 +350,7 @@ export class MallExportService {
         }
 
         const members = await this.memberRepository.findByIds(
-          page.map((row: any) => row.member_id).filter((id: any) => !!id),
+          page.map(row => row.member_id).filter((id: number) => !!id),
         );
 
         for (const row of page) {
@@ -342,7 +420,7 @@ export class MallExportService {
     return status;
   }
 
-  private buildSchema(startedIso: string, options: ExportOptions): any {
+  private buildSchema(startedIso: string, options: ExportOptions): JsonObject {
     return {
       schemaVersion: EXPORT_SCHEMA_VERSION,
       generator: EXPORT_GENERATOR,
@@ -392,8 +470,11 @@ export class MallExportService {
    * They overlap on purpose - a sold-out object is in both `stocked` and
    * `outOfStock` - so they are never collapsed into a single status label.
    */
-  private buildViews(viewRows: any[], counts: { [id: number]: number }): any {
-    const views: any = {
+  private buildViews(
+    viewRows: ObjectViewRow[],
+    counts: { [id: number]: number },
+  ): JsonObject {
+    const views: JsonObject = {
       _definitions: CTR_VIEW_DEFINITIONS,
       _note: 'Current CTR staff-panel view memberships, derived rather than stored. '
         + 'Scoped to the objects in this document, which is pending-only -- so `pending` '
@@ -417,8 +498,8 @@ export class MallExportService {
         limit: row.limit === undefined ? null : row.limit,
       });
       Object.keys(membership).forEach(view => {
-        if ((membership as any)[view]) {
-          views[view].push(row.id);
+        if (membership[view as keyof typeof membership]) {
+          (views[view] as number[]).push(row.id);
         }
       });
     });
@@ -426,9 +507,12 @@ export class MallExportService {
     return views;
   }
 
-  private async buildObject(row: any, context: any): Promise<any> {
+  private async buildObject(
+    row: ObjectWithUsername,
+    context: ExportObjectContext,
+  ): Promise<ExportObject> {
     const limit = row.limit === undefined ? null : row.limit;
-    const entry: any = {
+    const entry: ExportObject = {
       id: row.id,
       assetDirectory: row.directory ?? null,
       name: row.name ?? null,
@@ -483,7 +567,11 @@ export class MallExportService {
     return entry;
   }
 
-  private async buildDerived(row: any, tally: any, entry: any): Promise<any> {
+  private async buildDerived(
+    row: ObjectWithUsername,
+    tally: DerivedTally,
+    entry: ExportObject,
+  ): Promise<JsonObject> {
     tally.attempted += 1;
 
     const source = await this.objectSourceService.readSource({
@@ -491,7 +579,7 @@ export class MallExportService {
       filename: row.filename,
     });
 
-    const derived: any = {
+    const derived: JsonObject = {
       wrl: {
         storedBytes: source.storedBytes,
         encoding: source.encoding,
@@ -566,13 +654,13 @@ export class MallExportService {
   }
 
   /** Written last, so every number in it is measured rather than predicted. */
-  private buildResult(context: any): any {
+  private buildResult(context: ExportResultContext): JsonObject {
     const byStatus: { [status: string]: number } = {};
     const viewSizes: { [view: string]: number } = {
       pending: 0, warehouse: 0, stocked: 0, outOfStock: 0, removed: 0, inactive: 0,
     };
 
-    context.viewRows.forEach((row: any) => {
+    context.viewRows.forEach((row: ObjectViewRow) => {
       byStatus[String(row.status)] = (byStatus[String(row.status)] || 0) + 1;
       const membership = ctrViewsFor({
         status: row.status,
@@ -581,13 +669,13 @@ export class MallExportService {
         limit: row.limit === undefined ? null : row.limit,
       });
       Object.keys(viewSizes).forEach(view => {
-        if ((membership as any)[view]) {
+        if (membership[view as keyof typeof membership]) {
           viewSizes[view] += 1;
         }
       });
     });
 
-    const result: any = {
+    const result: JsonObject = {
       status: context.status,
       finishedAt: new Date(context.now()).toISOString(),
       durationMs: context.now() - context.startedAt,
@@ -615,7 +703,7 @@ export class MallExportService {
     return result;
   }
 
-  private parseJson(value: any): any {
+  private parseJson(value: unknown): unknown {
     if (typeof value !== 'string' || value === '') {
       return null;
     }

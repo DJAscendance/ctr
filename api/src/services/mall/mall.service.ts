@@ -10,6 +10,8 @@ import {
   MemberRepository,
 } from '../../repositories';
 import { MallObjectPosition, MallObjectRotation } from 'models';
+import { ObjectWithUsername } from '../../repositories/object/object.repository';
+import { CountRow } from '../../repositories/row.types';
 
 /** Service for dealing with the mall */
 @Service()
@@ -74,7 +76,9 @@ export class MallService {
    * unchanged, including the 'Deleted User' placeholder for objects whose
    * creator no longer exists.
    */
-  private async decorateObjects(objects: any[]): Promise<any[]> {
+  private async decorateObjects(
+    objects: ObjectWithUsername[],
+  ): Promise<ObjectWithUsername[]> {
     if (!objects.length) {
       return objects;
     }
@@ -105,7 +109,10 @@ export class MallService {
     return {objects: await this.decorateObjects(objects)};
   }
 
-  public async getObjectsCatalog(limit: number, offset: number): Promise<any> {
+  public async getObjectsCatalog(
+    limit: number,
+    offset: number,
+  ): Promise<{ objects: ObjectWithUsername[]; total: CountRow[] }> {
     const returnObjects = [];
     const fleamarket = await this.placeRepository.findBySlug('fleamarket');
     const blackmarket = await this.placeRepository.findBySlug('blackmarket');
@@ -124,7 +131,11 @@ export class MallService {
     };
   }
 
-  public async searchMallObjects(search: string, limit: number, offset: number): Promise<any> {
+  public async searchMallObjects(
+    search: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ objects: ObjectWithUsername[]; total: CountRow[] }> {
     const objects = await this.objectRepository.searchMallObjects(search, limit, offset);
     const total = await this.objectRepository.getTotal(search);
     return {
@@ -138,7 +149,7 @@ export class MallService {
     compare: string, 
     status: number, 
     limit: number, 
-    offset: number): Promise<any> {
+    offset: number): Promise<{ objects: ObjectWithUsername[]; total: CountRow[] }> {
     const objects = await this.objectRepository.searchAllObjects(
       search, compare, status, limit, offset);
     const total = await this.objectRepository.getSearchTotal(search, compare, status);

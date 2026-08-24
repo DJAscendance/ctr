@@ -41,6 +41,89 @@ Shape { appearance Appearance { texture ImageTexture { url "moon.jpg" } } }
 /** CTR status 2. Mirrors `PENDING_STATUS` in ObjectRepository. */
 const PENDING_STATUS = 2;
 
+/** One object row as the fixtures build them. */
+type ExportObjectRow = typeof OBJECTS[number];
+
+/** The parts of a per-object `derived` block these tests read. */
+interface DerivedBlock {
+  wrl: {
+    storedBytes: number | null;
+    decodedBytes: number | null;
+    encoding: string | null;
+    sha256: string | null;
+  };
+  worldInfo: unknown;
+  nodeCounts: { [node: string]: number };
+  comparisons: { field: string; verdict: string }[];
+  sourceError?: string;
+  parseError?: string;
+}
+
+/** One object entry, as far as these tests inspect it. */
+interface ExportEntry {
+  id: number;
+  assetDirectory: string | null;
+  name: string | null;
+  status: number;
+  quantity: number | null;
+  limit: number | null;
+  creator: { memberId: number | null; username: string | null };
+  store: { id: number; name: string } | null;
+  placement: { position: unknown; rotation: unknown } | null;
+  assets?: { [kind: string]: { filename: string; url: string } | null };
+  derived?: DerivedBlock;
+}
+
+/** The completion record written last. */
+interface ExportResultBlock {
+  status: string;
+  objectsWritten: number;
+  truncation: {
+    reason: string;
+    lastObjectId: number | null;
+    limit?: number;
+    limitMs?: number;
+  } | null;
+  counts: {
+    objects: number;
+    stores: number;
+    byStatus: { [status: string]: number };
+    ctrViewSizes: { [view: string]: number };
+    _definitions: { [key: string]: string };
+    _takenAt: string;
+  };
+  derived: {
+    attempted: number;
+    succeeded: number;
+    failed: number;
+    failuresByReason: { [reason: string]: number };
+  };
+}
+
+/** The whole exported document. */
+interface ExportDocument {
+  schema: {
+    schemaVersion: string;
+    generator: string;
+    includesDerived: boolean;
+    scope: { objects: string; note: string };
+    timestamps: { normalized: boolean; note: string };
+  };
+  stores: { id: number; name: string; slug: string; status: number }[];
+  ctrViews: {
+    pending: number[];
+    warehouse: number[];
+    stocked: number[];
+    outOfStock: number[];
+    removed: number[];
+    inactive: number[];
+    _definitions: { [view: string]: string };
+    _note: string;
+  };
+  objects: ExportEntry[];
+  result: ExportResultBlock;
+}
+
 const OBJECTS = [
   {
     id: 10, directory: 'uuid-a', filename: 'a.wrl', image: 'a.jpg', texture: null,
@@ -120,7 +203,14 @@ describe('MallExportService', () => {
     fs.writeFileSync(path.join(target, filename), contents);
   }
 
-  async function runExport(includeDerived = false, now?: () => number): Promise<any> {
+  /** The parsed document plus the raw text, so tests can assert on either. */
+  interface ExportRun {
+    status: string;
+    raw: string;
+    document: ExportDocument;
+  }
+
+  async function runExport(includeDerived = false, now?: () => number): Promise<ExportRun> {
     const writer = collectingWriter();
     const preflight = await service.preflight();
     const status = await service.export(writer, { includeDerived, now }, preflight);
@@ -211,7 +301,7 @@ describe('MallExportService', () => {
     it('emits objects in ascending id order', async () => {
       const { document } = await runExport();
 
-      expect(document.objects.map((object: any) => object.id)).toEqual([10, 11, 12]);
+      expect(document.objects.map((object: ExportEntry) => object.id)).toEqual([10, 11, 12]);
     });
 
     it('names the schema version and generator', async () => {
@@ -279,7 +369,7 @@ describe('MallExportService', () => {
   describe('field discipline', () => {
     it('preserves a null creator instead of inventing "Deleted User"', async () => {
       const { document, raw } = await runExport();
-      const orphan = document.objects.find((object: any) => object.id === 11);
+      const orphan = document.objects.find((object: ExportEntry) => object.id === 11);
 
       expect(orphan.creator).toEqual({ memberId: null, username: null });
       expect(raw).not.toContain('Deleted User');
@@ -343,7 +433,7 @@ describe('MallExportService', () => {
     it('omits every derived block', async () => {
       const { document } = await runExport(false);
 
-      document.objects.forEach((object: any) => {
+      document.objects.forEach((object: ExportEntry) => {
         expect(object).not.toHaveProperty('derived');
       });
       expect(document.schema.includesDerived).toBe(false);
@@ -364,7 +454,7 @@ describe('MallExportService', () => {
   describe('derived=1', () => {
     it('reports stored and decoded bytes separately, plus the encoding', async () => {
       const { document } = await runExport(true);
-      const object = document.objects.find((entry: any) => entry.id === 10);
+      const object = document.objects.find((entry: ExportEntry) => entry.id === 10);
 
       expect(object.derived.wrl.encoding).toBe('gzip');
       expect(object.derived.wrl.storedBytes).toBeLessThan(object.derived.wrl.decodedBytes);
@@ -373,17 +463,19 @@ describe('MallExportService', () => {
 
     it('carries WorldInfo, node counts and comparisons', async () => {
       const { document } = await runExport(true);
-      const object = document.objects.find((entry: any) => entry.id === 10);
+      const object = document.objects.find((entry: ExportEntry) => entry.id === 10);
 
       expect(object.derived.worldInfo[0].title).toBe('Pocket Moon Playset');
       expect(object.derived.nodeCounts.ImageTexture).toBe(1);
-      expect(object.derived.comparisons.find((c: any) => c.field === 'price').verdict)
+      const priceComparison = object.derived.comparisons
+        .find((c: { field: string; verdict: string }) => c.field === 'price');
+      expect(priceComparison.verdict)
         .toBe('MATCH');
     });
 
     it('keeps a broken object in the export and records why it failed', async () => {
       const { document } = await runExport(true);
-      const broken = document.objects.find((entry: any) => entry.id === 12);
+      const broken = document.objects.find((entry: ExportEntry) => entry.id === 12);
 
       expect(broken).toBeDefined();
       expect(broken.derived.sourceError).toBe('missing');
@@ -437,7 +529,7 @@ describe('MallExportService', () => {
   describe('MallExportService - placement is a mall_object fact', () => {
     it('emits the stored placement for a placed object', async () => {
       const { document } = await runExport();
-      const placed = document.objects.find((entry: any) => entry.id === 10);
+      const placed = document.objects.find((entry: ExportEntry) => entry.id === 10);
 
       expect(placed.store).toEqual({ id: 1205, name: 'Toy Store' });
       expect(placed.placement).toEqual({
@@ -448,7 +540,7 @@ describe('MallExportService', () => {
 
     it('emits null placement for an object that is in no store', async () => {
       const { document } = await runExport();
-      const unplaced = document.objects.find((entry: any) => entry.id === 11);
+      const unplaced = document.objects.find((entry: ExportEntry) => entry.id === 11);
 
       expect(unplaced.store).toBeNull();
       expect(unplaced.placement).toBeNull();
@@ -459,7 +551,7 @@ describe('MallExportService', () => {
       // page query, so a second mall_object row for one object cannot duplicate
       // an export entry.
       const { document } = await runExport();
-      const ids = document.objects.map((entry: any) => entry.id);
+      const ids = document.objects.map((entry: ExportEntry) => entry.id);
 
       expect(ids).toEqual(OBJECTS.map(object => object.id));
       expect(new Set(ids).size).toBe(ids.length);
@@ -473,7 +565,7 @@ describe('MallExportService', () => {
    * truncated would send staff hunting for objects that do not exist.
    */
   describe('the MAX_OBJECTS boundary', () => {
-    function catalogueOf(count: number): any[] {
+    function catalogueOf(count: number): ExportObjectRow[] {
       const template = OBJECTS[1]; // no stores, no counts: the cheapest row to build
       const rows = new Array(count);
       for (let index = 0; index < count; index += 1) {
@@ -482,7 +574,7 @@ describe('MallExportService', () => {
       return rows;
     }
 
-    async function exportCatalogue(count: number): Promise<any> {
+    async function exportCatalogue(count: number): Promise<ExportRun> {
       const rows = catalogueOf(count);
       objectRepository.findPageForExport.mockImplementation(
         (limit: number, offset: number) =>
