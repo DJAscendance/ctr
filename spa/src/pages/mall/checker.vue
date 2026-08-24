@@ -295,8 +295,12 @@
                 available everywhere.
               -->
               <template v-if="canTriage">
-                <button class="btn" :disabled="isProcessing" @click="confirmApprove">Accept</button>
-                <button class="btn" :disabled="isProcessing" @click="confirmReject">Reject</button>
+                <button class="btn-ui-inline ctr-accept"
+                        :disabled="isProcessing"
+                        @click="confirmApprove">Accept</button>
+                <button class="btn-ui-inline ctr-reject"
+                        :disabled="isProcessing"
+                        @click="confirmReject">Reject</button>
               </template>
               <span v-else class="ctr-note">
                 Accept and Reject apply to pending objects only.
@@ -1570,6 +1574,44 @@ export default Vue.extend({
 
 .ctr-moderation-head {
   border-bottom-color: #ef4444;
+}
+
+/*
+ * Accept and Reject take the same shape as Edit Name and Update Limit -- they
+ * belong to the same row of staff controls -- and carry the only colour in it.
+ * These two are the irreversible ones, so they are the two a checker should be
+ * able to tell apart without reading, while everything around them stays the
+ * site's ordinary button language.
+ */
+.ctr-actions .ctr-accept,
+.ctr-actions .ctr-reject {
+  color: #ffffff !important;
+  font-weight: bold;
+}
+
+.ctr-actions .ctr-accept {
+  background-color: #1d6b33;
+  border-color: #2f9c4c;
+}
+
+.ctr-actions .ctr-reject {
+  background-color: #8a2226;
+  border-color: #c04a4e;
+}
+
+.ctr-actions .ctr-accept:hover:not(:disabled) {
+  background-color: #248140;
+}
+
+.ctr-actions .ctr-reject:hover:not(:disabled) {
+  background-color: #a62b30;
+}
+
+/* Disabled while a moderation request is in flight; it must not still read as
+   an armed control. */
+.ctr-actions .ctr-accept:disabled,
+.ctr-actions .ctr-reject:disabled {
+  opacity: 0.5;
 }
 
 .ctr-field-label {
