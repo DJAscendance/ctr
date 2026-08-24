@@ -44,8 +44,14 @@
       <div class="border-2 border-white p-4" style="background:#001829; max-width: 34rem;">
         <h3 class="mb-2">Export Mall Data</h3>
         <p class="text-sm mb-2">
-          Downloads everything CTR knows about the Mall as one JSON file: every object,
-          every store, and the staff-panel view each object belongs to.
+          Downloads the pending submission queue as one JSON file: every object
+          awaiting review, with the WorldInfo and CTR facts for each. Stocked,
+          warehoused, sold-out and removed objects are not included.
+        </p>
+        <p class="text-xs mb-2 opacity-80">
+          The full list of Mall stores is included as reference data, so a store
+          name can be resolved later. It does not mean those stores' objects are
+          in the file.
         </p>
         <label class="block mb-2">
           <input type="checkbox" v-model="includeDerived" :disabled="exporting" />

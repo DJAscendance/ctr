@@ -186,10 +186,20 @@ export class TransactionRepository {
     amount: number,
     reason: TransactionReason,
   ): Promise<Transaction> {
-    const wallet = await trx<Wallet>('wallet').where({ id: walletId }).first();
-    await trx<Wallet>('wallet')
+    // `balance = balance + ?` in SQL, not read-then-write in JavaScript. The
+    // object-row lock only serialises rejections of the same object; two
+    // different objects belonging to one uploader can be rejected at the same
+    // moment, and a read-modify-write would let both transactions read the same
+    // balance so the second overwrites the first -- losing a refund the ledger
+    // still says was paid.
+    const credited = await trx<Wallet>('wallet')
       .where({ id: walletId })
-      .update({ balance: wallet.balance + amount });
+      .increment('balance', amount);
+    if (!credited) {
+      // No such wallet. Raised rather than ignored: the caller is mid-refund and
+      // must not commit a ledger row for money that was never credited.
+      throw new Error(`Cannot credit unknown wallet ${walletId}`);
+    }
     const [transactionId] = await trx<Transaction>('transaction').insert({
       amount,
       reason,

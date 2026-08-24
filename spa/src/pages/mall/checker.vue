@@ -378,8 +378,21 @@ export default Vue.extend({
     };
   },
   computed: {
+    /**
+     * NaN for anything that is not a whole positive id.
+     *
+     * `Number.parseInt` stops at the first non-digit, so `3339-not-an-id` would
+     * otherwise resolve to object 3339 and the page would inspect, accept or
+     * reject a different object than the url names. The API refuses such ids
+     * outright; the checker should not send them in the first place.
+     */
     objectId(): number {
-      return Number.parseInt(this.$route.params.object_id, 10);
+      const raw = String(this.$route.params.object_id || "");
+      if (!/^[0-9]+$/.test(raw)) {
+        return Number.NaN;
+      }
+      const parsed = Number.parseInt(raw, 10);
+      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
     },
     object(): any {
       return this.inspection.object;

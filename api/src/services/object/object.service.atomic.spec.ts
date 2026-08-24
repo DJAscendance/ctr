@@ -32,6 +32,8 @@ const FIXTURE = {
   walletId: 990001,
   memberId: 990001,
   objectId: 990001,
+  /** A second object, same uploader and wallet, for the cross-object race. */
+  secondObjectId: 990002,
   quantity: 10,
   price: 25,
 };
@@ -91,7 +93,7 @@ describe('ObjectService rejection atomicity (real database)', () => {
       username: 'atomicityFixture',
       wallet_id: FIXTURE.walletId,
     });
-    await db.knex('object').insert({
+    await db.knex('object').insert([{
       id: FIXTURE.objectId,
       filename: 'fixture.wrl',
       member_id: FIXTURE.memberId,
@@ -100,7 +102,16 @@ describe('ObjectService rejection atomicity (real database)', () => {
       price: FIXTURE.price,
       status: ObjectService.STATUS_PENDING,
       directory: 'atomicity-fixture',
-    });
+    }, {
+      id: FIXTURE.secondObjectId,
+      filename: 'fixture-2.wrl',
+      member_id: FIXTURE.memberId,
+      name: 'Atomicity Fixture 2',
+      quantity: FIXTURE.quantity,
+      price: FIXTURE.price,
+      status: ObjectService.STATUS_PENDING,
+      directory: 'atomicity-fixture-2',
+    }]);
   });
 
   afterEach(async () => {
@@ -110,9 +121,10 @@ describe('ObjectService rejection atomicity (real database)', () => {
   });
 
   async function cleanup(): Promise<void> {
-    await db.knex('mall_object').where({ object_id: FIXTURE.objectId }).del();
+    await db.knex('mall_object')
+      .whereIn('object_id', [FIXTURE.objectId, FIXTURE.secondObjectId]).del();
     await db.knex('transaction').where({ recipient_wallet_id: FIXTURE.walletId }).del();
-    await db.knex('object').where({ id: FIXTURE.objectId }).del();
+    await db.knex('object').whereIn('id', [FIXTURE.objectId, FIXTURE.secondObjectId]).del();
     await db.knex('member').where({ id: FIXTURE.memberId }).del();
     await db.knex('wallet').where({ id: FIXTURE.walletId }).del();
   }
@@ -228,6 +240,30 @@ describe('ObjectService rejection atomicity (real database)', () => {
 
     expect(result.outcome).toBe(ObjectService.REJECT_NOT_FOUND);
   });
+
+  dbTest('credits both refunds when two objects of one uploader are rejected at once',
+    async () => {
+      // The object-row lock serialises rejections of the SAME object. Two
+      // DIFFERENT objects of the same uploader are not serialised by it, so the
+      // wallet credit itself has to be safe: a read-modify-write would let both
+      // transactions read the same balance and the second would overwrite the
+      // first, losing a refund that its ledger row says was paid.
+      const [first, second] = await Promise.all([
+        service.rejectPendingObject(FIXTURE.objectId),
+        service.rejectPendingObject(FIXTURE.secondObjectId),
+      ]);
+
+      expect(first.outcome).toBe(ObjectService.REJECT_REJECTED);
+      expect(second.outcome).toBe(ObjectService.REJECT_REJECTED);
+
+      const [wallet] = await db.knex('wallet').where({ id: FIXTURE.walletId });
+      const refunds = await db.knex('transaction')
+        .where({ recipient_wallet_id: FIXTURE.walletId, reason: 'object-upload-refund' });
+
+      expect(refunds.length).toBe(2);
+      // The ledger and the balance must agree.
+      expect(Number(wallet.balance)).toBe(EXPECTED_REFUND * 2);
+    });
 
   dbTest('approves a pending object and places it in the Mall', async () => {
     const result = await service.approvePendingObject(FIXTURE.objectId);

@@ -354,6 +354,20 @@ export class MallExportService {
         );
 
         for (const row of page) {
+          // Checked per row, not only per page. In derived mode each object is
+          // read, decompressed, hashed and scanned, so a page-granular check
+          // could run 200 of those after the deadline had already passed and
+          // overshoot the advertised cap by minutes.
+          if (now() - startedAt > MAX_DURATION_MS) {
+            status = 'truncated';
+            truncation = {
+              reason: 'time_budget',
+              limitMs: MAX_DURATION_MS,
+              lastObjectId: null,
+            };
+            break;
+          }
+
           const entry = await this.buildObject(row, {
             sold: allCounts[row.id] || 0,
             store: allStores[row.id] || null,
@@ -365,6 +379,10 @@ export class MallExportService {
           first = false;
           objectsWritten += 1;
           lastObjectId = row.id;
+        }
+
+        if (truncation) {
+          break;
         }
 
         offset += PAGE_SIZE;

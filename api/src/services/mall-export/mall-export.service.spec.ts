@@ -512,6 +512,27 @@ describe('MallExportService', () => {
         expect(document.result.truncation.limitMs).toBe(MAX_DURATION_MS);
       });
 
+    it('stops mid-page rather than finishing the page it is on', async () => {
+      // The deadline falls after the first object of the first page. A
+      // page-granular check would emit all three; a per-row check emits one.
+      // In derived mode each of those objects is read, decompressed, hashed and
+      // scanned, which is why finishing the page is not a rounding error.
+      let calls = 0;
+      const now = () => {
+        calls += 1;
+        return calls > 3 ? MAX_DURATION_MS + 1000 : 0;
+      };
+
+      const { document } = await runExport(false, now);
+
+      expect(document.result.status).toBe('truncated');
+      expect(document.result.truncation.reason).toBe('time_budget');
+      expect(document.objects.length).toBeLessThan(OBJECTS.length);
+      // Whatever it did emit is still a usable cursor.
+      expect(document.result.truncation.lastObjectId)
+        .toBe(document.objects[document.objects.length - 1].id);
+    });
+
     it('stops reading when the client goes away', async () => {
       const writer: ExportWriter = {
         write: () => Promise.resolve(),
