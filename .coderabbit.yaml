@@ -9,6 +9,8 @@
 #
 # Schema: https://coderabbit.ai/integrations/schema.v2.json
 
+inheritance: true
+
 language: en-US
 
 reviews:
