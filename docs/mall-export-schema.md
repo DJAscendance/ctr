@@ -2,16 +2,48 @@
 
 `GET /api/mall/export?derived=0|1`
 
-One deterministic JSON document containing the Mall dataset CTR is authoritative
-for. Intended both for staff who want the data and for downstream tooling such as
-the separate Cybertown Mall site's importer.
+One deterministic JSON document containing the Mall submission queue CTR is
+authoritative for. Intended both for staff who want the data and for downstream
+tooling such as the separate Cybertown Mall site's importer.
 
 Requires Mall staff authorisation (`Admin`, `Mall Deputy` or `Mall Manager`) and
 is strictly read-only.
 
-- **Schema version:** `1.0.0`
+- **Schema version:** `2.0.0`
+- **Object scope:** **pending only** — see below.
 - **Ordering:** objects ascend by `object.id`. The order is stable across runs.
-- **Suggested filename:** `ctr-mall-export-YYYY-MM-DD.json`
+- **Filename:** the server sends `Content-Disposition` with a UTC stamp precise
+  to the second, e.g. `ctr-mall-export-2026-08-24T012138Z.json`, so two exports
+  taken minutes apart are distinct files.
+
+---
+
+## Scope: pending objects only
+
+**`objects` contains only objects awaiting Mall review (CTR `status = 2`).** This
+document is the submission queue the Mall Checker publishes to the Mall's own
+site. It is **not** a complete-Mall catalogue export: stocked, warehoused,
+sold-out and removed objects are deliberately absent.
+
+The document says so itself, in `schema.scope`:
+
+```json
+"scope": {
+  "objects": "pending",
+  "note": "Objects awaiting Mall review (CTR status 2) only. ..."
+}
+```
+
+Two consequences worth stating plainly:
+
+- **`stores` is still the full Mall store list**, kept as reference data so a
+  consumer can render a store name it may meet later. Do not infer from it that
+  the objects of those stores are present.
+- **`derived=1` enriches the same object set as `derived=0`.** The mode changes
+  how much is said about each object, never which objects appear.
+
+Version `1.0.0` of this schema exported every object regardless of status. A
+consumer written against it must check `schema.scope`.
 
 ---
 
@@ -97,9 +129,16 @@ view counts live in `result.counts.ctrViewSizes` with explicit predicates.
 
 The Mall staff panel's six views, as independent id lists.
 
-**These are current CTR view memberships, not stored states, and they overlap by
-design.** A sold-out object appears in `stocked` *and* `outOfStock`. Never collapse
-them into a single status field.
+**These are current CTR view memberships, not stored states.** They are scoped to
+the objects in this document, which is pending-only — so `pending` lists every
+exported object and the other five are empty by construction rather than by
+accident. The keys are kept so a consumer never has to special-case their absence
+or infer membership from `status`.
+
+The predicates below still describe CTR's real, overlapping view model — a
+sold-out object is in `stocked` *and* `outOfStock` — which is why the lists are
+never collapsed into a single status field. In a pending-only document that
+overlap simply has nothing to act on.
 
 `ctrViews._definitions` gives the predicate behind each list:
 
