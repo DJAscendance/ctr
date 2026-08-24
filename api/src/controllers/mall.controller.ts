@@ -612,12 +612,32 @@ export class MallController {
         objectRecord.price,
       );
 
-      // Awaited: success has to mean the rejection happened, not that it started.
-      await this.objectService.updateStatusRejected(objectRecord.id);
+      // Refund first, then the status change, and both awaited: success has to
+      // mean the rejection happened, not that it started.
+      //
+      // The order matters. `createObjectUploadRefundTransaction` already runs the
+      // wallet credit and the transaction row inside one knex transaction, so the
+      // refund is all-or-nothing on its own. Doing it first means a refund
+      // failure leaves the object still pending, so the 400 staff see is honest
+      // and their retry re-runs the whole thing correctly.
+      //
+      // Rejecting first would instead leave an object marked deleted whose
+      // uploader was never paid, and the already-rejected guard above would then
+      // turn every retry into a success -- putting the money permanently out of
+      // reach through the API.
+      //
+      // The residual window is the reverse: a refund that lands followed by a
+      // failing status update, where a retry refunds twice. That is a single-row
+      // update by primary key rather than a multi-statement transaction, so it is
+      // the far less likely of the two, it is visible in the member's transaction
+      // history, and it errs towards the uploader rather than against them.
+      // Closing it entirely needs one transaction spanning both writes, which
+      // means threading a trx through the object repository.
       await this.objectService.performObjectUploadRefundTransaction(
         objectRecord.member_id,
         sellersFee,
       );
+      await this.objectService.updateStatusRejected(objectRecord.id);
 
       // The refund above cannot be undone and carries no idempotency key, so a
       // failed notification must not become a 500 that invites a retry and a

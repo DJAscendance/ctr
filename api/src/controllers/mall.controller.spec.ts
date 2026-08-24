@@ -467,6 +467,41 @@ describe('MallController - staff-only inspection endpoints', () => {
       expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: true });
     });
 
+    it('refunds before it marks the object rejected, so a failed refund is recoverable',
+      async () => {
+        const order: string[] = [];
+        objectService.performObjectUploadRefundTransaction.mockImplementation((() => {
+          order.push('refund');
+          return Promise.resolve();
+        }) as never);
+        objectService.updateStatusRejected.mockImplementation((() => {
+          order.push('status');
+          return Promise.resolve();
+        }) as never);
+        const response = mockResponse();
+
+        await controller.rejectObject(rejectRequest(), response);
+
+        // The other order would leave an object marked deleted whose uploader was
+        // never paid, and the already-rejected guard would make every retry a
+        // no-op success -- putting the money out of reach through the API.
+        expect(order).toEqual(['refund', 'status']);
+      });
+
+    it('leaves the object rejectable when the refund fails', async () => {
+      objectService.performObjectUploadRefundTransaction
+        .mockRejectedValue(new Error('wallet locked') as never);
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      // Nothing was marked deleted, so the guard will not short-circuit the
+      // retry and the whole rejection can be re-run.
+      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
+      expect(response.status).not.toHaveBeenCalledWith(200);
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+
     it('does not report success if the rejection itself fails, and sends no notice', async () => {
       objectService.updateStatusRejected.mockRejectedValue(new Error('db down') as never);
       const response = mockResponse();

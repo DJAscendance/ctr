@@ -176,7 +176,9 @@ export default Vue.extend({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Deferred a tick: some browsers fetch the blob url after the current task
+      // ends, and revoking synchronously cancels the download.
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
     },
 
     /**

@@ -745,7 +745,10 @@ export default Vue.extend({
         this.rawSourceError = "The source of this object could not be downloaded.";
       } finally {
         if (url) {
-          window.URL.revokeObjectURL(url);
+          // Deferred a tick: some browsers fetch the blob url after the current
+          // task ends, and revoking synchronously cancels the download.
+          const pending = url;
+          window.setTimeout(() => window.URL.revokeObjectURL(pending), 0);
         }
         this.isDownloading = false;
       }
