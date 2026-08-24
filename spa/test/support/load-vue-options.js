@@ -82,4 +82,41 @@ function loadComponentOptions(filePath, resolveImport, extraGlobals) {
   return captured;
 }
 
-module.exports = { loadComponentOptions };
+/**
+ * Loads a plain `.ts` module the same way, for helpers that are not SFCs.
+ *
+ * Returns the module's whole exports object rather than `default`, since a
+ * helper module's value is its named exports.
+ */
+function loadModule(filePath, resolveImport, extraGlobals) {
+  const transpiled = ts.transpileModule(fs.readFileSync(filePath, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2017,
+      esModuleInterop: true,
+    },
+  }).outputText;
+
+  const sandboxModule = { exports: {} };
+  const sandboxRequire = (specifier) => {
+    if (resolveImport) {
+      const resolved = resolveImport(specifier);
+      if (resolved !== undefined) {
+        return resolved;
+      }
+    }
+    throw new Error(`Unexpected import in test sandbox: ${specifier}`);
+  };
+
+  const context = vm.createContext({
+    require: sandboxRequire,
+    module: sandboxModule,
+    exports: sandboxModule.exports,
+    console,
+    ...extraGlobals,
+  });
+  vm.runInContext(transpiled, context, { filename: "module.transpiled.js" });
+  return sandboxModule.exports;
+}
+
+module.exports = { loadComponentOptions, loadModule };

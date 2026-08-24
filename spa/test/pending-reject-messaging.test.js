@@ -13,6 +13,20 @@ const { loadComponentOptions } = require("./support/load-vue-options");
 const PENDING_PATH = path.join(__dirname, "..", "src", "pages", "mall", "staff", "pending.vue");
 
 function resolveImport(specifier, identityExtend) {
+  if (specifier.endsWith("list-query")) {
+    return {
+      LIST_LIMITS: [10, 20, 50, 100],
+      listDefaults: () => ({ limit: 10, order: "ASC" }),
+      canonicalListQuery: (state, defaults) => {
+        const query = {};
+        if (state.page > 1) query.page = String(state.page);
+        if (state.limit !== defaults.limit) query.limit = String(state.limit);
+        if (state.order !== defaults.order) query.order = state.order;
+        return query;
+      },
+      readListState: () => ({ page: 1, limit: 10, order: "ASC" }),
+    };
+  }
   if (specifier.endsWith("MallObjectRow.vue") || specifier.endsWith("Modal.vue")) {
     return {};
   }

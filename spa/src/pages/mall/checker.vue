@@ -11,16 +11,21 @@
       </div>
     </div>
 
-    <template v-else-if="inspection">
-      <!-- Identity, moderation state and queue position -->
+    <template v-else-if="inspection || viewerUrl">
+      <!--
+        Identity first and largest, then the queue. A checker arriving here
+        needs to know what they are looking at and where they are before they
+        need any of the technical detail.
+      -->
       <header class="ctr-checker-head">
         <div class="ctr-checker-identity">
-          <h2 class="ctr-checker-title">
-            <span class="opacity-60">#{{ object.id }}</span>
-            <span class="ctr-checker-name">{{ object.name }}</span>
+          <h2 class="ctr-checker-name">{{ inspection ? object.name : 'Loading\u2026' }}</h2>
+          <div v-if="inspection" class="ctr-checker-subline">
+            <span class="ctr-checker-id">#{{ object.id }}</span>
             <span class="ctr-status-badge">{{ object.statusLabel }}</span>
-          </h2>
-          <dl class="ctr-checker-facts">
+            <span class="ctr-review-state">{{ reviewStateLabel }}</span>
+          </div>
+          <dl v-if="inspection" class="ctr-checker-facts">
             <div><dt>Uploaded by</dt><dd>{{ creatorLabel }}</dd></div>
             <div><dt>Price</dt><dd>{{ object.price }} CC</dd></div>
             <div><dt>Quantity</dt><dd>{{ object.quantity }}</dd></div>
@@ -28,26 +33,32 @@
             <div><dt>Store</dt><dd>{{ storeLabel }}</dd></div>
             <div><dt>Uploaded</dt><dd>{{ formatDate(object.createdAt) }}</dd></div>
           </dl>
+          <p v-if="inspection" class="ctr-checker-guidance">{{ guidanceLabel }}</p>
         </div>
         <nav class="ctr-checker-queue">
+          <div v-if="queueLabel" class="ctr-queue-count">{{ queueLabel }}</div>
+          <!--
+            The way out sits above the way through: leaving the queue is the
+            one control a checker needs to find without looking, and stepping
+            through it is what they do once they have already decided to stay.
+          -->
+          <div class="ctr-queue-step">
+            <button class="btn-ui-inline ctr-queue-button" @click="backToList">
+              &#9664; Back to {{ fromLabel }}
+            </button>
+          </div>
           <div v-if="queue.ids.length" class="ctr-queue-step">
-            <button class="btn-ui-inline"
+            <button class="btn-ui-inline ctr-queue-button"
                     :disabled="!previousId"
                     @click="goTo(previousId)">&#9664; Previous Item</button>
-            <span class="ctr-queue-count">{{ queueLabel }}</span>
-            <button class="btn-ui-inline"
+            <button class="btn-ui-inline ctr-queue-button"
                     :disabled="!nextId"
                     @click="goTo(nextId)">Next Item &#9654;</button>
           </div>
-          <div>
-            <button class="btn-ui-inline" @click="backToList">
-              &#9664; Back to {{ fromLabel }}
-            </button>
-            <a class="btn-ui-inline"
-               :href="ownUrl"
-               target="_blank"
-               rel="noopener">Open in New Tab</a>
-          </div>
+          <a class="ctr-queue-secondary"
+             :href="ownUrl"
+             target="_blank"
+             rel="noopener">Open in New Tab</a>
         </nav>
       </header>
 
@@ -59,14 +70,24 @@
           what it is describing rather than in a separate column.
         -->
         <div class="ctr-pane ctr-pane-primary">
+          <!--
+            Deliberately NOT inside the `inspection` gate.
+            `ObjectViewer` creates exactly one X_ITE browser for its lifetime and
+            swaps the Inline's url as `objectUrl` changes, because repeated
+            create/dispose cycles leave later browsers unable to load a world at
+            all. Rendering it under `v-if="inspection"` destroyed and rebuilt it
+            on every Previous/Next -- the exact cycle it was written to avoid --
+            so the next object's model often never appeared until a hard refresh.
+            It stays mounted across navigation and is handed the new url instead.
+          -->
           <div class="ctr-preview">
-            <object-viewer v-if="object.assets.wrl.url" :object-url="object.assets.wrl.url" />
+            <object-viewer v-if="viewerUrl" :object-url="viewerUrl" />
             <div v-else class="h-full flex items-center justify-center text-red-500">
               This object has no stored WRL file.
             </div>
           </div>
 
-          <section class="ctr-section ctr-findings">
+          <section v-if="inspection" class="ctr-section ctr-findings">
             <h3 class="ctr-section-head">Findings</h3>
             <div v-if="!inspection.findings.length" class="text-green">
               Nothing flagged. Size, position and content still need your eye.
@@ -88,7 +109,18 @@
           </section>
         </div>
 
-        <div class="ctr-pane ctr-pane-technical">
+        <!--
+          Everything below is the object's record and the actions that change
+          it. It is gated on `inspection` so that while the next object loads
+          there is nothing on screen describing the previous one, and no
+          Accept/Reject/Edit control belonging to an object the checker has
+          already left.
+        -->
+        <div v-if="!inspection" class="ctr-pane ctr-pane-technical">
+          <p class="ctr-plain">Loading this object&rsquo;s record&hellip;</p>
+        </div>
+
+        <div v-else class="ctr-pane ctr-pane-technical">
           <!--
             The thumbnail is what a buyer sees, so it leads the record column
             and is itself the control that opens the full-size view.
@@ -289,7 +321,7 @@
       </div>
 
       <!-- Full-size thumbnail -->
-      <checker-modal v-if="showThumbnail"
+      <checker-modal v-if="inspection && showThumbnail"
                      :title="`Thumbnail - ${object.name}`"
                      @close="showThumbnail = false">
         <div class="ctr-lightbox">
@@ -303,7 +335,7 @@
         document scrolled sideways. Here the source is the only thing that
         scrolls, and it scrolls inside its own box.
       -->
-      <checker-modal v-if="showRawSource"
+      <checker-modal v-if="inspection && showRawSource"
                      :title="`Source - ${object.assets.wrl.filename}`"
                      @close="showRawSource = false">
         <template v-slot:actions>
@@ -324,7 +356,7 @@
       </checker-modal>
 
       <!-- Stored-file facts and the downloads that belong with them -->
-      <checker-modal v-if="showFileDetails"
+      <checker-modal v-if="inspection && showFileDetails"
                      title="Stored file details"
                      @close="showFileDetails = false">
         <table class="ctr-table mb-3">
@@ -397,6 +429,7 @@ import {
   objectDisplayName,
   rejectReasonError,
 } from "@/pages/mall/staff/mall-actions.mixin";
+import { listDefaults, readListState } from "@/pages/mall/staff/list-query";
 
 /**
  * The Mall staff review workspace.
@@ -456,6 +489,17 @@ export default Vue.extend({
       accessDenied: false,
       loadError: "",
       inspection: null,
+      /**
+       * The url currently handed to the 3D viewer.
+       *
+       * Held separately from `inspection` because it must SURVIVE navigation.
+       * `inspection` is cleared the moment the route changes so no stale record
+       * or moderation control is on screen, but clearing the viewer's url too
+       * would unmount `ObjectViewer` and destroy its X_ITE browser -- the
+       * create/dispose cycle that component exists to avoid. It stays mounted
+       * and is re-pointed once the next inspection resolves.
+       */
+      viewerUrl: "",
       rawSource: "",
       rawSourceError: "",
       isDownloading: false,
@@ -493,6 +537,8 @@ export default Vue.extend({
         total: 0,
         offset: 0,
         limit: 10,
+        /** The sort the originating list was using; see `loadQueue`. */
+        order: "ASC",
         exhaustedBefore: false,
         exhaustedAfter: false,
       },
@@ -536,11 +582,43 @@ export default Vue.extend({
     creatorLabel(): string {
       return this.object.creator.username || "(no creator on record)";
     },
+    /** A null limit is how CTR records "no cap", so it is said that way. */
     limitLabel(): string {
-      return this.object.limit === null ? "none recorded" : String(this.object.limit);
+      return this.object.limit === null ? "Unlimited" : String(this.object.limit);
     },
+    /**
+     * A pending object has not been placed anywhere yet, which is a different
+     * fact from a stocked object that is in no store. The raw values stay
+     * available in the record below; this is the sentence a checker reads.
+     */
     storeLabel(): string {
-      return this.object.store ? this.object.store.name : "no store";
+      if (this.object.store) {
+        return this.object.store.name;
+      }
+      return this.object.statusLabel === "Pending" ? "Not assigned yet" : "Not in a store";
+    },
+    /** What this object's status means, in the words staff use for it. */
+    reviewStateLabel(): string {
+      switch (this.object.statusLabel) {
+      case "Pending":
+        return "Awaiting Mall review";
+      case "Warehouse":
+        return "Accepted, waiting for the next Mall drop";
+      case "Stocked":
+        return "On sale in the Mall";
+      case "Destocked":
+        return "Taken off sale";
+      case "Removed":
+        return "Removed from the Mall";
+      default:
+        return "";
+      }
+    },
+    guidanceLabel(): string {
+      if (this.canTriage) {
+        return "Check the model, metadata and listing details before accepting or rejecting.";
+      }
+      return "Accept and Reject apply to pending objects only. Edits still apply here.";
     },
     encodingLabel(): string {
       if (this.source.encoding === "gzip") {
@@ -689,6 +767,10 @@ export default Vue.extend({
           return; // staff have already moved to another object
         }
         this.inspection = response.data.inspection;
+        // Swapped only now, so the viewer keeps showing the previous object
+        // until the next one is genuinely ready to be displayed.
+        const assets = this.inspection && this.inspection.object && this.inspection.object.assets;
+        this.viewerUrl = (assets && assets.wrl && assets.wrl.url) || "";
       } catch (errorResponse: any) {
         if (this.inspectionFor !== requestedFor) {
           return;
@@ -697,6 +779,9 @@ export default Vue.extend({
         this.loadError = status === 404
           ? "That object no longer exists."
           : "The object could not be loaded.";
+        // Nothing loaded, so the previous object's model must not sit under an
+        // error message as though it were this one.
+        this.viewerUrl = "";
       }
     },
 
@@ -711,13 +796,17 @@ export default Vue.extend({
         return;
       }
 
-      const limit = Number.parseInt(String(this.$route.query.limit || "10"), 10) || 10;
-      const page = Number.parseInt(String(this.$route.query.page || "1"), 10) || 1;
-      const offset = (page - 1) * limit;
+      // Resolved against the originating list's OWN defaults. A canonical URL
+      // omits them, and Stocked's default sort is DESC while the others are
+      // ASC -- assuming ASC here would walk the queue in a different order from
+      // the list the checker was opened from.
+      const state = readListState(this.$route.query, listDefaults(this.from));
+      const offset = (state.page - 1) * state.limit;
 
-      this.queue.limit = limit;
+      this.queue.limit = state.limit;
       this.queue.offset = offset;
-      const loaded = await this.fetchQueuePage(status, offset, limit);
+      this.queue.order = state.order;
+      const loaded = await this.fetchQueuePage(status, offset, state.limit);
       this.queue.ids = loaded.ids;
       this.queue.total = loaded.total;
     },
@@ -730,7 +819,7 @@ export default Vue.extend({
           content: status,
           limit,
           offset: Math.max(offset, 0),
-          orderBy: String(this.$route.query.order || "ASC"),
+          orderBy: this.queue.order,
         });
         return {
           ids: response.data.objects.objects.map((entry: any) => entry.id),
@@ -1214,18 +1303,26 @@ export default Vue.extend({
   min-width: 0;
 }
 
-.ctr-checker-title {
+/* The one thing a checker must read first. */
+.ctr-checker-name {
+  font-size: 1.6rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* Identity and state, secondary to the name. */
+.ctr-checker-subline {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.5rem;
-  font-size: 1.5rem;
-  line-height: 1.2;
+  margin-top: 0.15rem;
   min-width: 0;
 }
 
-.ctr-checker-name {
-  overflow-wrap: anywhere;
+.ctr-checker-id {
+  opacity: 0.6;
 }
 
 .ctr-status-badge {
@@ -1233,6 +1330,18 @@ export default Vue.extend({
   border: 1px solid currentColor;
   padding: 0 0.5rem;
   white-space: nowrap;
+}
+
+.ctr-review-state {
+  font-size: 0.85rem;
+  color: #9fd8ff;
+}
+
+.ctr-checker-guidance {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  margin-top: 0.25rem;
+  max-width: 46rem;
 }
 
 /* Labelled pairs rather than a run of middots: a novice checker should not have
@@ -1259,19 +1368,65 @@ export default Vue.extend({
   overflow-wrap: anywhere;
 }
 
+/* A distinct block, so "where am I / how do I move" never reads as part of the
+   object's own identity. */
 .ctr-checker-queue {
-  flex: 0 1 auto;
-  text-align: right;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
   min-width: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.25);
+  padding-left: 0.75rem;
 }
 
 .ctr-queue-step {
-  margin-bottom: 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
 }
 
 .ctr-queue-count {
-  margin: 0 0.5rem;
   white-space: nowrap;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+/* Comfortable to hit with a thumb, not just a mouse pointer. Scoped under the
+   nav so it outranks the global `.btn-ui-inline`, which is sized for dense
+   inline use and is only 29px tall on its own. */
+.ctr-checker-queue .ctr-queue-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Explicit px, not rem: this app sets a 13px root, so a rem-based target
+     silently comes out ~29px -- under any reasonable touch minimum. */
+  min-height: 40px;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.ctr-queue-secondary {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  text-decoration: underline;
+}
+
+/* Below tablet-landscape the queue block sits under the identity rather than
+   squeezing it into a column too narrow to read. */
+@media (max-width: 900px) {
+  .ctr-checker-queue {
+    align-items: flex-start;
+    border-left: 0;
+    padding-left: 0;
+    width: 100%;
+  }
+
+  .ctr-queue-step {
+    justify-content: flex-start;
+  }
 }
 
 .ctr-checker-body {

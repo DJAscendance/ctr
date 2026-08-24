@@ -87,6 +87,7 @@
 <script lang="ts">
 import MallObjectRow from "@/components/mall/MallObjectRow.vue";
 import mallActions from "./mall-actions.mixin";
+import { canonicalListQuery, listDefaults, readListState } from "./list-query";
 
 export default mallActions.extend({
   name: "MallWarehouse",
@@ -111,7 +112,10 @@ export default mallActions.extend({
   },
   computed: {
     listQuery(): any {
-      return { page: this.pageNum, limit: this.limit, order: this.orderBy };
+      return canonicalListQuery(
+        { page: this.pageNum, limit: this.limit, order: this.orderBy },
+        listDefaults("warehouse"),
+      );
     },
   },
   async mounted(): Promise<void> {
@@ -122,25 +126,27 @@ export default mallActions.extend({
     this.getResults();
   },
   methods: {
+    /**
+     * Reads page, limit and sort back out of the URL on load or browser Back.
+     *
+     * Absent parameters mean "the default", which is what a canonical URL for
+     * this list looks like; explicit ones are still honoured so existing links
+     * keep working.
+     */
     restoreListState(): void {
-      const query = this.$route.query;
-      const limit = Number.parseInt(String(query.limit || ""), 10);
-      const page = Number.parseInt(String(query.page || ""), 10);
-      if ([10, 20, 50, 100].indexOf(limit) !== -1) {
-        this.limit = limit;
-      }
-      if (Number.isFinite(page) && page > 0) {
-        this.pageNum = page;
-      }
-      if (query.order === "ASC" || query.order === "DESC") {
-        this.orderBy = String(query.order);
-      }
+      const state = readListState(this.$route.query, listDefaults("warehouse"));
+      this.limit = state.limit;
+      this.pageNum = state.page;
+      this.orderBy = state.order;
       this.offset = (this.pageNum - 1) * this.limit;
     },
     syncListState(): void {
       this.$router.replace({
         path: this.$route.path,
-        query: { page: String(this.pageNum), limit: String(this.limit), order: this.orderBy },
+        query: canonicalListQuery(
+          { page: this.pageNum, limit: this.limit, order: this.orderBy },
+          listDefaults("warehouse"),
+        ),
       }).catch(() => undefined);
     },
     setLimit() {
