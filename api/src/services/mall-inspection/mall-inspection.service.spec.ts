@@ -4,7 +4,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { createSpyObj } from 'jest-createspyobj';
 
-import { MallInspectionService } from './mall-inspection.service';
+import { findingSeverity, MallInspectionService } from './mall-inspection.service';
 import { ObjectSourceService } from '../object-source/object-source.service';
 import {
   MallRepository,
@@ -218,6 +218,92 @@ Shape { appearance Appearance { texture ImageTexture { url "absent.jpg" } } }
 `);
 
       expect(findingCodes((await service.inspect(3339)).findings)).toContain('texture_missing');
+    });
+
+    it('classifies an unreadable source as needing staff review', async () => {
+      // Deliberately writes no WRL, so the stored file is genuinely absent.
+      const findings = (await service.inspect(3339)).findings;
+      const missing = findings.find(finding => finding.code === 'missing');
+      expect(missing).toBeDefined();
+      // The page could not establish anything below it, so it must not read as a
+      // mere warning about the object.
+      expect(missing.severity).toBe('needs_staff_review');
+    });
+
+    it('classifies an established rule breach as a warning', async () => {
+      writeAsset('uuid-moon', 'moon.wrl', `#VRML V2.0 utf8
+WorldInfo { title "Pocket Moon Playset" }
+Shape { appearance Appearance { texture ImageTexture { url "http://x.test/a.jpg" } } }
+`);
+
+      const findings = (await service.inspect(3339)).findings;
+      const external = findings.find(finding => finding.code === 'external_reference');
+      expect(external.severity).toBe('warning');
+    });
+
+    it('classifies a fact that decides nothing as information', async () => {
+      writeAsset('uuid-moon', 'moon.wrl', `#VRML V2.0 utf8
+WorldInfo { title "Pocket Moon Playset" }
+Shape { appearance Appearance { texture ImageTexture { url "a.jpg" } } }
+Shape { appearance Appearance { texture ImageTexture { url "b.jpg" } } }
+`);
+      writeAsset('uuid-moon', 'a.jpg', Buffer.alloc(8));
+      writeAsset('uuid-moon', 'b.jpg', Buffer.alloc(8));
+
+      const findings = (await service.inspect(3339)).findings;
+      const multiple = findings.find(finding => finding.code === 'multiple_textures');
+      expect(multiple.severity).toBe('info');
+    });
+
+    it('gives every finding a severity', async () => {
+      writeAsset('uuid-moon', 'moon.wrl', `#VRML V2.0 utf8
+Shape { appearance Appearance { texture ImageTexture { url "../escape.jpg" } } }
+`);
+
+      const findings = (await service.inspect(3339)).findings;
+      expect(findings.length).toBeGreaterThan(0);
+      findings.forEach(finding => {
+        expect(['info', 'warning', 'needs_staff_review']).toContain(finding.severity);
+      });
+    });
+
+    it('falls back to needing staff review for an unrecognised code', () => {
+      expect(findingSeverity('something_the_scanner_invented')).toBe('needs_staff_review');
+    });
+
+    it('reports a texture referenced through a subdirectory that does not exist', async () => {
+      writeAsset('uuid-moon', 'moon.wrl', `#VRML V2.0 utf8
+WorldInfo { title "Pocket Moon Playset" }
+Shape { appearance Appearance { texture ImageTexture { url "textures/wood.jpg" } } }
+`);
+
+      const codes = findingCodes((await service.inspect(3339)).findings);
+      expect(codes).toContain('texture_subdirectory');
+      // In-directory, so it is not an escape and must not be reported as one.
+      expect(codes).not.toContain('external_reference');
+    });
+
+    it('stays quiet when a subdirectory texture really is on disk', async () => {
+      writeAsset('uuid-moon', 'moon.wrl', `#VRML V2.0 utf8
+WorldInfo { title "Pocket Moon Playset" }
+Shape { appearance Appearance { texture ImageTexture { url "textures/wood.jpg" } } }
+`);
+      writeAsset(path.join('uuid-moon', 'textures'), 'wood.jpg', Buffer.alloc(8));
+
+      const codes = findingCodes((await service.inspect(3339)).findings);
+      expect(codes).not.toContain('texture_subdirectory');
+      expect(codes).not.toContain('texture_missing');
+    });
+
+    it('reports a parent-traversal texture as external, not as a subdirectory', async () => {
+      writeAsset('uuid-moon', 'moon.wrl', `#VRML V2.0 utf8
+WorldInfo { title "Pocket Moon Playset" }
+Shape { appearance Appearance { texture ImageTexture { url "../uuid-other/wood.jpg" } } }
+`);
+
+      const codes = findingCodes((await service.inspect(3339)).findings);
+      expect(codes).toContain('external_reference');
+      expect(codes).not.toContain('texture_subdirectory');
     });
 
     it('reports an external reference', async () => {

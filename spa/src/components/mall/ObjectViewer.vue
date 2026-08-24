@@ -61,6 +61,15 @@ interface ViewerInternals {
   element: HTMLElement | null;
   /** The Inline whose url is swapped as the checker moves between objects. */
   objectInline: any;
+  /**
+   * The LoadSensor watching `objectInline`, and the key its callback is
+   * registered under. Held so the previous one can be released before the next
+   * is installed -- a checker session walks through many objects, and without
+   * this every one of them leaves a sensor in the scene graph watching the same
+   * Inline, plus a retained callback closing over this component.
+   */
+  objectSensor: any;
+  objectSensorKey: string | null;
   backstop: number | null;
   /**
    * Incremented on every load. Callbacks already in flight for a previous object
@@ -84,6 +93,8 @@ function internalsFor(component: Vue): ViewerInternals {
       browser: null,
       element: null,
       objectInline: null,
+      objectSensor: null,
+      objectSensorKey: null,
       backstop: null,
       generation: 0,
     };
@@ -237,10 +248,17 @@ export default Vue.extend({
     },
 
     watchObject(generation: number, scene: any, object: any) {
+      // The generation check below suppresses a stale callback's *effects*; it
+      // does not release the node. Both have to happen or the scene grows for
+      // the length of the review session.
+      this.releaseSensor(scene);
+
+      const own = internalsFor(this);
+      const key = `${this.callbackKey}-${generation}`;
       const sensor = scene.createNode("LoadSensor");
       sensor.timeOut = LOAD_TIMEOUT_SECONDS;
       sensor.watchList = new X3D.MFNode(object);
-      sensor.addFieldCallback("isLoaded", `${this.callbackKey}-${generation}`, (loaded: any) => {
+      sensor.addFieldCallback("isLoaded", key, (loaded: any) => {
         if (!this.isCurrent(generation)) {
           return; // belongs to an object the checker has already moved past
         }
@@ -251,6 +269,40 @@ export default Vue.extend({
         }
       });
       scene.addRootNode(sensor);
+      own.objectSensor = sensor;
+      own.objectSensorKey = key;
+    },
+
+    /**
+     * Detaches and disposes the sensor installed by the previous load.
+     *
+     * Wrapped because this runs during teardown as well, when the browser may
+     * already be tearing its own scene down; a throw here would abandon the rest
+     * of the cleanup, which is worse than the leak it is trying to prevent.
+     */
+    releaseSensor(scene: any) {
+      const own = internalsFor(this);
+      const sensor = own.objectSensor;
+      if (!sensor) {
+        return;
+      }
+      own.objectSensor = null;
+      const key = own.objectSensorKey;
+      own.objectSensorKey = null;
+
+      try {
+        if (key) {
+          sensor.removeFieldCallback("isLoaded", key);
+        }
+        if (scene) {
+          scene.removeRootNode(sensor);
+        }
+        if (typeof sensor.dispose === "function") {
+          sensor.dispose();
+        }
+      } catch (error) {
+        // Already gone, which is the state we wanted.
+      }
     },
 
     succeed(generation: number) {
@@ -280,17 +332,41 @@ export default Vue.extend({
       }
     },
 
-    /** Drops the canvas when the checker itself goes away. */
+    /**
+     * Drops the canvas when the checker itself goes away.
+     *
+     * Removing the element alone leaves X_ITE's browser, its scene graph and its
+     * render loop alive with nothing pointing at them. The checker is a
+     * long-lived page that mounts this component per object, so that is a real
+     * accumulation rather than a theoretical one.
+     */
     teardown() {
       this.clearBackstop();
       const own = internalsFor(this);
       own.generation += 1;
+
+      const browser = own.browser;
+      try {
+        this.releaseSensor(browser && browser.currentScene);
+      } catch (error) {
+        // Nothing left to release.
+      }
+
+      own.objectInline = null;
+      own.browser = null;
+
+      if (browser && typeof browser.dispose === "function") {
+        try {
+          browser.dispose();
+        } catch (error) {
+          // The browser never finished starting up; there is nothing to dispose.
+        }
+      }
+
       if (own.element && own.element.parentNode) {
         own.element.parentNode.removeChild(own.element);
       }
       own.element = null;
-      own.browser = null;
-      own.objectInline = null;
     },
   },
 });

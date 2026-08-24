@@ -192,3 +192,70 @@ describe('compareWorldInfo - multiple WorldInfo nodes', () => {
     expect(scan.warnings).toContain('multiple_worldinfo');
   });
 });
+
+describe('compareWorldInfo - the label has to actually be the label', () => {
+  it('does not let a longer word register as a recognised field', () => {
+    const scan = scanOf(['Storehouse: Somewhere Else', 'Pricey: 5']);
+    const { comparisons, interpreted } = compareWorldInfo(scan, FACTS);
+
+    expect(verdictFor(comparisons, 'store')).toBe('NOT_FOUND');
+    expect(verdictFor(comparisons, 'price')).toBe('NOT_FOUND');
+    expect(interpreted.store).toBeNull();
+    expect(interpreted.price).toBeNull();
+  });
+
+  it('still reads the label when the colon is absent', () => {
+    const scan = scanOf(['Store Toy Store']);
+
+    expect(verdictFor(compareWorldInfo(scan, FACTS).comparisons, 'store')).toBe('MATCH');
+  });
+});
+
+describe('compareWorldInfo - numeric entries are read strictly', () => {
+  it('refuses trailing rubbish rather than reporting a confident match', () => {
+    ['75xyz', 'USD 75', '75.5', 'not 75'].forEach(value => {
+      expect(verdictFor(compareWorldInfo(scanOf([`Mall Price: ${value}`]), FACTS).comparisons,
+        'price')).toBe('UNPARSED');
+    });
+  });
+
+  it('reads a group-separated number as one value', () => {
+    const facts = { ...FACTS, price: 1500 };
+
+    expect(verdictFor(compareWorldInfo(scanOf(['Mall Price: 1,500 CC']), facts).comparisons,
+      'price')).toBe('MATCH');
+  });
+
+  it('reports UNPARSED rather than MISMATCH when CTR holds no price', () => {
+    const facts = { ...FACTS, price: null };
+    const comparison = compareWorldInfo(scanOf(['Mall Price: 75 CC']), facts)
+      .comparisons.find(entry => entry.field === 'price');
+
+    expect(comparison?.verdict).toBe('UNPARSED');
+    expect(comparison?.note).toMatch(/no price to compare/i);
+  });
+});
+
+describe('compareWorldInfo - a field declared twice', () => {
+  it('refuses to pick a winner when two entries disagree', () => {
+    const scan = scanOf(['Mall Price: 75 CC', 'Mall Price: 100 CC']);
+    const comparison = compareWorldInfo(scan, FACTS)
+      .comparisons.find(entry => entry.field === 'price');
+
+    expect(comparison?.verdict).toBe('UNPARSED');
+    expect(comparison?.note).toMatch(/declares this field 2 times/i);
+    expect(comparison?.note).toMatch(/staff review/i);
+  });
+
+  it('treats identical repeated entries as the one value they agree on', () => {
+    const scan = scanOf(['Mall Price: 75 CC', 'Mall Price: 75 CC']);
+
+    expect(verdictFor(compareWorldInfo(scan, FACTS).comparisons, 'price')).toBe('MATCH');
+  });
+
+  it('keeps every literal entry available regardless of the verdict', () => {
+    const scan = scanOf(['Mall Price: 75 CC', 'Mall Price: 100 CC']);
+
+    expect(scan.worldInfo[0].info).toEqual(['Mall Price: 75 CC', 'Mall Price: 100 CC']);
+  });
+});

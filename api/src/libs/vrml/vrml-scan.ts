@@ -54,7 +54,14 @@ export interface VrmlScan {
   /** The file's first line verbatim, or null for an empty file. */
   header: string | null;
   headerIsVrml97: boolean;
+  /**
+   * Scene-level WorldInfo only. A PROTO body is a template, not part of the
+   * instantiated scene, so metadata declared inside one must never stand in as
+   * the object's own -- see `protoWorldInfo`.
+   */
   worldInfo: WorldInfoNode[];
+  /** WorldInfo declared inside a PROTO body. Reported, never compared against. */
+  protoWorldInfo: WorldInfoNode[];
   /** Raw count of every node type opened, keyed by type name. */
   nodeCounts: { [nodeType: string]: number };
   protoDefinitions: string[];
@@ -106,6 +113,8 @@ export const FINDING_TRUNCATED = 'too_complex';
 interface Frame {
   /** null for a brace block that is not a node body (a PROTO body, for example). */
   type: string | null;
+  /** True when this frame is a PROTO body, or is nested anywhere inside one. */
+  proto: boolean;
 }
 
 function isNodeTypeName(value: string): boolean {
@@ -137,6 +146,33 @@ export function classifyUrl(value: string): VrmlUrlKind {
     return 'relative';
   }
   return 'local';
+}
+
+/**
+ * Whether a relative reference resolves outside the object's own directory.
+ *
+ * `classifyUrl` calls both `textures/wood.jpg` and `../wood.jpg` relative, but
+ * only the second one leaves the directory, and that difference is the whole
+ * point of the external-reference rule.
+ */
+export function escapesObjectDirectory(value: string): boolean {
+  const parts = value.trim().split(/[\\/]+/);
+  let depth = 0;
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    if (part === '' || part === '.') {
+      continue;
+    }
+    if (part === '..') {
+      depth -= 1;
+      if (depth < 0) {
+        return true;
+      }
+    } else {
+      depth += 1;
+    }
+  }
+  return false;
 }
 
 function isPunct(token: VrmlToken | undefined, value: string): boolean {
@@ -224,12 +260,17 @@ export function scanVrml(text: string): VrmlScan {
 
   const header = readHeader(text);
   const worldInfo: WorldInfoNode[] = [];
+  // Parallel to `worldInfo`: field writes still target the most recent record,
+  // so PROTO-local nodes have to be collected, then separated at the end.
+  const worldInfoIsProto: boolean[] = [];
+  let pendingProtoBody = false;
   const nodeCounts: { [nodeType: string]: number } = {};
   const protoDefinitions: string[] = [];
   const externProtoDefinitions: string[] = [];
   const urls: VrmlUrlReference[] = [];
   const viewpoints: ViewpointFact[] = [];
   const stack: Frame[] = [];
+  const inProtoBody = (): boolean => stack.length > 0 && stack[stack.length - 1].proto;
 
   let pendingDefName: string | null = null;
   let unbalanced = false;
@@ -245,7 +286,8 @@ export function scanVrml(text: string): VrmlScan {
     if (token.kind === 'punct') {
       if (token.value === '{') {
         // A brace not introduced by a node name - a PROTO body, for instance.
-        stack.push({ type: null });
+        stack.push({ type: null, proto: pendingProtoBody || inProtoBody() });
+        pendingProtoBody = false;
       } else if (token.value === '}') {
         if (stack.length === 0) {
           unbalanced = true;
@@ -285,6 +327,8 @@ export function scanVrml(text: string): VrmlScan {
 
       if (word === 'PROTO') {
         protoDefinitions.push(name);
+        // The brace that follows the interface opens the template body.
+        pendingProtoBody = true;
       } else {
         externProtoDefinitions.push(name);
         // An EXTERNPROTO's url list follows its interface with no field name,
@@ -309,8 +353,9 @@ export function scanVrml(text: string): VrmlScan {
       }
       if (word === 'WorldInfo') {
         worldInfo.push({ title: null, info: [] });
+        worldInfoIsProto.push(inProtoBody());
       }
-      stack.push({ type: word });
+      stack.push({ type: word, proto: inProtoBody() });
       pendingDefName = null;
       index += 2;
       continue;
@@ -355,17 +400,22 @@ export function scanVrml(text: string): VrmlScan {
     index += 1;
   }
 
+  const sceneWorldInfo = worldInfo.filter((_node, i) => !worldInfoIsProto[i]);
+  const protoWorldInfo = worldInfo.filter((_node, i) => worldInfoIsProto[i]);
+
   const warnings: string[] = [];
   if (header === null || header !== VRML97_HEADER) {
     warnings.push(FINDING_BAD_HEADER);
   }
-  if (worldInfo.length === 0) {
+  if (sceneWorldInfo.length === 0) {
     warnings.push(FINDING_NO_WORLDINFO);
   }
-  if (worldInfo.length > 1) {
+  if (sceneWorldInfo.length > 1) {
     warnings.push(FINDING_MULTIPLE_WORLDINFO);
   }
-  if (unterminatedString || unbalanced || stack.length > 0) {
+  // An open stack is expected when scanning stopped at the token budget, so it
+  // only means malformed input if the file was read to the end.
+  if (unterminatedString || unbalanced || (stack.length > 0 && !truncated)) {
     warnings.push(FINDING_MALFORMED_VRML);
   }
   if (truncated) {
@@ -375,7 +425,8 @@ export function scanVrml(text: string): VrmlScan {
   return {
     header,
     headerIsVrml97: header === VRML97_HEADER,
-    worldInfo,
+    worldInfo: sceneWorldInfo,
+    protoWorldInfo,
     nodeCounts,
     protoDefinitions,
     externProtoDefinitions,
@@ -420,6 +471,8 @@ export function textureReferences(scan: VrmlScan): VrmlUrlReference[] {
 /** Every reference that leaves the object's own directory. */
 export function externalReferences(scan: VrmlScan): VrmlUrlReference[] {
   return scan.urls.filter(
-    reference => reference.kind === 'external' || reference.kind === 'absolute',
+    reference => reference.kind === 'external'
+      || reference.kind === 'absolute'
+      || (reference.kind === 'relative' && escapesObjectDirectory(reference.value)),
   );
 }

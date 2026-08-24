@@ -78,41 +78,117 @@ interface PrefixMatch {
   value: string;
 }
 
+interface PrefixResolution {
+  /** First entry carrying the highest-priority label present, or null. */
+  match: PrefixMatch | null;
+  /** Every entry carrying that same label, in file order. */
+  all: PrefixMatch[];
+  /** True when those entries disagree, so no single value can be compared. */
+  conflicting: boolean;
+}
+
 /**
- * Finds the first `info[]` entry beginning with one of `prefixes`, allowing any
+ * Finds every `info[]` entry carrying one of `prefixes`, allowing any
  * surrounding whitespace and any case. The separator colon is optional because
  * real objects are inconsistent about it.
+ *
+ * Prefixes are tried in order and the first one that matches anything wins, so
+ * a more specific label ("Mall Price") still beats a general one ("Price") on
+ * the same object. The label must actually end where the prefix does --
+ * matching on a bare string prefix let "Storehouse:" register as "Store:".
  */
-function findPrefixed(info: string[], prefixes: string[]): PrefixMatch | null {
+function findPrefixed(info: string[], prefixes: string[]): PrefixMatch[] {
   for (const prefix of prefixes) {
+    const matches: PrefixMatch[] = [];
     for (const line of info) {
       const trimmed = line.trim();
       const lower = trimmed.toLowerCase();
       if (lower.indexOf(prefix) !== 0) {
         continue;
       }
-      const remainder = trimmed.slice(prefix.length).replace(/^\s*:?\s*/, '');
-      return { line, value: remainder };
+      const rest = trimmed.slice(prefix.length);
+      if (rest !== '' && !/^\s*:/.test(rest) && !/^\s/.test(rest)) {
+        continue;
+      }
+      matches.push({ line, value: rest.replace(/^\s*:?\s*/, '') });
+    }
+    if (matches.length > 0) {
+      return matches;
     }
   }
-  return null;
+  return [];
+}
+
+function resolvePrefixed(info: string[], prefixes: string[]): PrefixResolution {
+  const all = findPrefixed(info, prefixes);
+  if (all.length === 0) {
+    return { match: null, all, conflicting: false };
+  }
+  const first = normalise(all[0].value);
+  return {
+    match: all[0],
+    all,
+    conflicting: all.some(entry => normalise(entry.value) !== first),
+  };
+}
+
+/**
+ * A field declared twice with different values has no answer, only a question.
+ * Picking the first silently turns that into a confident verdict, so it is
+ * reported as unparseable and handed to staff instead.
+ */
+function conflicted(
+  field: ComparisonField,
+  resolution: PrefixResolution,
+  ctrValue: string | number | null,
+): FieldComparison | null {
+  if (!resolution.conflicting) {
+    return null;
+  }
+  const values = resolution.all.map(entry => `"${entry.value}"`).join(', ');
+  return {
+    field,
+    verdict: 'UNPARSED',
+    worldInfoLine: resolution.all[0].line,
+    worldInfoValue: resolution.all[0].value,
+    ctrValue,
+    note: `The object declares this field ${resolution.all.length} times with different `
+      + `values (${values}), so there is no single value to compare. Staff review required.`,
+  };
 }
 
 function normalise(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-/** Pulls the first integer out of a value such as "75 CC" or "25 max". */
+/**
+ * Reads the integer out of a value such as "75", "75 CC", "1,500 CC" or "25 max".
+ *
+ * Deliberately strict. Scanning for the first digit run reads 75 out of
+ * "USD 75.50" and then reports a confident MATCH against a stored 75, which is
+ * worse than admitting the entry could not be read. Group separators are
+ * accepted because "1,500" otherwise parsed as 1.
+ */
+const INTEGER_ENTRY = /^([+-]?\d{1,3}(?:,\d{3})+|[+-]?\d+)\s*(?:cc|credits?|max)?$/i;
+
 function parseInteger(value: string): number | null {
-  const match = /-?\d+/.exec(value);
-  return match ? Number.parseInt(match[0], 10) : null;
+  const match = INTEGER_ENTRY.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+  return Number.parseInt(match[1].replace(/,/g, ''), 10);
 }
 
 function compareText(
   field: ComparisonField,
-  match: PrefixMatch | null,
+  resolution: PrefixResolution,
   ctrValue: string | null,
 ): FieldComparison {
+  const conflict = conflicted(field, resolution, ctrValue);
+  if (conflict) {
+    return conflict;
+  }
+  const match = resolution.match;
   if (!match) {
     return { field, verdict: 'NOT_FOUND', worldInfoLine: null, worldInfoValue: null, ctrValue };
   }
@@ -145,7 +221,15 @@ function compareText(
   };
 }
 
-function comparePrice(match: PrefixMatch | null, ctrPrice: number | null): FieldComparison {
+function comparePrice(
+  resolution: PrefixResolution,
+  ctrPrice: number | null,
+): FieldComparison {
+  const conflict = conflicted('price', resolution, ctrPrice);
+  if (conflict) {
+    return conflict;
+  }
+  const match = resolution.match;
   if (!match) {
     return {
       field: 'price',
@@ -168,6 +252,16 @@ function comparePrice(match: PrefixMatch | null, ctrPrice: number | null): Field
         : 'No number could be read from the entry.',
     };
   }
+  if (ctrPrice === null) {
+    return {
+      field: 'price',
+      verdict: 'UNPARSED',
+      worldInfoLine: match.line,
+      worldInfoValue: match.value,
+      ctrValue: ctrPrice,
+      note: 'CTR holds no price to compare against.',
+    };
+  }
   return {
     field: 'price',
     verdict: parsed === ctrPrice ? 'MATCH' : 'MISMATCH',
@@ -183,9 +277,17 @@ function comparePrice(match: PrefixMatch | null, ctrPrice: number | null): Field
  * Out-of-Stock view only treats NULL that way. Rather than pick a side, a stored
  * 0 is reported as UNPARSED with an explanation.
  */
-function compareLimit(match: PrefixMatch | null, ctrLimit: number | null): FieldComparison {
+function compareLimit(
+  resolution: PrefixResolution,
+  ctrLimit: number | null,
+): FieldComparison {
   const ctrValue = ctrLimit;
 
+  const conflict = conflicted('limit', resolution, ctrValue);
+  if (conflict) {
+    return conflict;
+  }
+  const match = resolution.match;
   if (!match) {
     return {
       field: 'limit',
@@ -289,20 +391,20 @@ export function compareWorldInfo(scan: VrmlScan, facts: MallObjectFacts): WorldI
   const node: WorldInfoNode = scan.worldInfo[0] || { title: null, info: [] };
   const info = node.info;
 
-  const creator = findPrefixed(info, PREFIXES.creator);
-  const price = findPrefixed(info, PREFIXES.price);
-  const limit = findPrefixed(info, PREFIXES.limit);
-  const store = findPrefixed(info, PREFIXES.store);
-  const uploaded = findPrefixed(info, PREFIXES.uploaded);
+  const creator = resolvePrefixed(info, PREFIXES.creator);
+  const price = resolvePrefixed(info, PREFIXES.price);
+  const limit = resolvePrefixed(info, PREFIXES.limit);
+  const store = resolvePrefixed(info, PREFIXES.store);
+  const uploaded = resolvePrefixed(info, PREFIXES.uploaded);
 
   return {
     interpreted: {
       title: node.title,
-      creator: creator ? creator.value : null,
-      price: price ? price.value : null,
-      limit: limit ? limit.value : null,
-      store: store ? store.value : null,
-      uploaded: uploaded ? uploaded.value : null,
+      creator: creator.match ? creator.match.value : null,
+      price: price.match ? price.match.value : null,
+      limit: limit.match ? limit.match.value : null,
+      store: store.match ? store.match.value : null,
+      uploaded: uploaded.match ? uploaded.match.value : null,
     },
     comparisons: [
       compareTitle(node.title, facts.name),

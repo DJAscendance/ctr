@@ -74,12 +74,17 @@
             <div v-if="!inspection.findings.length" class="text-green">
               Nothing flagged. Size, position and content still need your eye.
             </div>
-            <ul v-else class="list-disc ml-5">
-              <li v-for="(finding, index) in inspection.findings" :key="index" class="mb-1">
-                {{ finding.message }}
-                <span class="text-xs opacity-60">({{ finding.code }})</span>
-              </li>
-            </ul>
+            <template v-else>
+              <div v-for="group in findingGroups" :key="group.severity" class="mb-2">
+                <div class="text-sm font-bold" :class="group.className">{{ group.label }}</div>
+                <ul class="list-disc ml-5">
+                  <li v-for="(finding, index) in group.findings" :key="index" class="mb-1">
+                    {{ finding.message }}
+                    <span class="text-xs opacity-60">({{ finding.code }})</span>
+                  </li>
+                </ul>
+              </div>
+            </template>
             <div class="text-xs opacity-60 mt-1">
               Advisory only. Nothing here accepts or rejects anything.
             </div>
@@ -191,9 +196,9 @@
         <button class="btn-ui-inline" @click="toggleRawSource">
           {{ showRawSource ? 'Hide' : 'Show' }} raw VRML
         </button>
-        <a class="btn-ui-inline" :href="downloadUrl" target="_blank" rel="noopener">
-          Download decompressed .wrl
-        </a>
+        <button class="btn-ui-inline" :disabled="isDownloading" @click="downloadSource">
+          {{ isDownloading ? 'Preparing...' : 'Download decompressed .wrl' }}
+        </button>
         <a v-if="object.assets.thumbnail.url"
            class="btn-ui-inline"
            :href="object.assets.thumbnail.url"
@@ -209,13 +214,32 @@
            :href="object.assets.wrl.url"
            target="_blank"
            rel="noopener">Original stored bytes</a>
-        <pre v-if="showRawSource"
+        <p v-if="rawSourceError" class="text-red-400 mt-2">{{ rawSourceError }}</p>
+        <pre v-if="showRawSource && rawSource"
              class="mt-2 p-2 overflow-auto text-xs"
              style="max-height: 20rem; background: #001829;">{{ rawSource }}</pre>
       </div>
 
       <!-- Staff actions, deliberately separated from everything above -->
-      <div class="border-t-4 border-red-500 p-2 flex flex-wrap items-center">
+      <div class="border-t-4 border-red-500 p-2">
+        <!--
+          The reason is required and goes to the uploader verbatim, so it is a
+          full textarea rather than a prompt: staff are writing to a person.
+        -->
+        <label class="block uppercase text-xs opacity-60 mb-1" for="reject-reason">
+          Reason for rejection
+        </label>
+        <textarea
+          id="reject-reason"
+          v-model="rejectReason"
+          class="w-full p-1 mb-2"
+          rows="3"
+          :maxlength="rejectReasonMax"
+          :disabled="isProcessing"
+          placeholder="Tell the uploader what needs fixing. Sent to them when you reject."
+          style="background: #001829;"
+        ></textarea>
+        <div class="flex flex-wrap items-center">
         <span class="uppercase text-xs opacity-60 mr-2">Staff actions</span>
         <button class="btn mr-2" :disabled="isProcessing" @click="confirmApprove">Accept</button>
         <button class="btn mr-2" :disabled="isProcessing" @click="confirmReject">Reject</button>
@@ -227,6 +251,13 @@
         </button>
         <span v-if="actionError" class="text-red-500 ml-2">{{ actionError }}</span>
         <span v-else-if="actionSuccess" class="text-green ml-2">{{ actionSuccess }}</span>
+        </div>
+        <!--
+          A rejection that could not notify is still a completed rejection, so
+          this is a warning to follow up by hand, never an invitation to press
+          Reject again.
+        -->
+        <p v-if="actionWarning" class="text-yellow-400 mt-2 font-bold">{{ actionWarning }}</p>
       </div>
     </template>
 
@@ -238,6 +269,11 @@
 import Vue from "vue";
 
 import ObjectViewer from "@/components/mall/ObjectViewer.vue";
+import {
+  REJECT_REASON_MAX,
+  objectDisplayName,
+  rejectReasonError,
+} from "@/pages/mall/staff/mall-actions.mixin";
 
 /**
  * The Mall staff review workspace.
@@ -249,6 +285,8 @@ import ObjectViewer from "@/components/mall/ObjectViewer.vue";
  */
 
 /** Which list a checker arrived from, and the object status that list shows. */
+
+
 const LIST_STATUS: { [key: string]: number } = {
   pending: 2,
   warehouse: 3,
@@ -293,10 +331,26 @@ export default Vue.extend({
       loadError: "",
       inspection: null,
       rawSource: "",
+      rawSourceError: "",
+      isDownloading: false,
+      /**
+       * The object each in-flight fetch was issued for.
+       *
+       * Staff move through the queue faster than an inspection round-trips, and
+       * responses are not guaranteed to arrive in the order they were sent. A
+       * slow response for a previous object would otherwise be rendered under
+       * the current object's id -- the worst possible failure for a page whose
+       * whole job is deciding whether to accept or reject what is on screen.
+       */
+      inspectionFor: null as number | null,
+      rawSourceFor: null as number | null,
       showRawSource: false,
       isProcessing: false,
       actionError: "",
       actionSuccess: "",
+      actionWarning: "",
+      rejectReason: "",
+      rejectReasonMax: REJECT_REASON_MAX,
       queue: {
         ids: [],
         consumed: [],
@@ -374,6 +428,36 @@ export default Vue.extend({
     nextId(): number {
       return this.neighbour(1);
     },
+    /**
+     * Findings grouped by severity, most consequential first.
+     *
+     * "Needs staff review" leads because it means the rest of this page could
+     * not be established -- a checker who reads past it is trusting facts the
+     * inspection never actually proved. Empty groups are dropped rather than
+     * rendered as reassuring empty headings.
+     */
+    findingGroups(): any[] {
+      const order = [
+        {
+          severity: "needs_staff_review",
+          label: "Needs staff review",
+          className: "text-yellow-400",
+        },
+        { severity: "warning", label: "Warnings", className: "text-orange-400" },
+        { severity: "info", label: "Information", className: "opacity-70" },
+      ];
+      const findings = (this.inspection && this.inspection.findings) || [];
+      return order
+        .map(group => ({
+          ...group,
+          // Findings from an older API build carry no severity; treating them as
+          // needing review matches the server's own fallback.
+          findings: findings.filter((finding: any) =>
+            (finding.severity || "needs_staff_review") === group.severity),
+        }))
+        .filter(group => group.findings.length > 0);
+    },
+
     queueLabel(): string {
       if (this.currentIndex < 0 || !this.queue.total) {
         return "";
@@ -384,16 +468,18 @@ export default Vue.extend({
     ownUrl(): string {
       return `/#${this.$route.fullPath}`;
     },
-    downloadUrl(): string {
-      return `/api/mall/object/${this.objectId}/source?download=1`;
-    },
+
   },
   watch: {
     objectId() {
       this.actionError = "";
       this.actionSuccess = "";
+      this.actionWarning = "";
+      // The reason belongs to the object it was written about.
+      this.rejectReason = "";
       this.showRawSource = false;
       this.rawSource = "";
+      this.rawSourceError = "";
       this.loadInspection();
     },
   },
@@ -421,10 +507,18 @@ export default Vue.extend({
         this.loadError = "That is not a valid object id.";
         return;
       }
+      const requestedFor = this.objectId;
+      this.inspectionFor = requestedFor;
       try {
-        const response = await this.$http.get(`/mall/object/${this.objectId}/inspection`);
+        const response = await this.$http.get(`/mall/object/${requestedFor}/inspection`);
+        if (this.inspectionFor !== requestedFor) {
+          return; // staff have already moved to another object
+        }
         this.inspection = response.data.inspection;
       } catch (errorResponse: any) {
+        if (this.inspectionFor !== requestedFor) {
+          return;
+        }
         const status = errorResponse.response && errorResponse.response.status;
         this.loadError = status === 404
           ? "That object no longer exists."
@@ -516,9 +610,21 @@ export default Vue.extend({
         return false;
       }
 
+      // Every consumed object has left the status list this queue pages through
+      // (only Accept and Reject mark one consumed, and both change its status),
+      // so the server's result set has shifted left by that many rows. Paging
+      // forward by the captured length would step past exactly that many
+      // objects: capture [1..10], reject 10, and a raw offset of 10 lands on the
+      // twelfth object, silently skipping 11.
+      //
+      // Backward extension needs no such adjustment: removing a row shifts only
+      // the rows after it, and everything consumed sits at or after this.offset.
+      const consumedInQueue = this.queue.ids
+        .filter((id: number) => this.queue.consumed.indexOf(id) !== -1).length;
+
       const offset = direction < 0
         ? Math.max(this.queue.offset - this.queue.limit, 0)
-        : this.queue.offset + this.queue.ids.length;
+        : Math.max(this.queue.offset + this.queue.ids.length - consumedInQueue, 0);
       const page = await this.fetchQueuePage(status, offset, this.queue.limit);
 
       if (!page.ids.length) {
@@ -530,11 +636,27 @@ export default Vue.extend({
         return false;
       }
 
+      // Another staff member acting on the same list concurrently can shift the
+      // result set further than our own consumption accounts for, which would
+      // hand back a row already captured. Duplicate ids would break navigation,
+      // which is indexOf-based, so they are dropped rather than appended.
+      const known = this.queue.ids;
+      const fresh = page.ids.filter((id: number) => known.indexOf(id) === -1);
+
+      if (!fresh.length) {
+        if (direction < 0) {
+          this.queue.exhaustedBefore = true;
+        } else {
+          this.queue.exhaustedAfter = true;
+        }
+        return false;
+      }
+
       if (direction < 0) {
-        this.queue.ids = page.ids.concat(this.queue.ids);
+        this.queue.ids = fresh.concat(this.queue.ids);
         this.queue.offset = offset;
       } else {
-        this.queue.ids = this.queue.ids.concat(page.ids);
+        this.queue.ids = this.queue.ids.concat(fresh);
       }
       this.queue.total = page.total;
       return true;
@@ -545,11 +667,62 @@ export default Vue.extend({
       if (!this.showRawSource || this.rawSource) {
         return;
       }
+      this.rawSourceError = "";
+      const requestedFor = this.objectId;
+      this.rawSourceFor = requestedFor;
       try {
-        const response = await this.$http.get(`/mall/object/${this.objectId}/source`);
+        const response = await this.$http.get(`/mall/object/${requestedFor}/source`);
+        if (this.rawSourceFor !== requestedFor) {
+          return;
+        }
         this.rawSource = response.data;
       } catch (error) {
-        this.rawSource = "The source of this object could not be decoded.";
+        if (this.rawSourceFor !== requestedFor) {
+          return;
+        }
+        // Shown, but deliberately not stored in `rawSource`: caching the failure
+        // there makes the `this.rawSource` short-circuit above treat it as a
+        // successful fetch, so a transient error would never be retried.
+        this.rawSourceError = "The source of this object could not be decoded.";
+      }
+    },
+
+    /**
+     * Saves the decompressed source through the authenticated client.
+     *
+     * `/mall/object/:id/source` is behind `requireMallStaff`, which authorises
+     * from the `apitoken` request header alone. A plain `<a href>` is a browser
+     * navigation and cannot carry that header, so linking straight at the
+     * endpoint returns 400 even for a signed-in staff member; the bytes have to
+     * come back through the api client and be saved from memory instead.
+     */
+    async downloadSource(): Promise<void> {
+      if (this.isDownloading) {
+        return;
+      }
+      this.isDownloading = true;
+      this.rawSourceError = "";
+      const requestedFor = this.objectId;
+      let url = "";
+      try {
+        const response = await this.$http.get(`/mall/object/${requestedFor}/source`);
+        const blob = new Blob([response.data], { type: "model/vrml" });
+        url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        // Matches the name the server sends for `?download=1`: never the
+        // member-supplied object name, never the stored filename.
+        link.download = `object-${requestedFor}.wrl`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (error) {
+        this.rawSourceError = "The source of this object could not be downloaded.";
+      } finally {
+        if (url) {
+          window.URL.revokeObjectURL(url);
+        }
+        this.isDownloading = false;
       }
     },
 
@@ -561,29 +734,77 @@ export default Vue.extend({
     },
 
     confirmReject(): void {
-      if (!window.confirm(`Reject "${this.object.name}" (#${this.object.id})?`)) {
+      const reason = this.rejectReason.trim();
+      const invalid = rejectReasonError(reason);
+      if (invalid) {
+        this.actionError = invalid;
+        this.actionSuccess = "";
+        this.actionWarning = "";
         return;
       }
-      this.performAction("/mall/reject", { id: this.object.id }, "Object rejected.");
+      if (!window.confirm(
+        `Reject "${this.object.name}" (#${this.object.id})?\n\n` +
+        `The uploader will be sent this reason:\n\n${reason}`,
+      )) {
+        return;
+      }
+      this.rejectObject(reason);
     },
 
-    async performAction(endpoint: string, body: any, success: string): Promise<void> {
-      if (this.isProcessing) {
+    /**
+     * Rejection has three outcomes, and they must not be conflated.
+     *
+     * A failure leaves the reason typed and the object in place so it can be
+     * retried. A success that could not notify is still a completed rejection --
+     * the refund has already happened -- so it advances like any other success
+     * and warns rather than inviting a second Reject.
+     */
+    async rejectObject(reason: string): Promise<void> {
+      // Captured before the request, because a success advances the queue and
+      // `this.object` is then the next object rather than the rejected one.
+      const rejectedName = objectDisplayName(this.object);
+
+      const data = await this.performAction(
+        "/mall/reject",
+        { id: this.object.id, reason },
+        "Object rejected and the uploader notified.",
+      );
+
+      if (this.actionError) {
         return;
+      }
+
+      this.rejectReason = "";
+      if (data && data.notified === false) {
+        // Set after the queue has advanced, so navigation does not clear it.
+        this.actionSuccess = "Object rejected.";
+        this.actionWarning = `${rejectedName} was rejected, but the uploader `
+          + "could not be notified. Follow up manually.";
+      }
+    },
+
+    /** Returns the response body so a caller can act on what the server reported. */
+    async performAction(endpoint: string, body: any, success: string): Promise<any> {
+      if (this.isProcessing) {
+        return null;
       }
       this.isProcessing = true;
       this.actionError = "";
       this.actionSuccess = "";
+      this.actionWarning = "";
+      let data: any = null;
       try {
-        await this.$http.post(endpoint, body);
+        const response: any = await this.$http.post(endpoint, body);
+        data = response && response.data;
         this.actionSuccess = success;
         await this.advancePastCurrent();
       } catch (errorResponse: any) {
-        const data = errorResponse.response && errorResponse.response.data;
-        this.actionError = (data && data.error) || "An unknown error occurred";
+        const errorData = errorResponse.response && errorResponse.response.data;
+        this.actionError = (errorData && errorData.error) || "An unknown error occurred";
       } finally {
         this.isProcessing = false;
       }
+      return data;
     },
 
     /**
@@ -648,9 +869,19 @@ export default Vue.extend({
       );
     },
 
+    /**
+     * The buttons already bind `:disabled="isProcessing"`, but nothing here ever
+     * set it -- so an edit left them live and a second click sent a second
+     * mutation against the same object while the first was still in flight.
+     */
     async performStaffEdit(endpoint: string, body: any, success: string): Promise<void> {
+      if (this.isProcessing) {
+        return;
+      }
+      this.isProcessing = true;
       this.actionError = "";
       this.actionSuccess = "";
+      this.actionWarning = "";
       try {
         await this.$http.post(endpoint, body);
         this.actionSuccess = success;
@@ -658,6 +889,8 @@ export default Vue.extend({
       } catch (errorResponse: any) {
         const data = errorResponse.response && errorResponse.response.data;
         this.actionError = (data && data.error) || "An unknown error occurred";
+      } finally {
+        this.isProcessing = false;
       }
     },
 

@@ -141,13 +141,28 @@ export default mallActions.extend({
       this.applyPaging();
     },
     applyPaging(): void {
-      this.syncListState();
       this.objects.sort((a, b) => (this.orderBy === "ASC" ? a.id - b.id : b.id - a.id));
       this.pages = [];
       const pages = Math.ceil(this.totalCount / this.limit);
       for (let i = 1; pages >= i; i++) {
         this.pages.push(i);
       }
+
+      // Removing objects shrinks this list, and the page staff are standing on
+      // can fall off the end of it -- leaving them on an empty page whose number
+      // is no longer even offered in the pager, with no way back but a reload.
+      // Clamping also covers a page number restored from a stale url.
+      const lastPage = Math.max(pages, 1);
+      if (this.pageNum > lastPage) {
+        this.pageNum = lastPage;
+      }
+      if (this.pageNum < 1) {
+        this.pageNum = 1;
+      }
+      this.offset = (this.pageNum - 1) * this.limit;
+
+      // After the clamp, so the url reflects the page actually shown.
+      this.syncListState();
     },
     async getResults(): Promise<void> {
       this.objects = [];

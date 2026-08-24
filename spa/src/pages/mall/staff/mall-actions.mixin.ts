@@ -12,6 +12,45 @@ import Vue from "vue";
  * Consumers must provide a `getResults()` method; it is called after a
  * successful edit so the list reflects the change.
  */
+/**
+ * Longest rejection reason the API accepts.
+ *
+ * Mirrored from the server so staff are stopped before a request rather than
+ * after one. The server stays the authority.
+ */
+export const REJECT_REASON_MAX = 2000;
+
+/**
+ * Shared so the checker and the Pending list refuse exactly the same input.
+ *
+ * Returns the message to show, or null when the reason is acceptable.
+ */
+export function rejectReasonError(reason: string): string | null {
+  const trimmed = (reason || "").trim();
+  if (!trimmed) {
+    return "A reason for rejection is required.";
+  }
+  if (trimmed.length > REJECT_REASON_MAX) {
+    return `A rejection reason may be at most ${REJECT_REASON_MAX} characters.`;
+  }
+  return null;
+}
+
+/**
+ * A name for an object safe to put in a staff-facing sentence.
+ *
+ * Objects can reach staff with a null or blank name, and "was rejected" with
+ * nothing in front of it reads as a bug rather than as a warning.
+ */
+export function objectDisplayName(object: any): string {
+  const name = String((object && object.name) || "").trim();
+  if (name) {
+    return name;
+  }
+  const id = object && object.id;
+  return id ? `Object #${id}` : "The object";
+}
+
 export default Vue.extend({
   data() {
     return {

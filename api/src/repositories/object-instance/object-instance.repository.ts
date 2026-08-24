@@ -223,14 +223,14 @@ export class ObjectInstanceRepository {
 
   public async totalCount(): Promise<number> {
     const count = await this.db.objectInstance
-      .count('object_id as total')
+      .count('object_id as total');
     return parseInt(Object.values(count[0])[0]);
   }
 
   public async totalSearchCount(id: number): Promise<number> {
     const count = await this.db.objectInstance
       .count('object_id as total')
-      .where('member_id', id)
+      .where('member_id', id);
     return parseInt(Object.values(count[0])[0]);
   }
 

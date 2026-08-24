@@ -10,7 +10,6 @@ import {
   MemberRepository,
 } from '../../repositories';
 import { MallObjectPosition, MallObjectRotation } from 'models';
-import {orderBy} from 'lodash';
 
 /** Service for dealing with the mall */
 @Service()
@@ -114,7 +113,7 @@ export class MallService {
     for (const obj of objects) {
       obj.forSale = await this.objectInstanceRepository.countForSaleById(obj.id);
       obj.publicPlaces = await this.objectInstanceRepository
-        .countByPublicPlaces(obj.id, fleamarket.id, blackmarket.id)
+        .countByPublicPlaces(obj.id, fleamarket.id, blackmarket.id);
       obj.instances = await this.objectInstanceRepository.countByObjectId(obj.id);
       returnObjects.push(obj);
     }

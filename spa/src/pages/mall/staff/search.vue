@@ -73,15 +73,50 @@ export default mallActions.extend({
   },
   async mounted(): Promise<void> {
     this.loaded = true;
+    this.restoreListState();
     this.isMallStaff();
-    this.searchObjects();
+    await this.getResults();
   },
   methods: {
+    /**
+     * Puts back the search term and page the checker was opened from.
+     *
+     * `check-query` already carries them into the checker, and its "Back to
+     * Search" hands them back on the way out, but nothing here read them -- so
+     * returning from an object dropped staff onto an empty, first-page search
+     * and made them retype it. Mirrors `restoreListState` in the other staff
+     * lists, differing only because this list pages by raw offset.
+     */
+    restoreListState(): void {
+      const query = this.$route.query;
+      const limit = Number.parseInt(String(query.limit || ""), 10);
+      const offset = Number.parseInt(String(query.offset || ""), 10);
+      if ([10, 20, 50, 100].indexOf(limit) !== -1) {
+        this.limit = limit;
+      }
+      if (Number.isFinite(offset) && offset >= 0) {
+        this.offset = offset;
+      }
+      if (typeof query.search === "string") {
+        this.search = query.search;
+      }
+    },
+    syncListState(): void {
+      this.$router.replace({
+        path: this.$route.path,
+        query: {
+          search: this.search,
+          limit: String(this.limit),
+          offset: String(this.offset),
+        },
+      }).catch(() => undefined);
+    },
     async searchObjects(): Promise<any> {
       this.offset = 0;
       await this.getResults();
     },
     async getResults(): Promise<void> {
+      this.syncListState();
       try {
         const searched = await this.$http.get("/mall/objectsearch/", {
           limit: this.limit,

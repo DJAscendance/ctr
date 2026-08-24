@@ -9,9 +9,40 @@ import {
   ObjectService,
   WalletService,
   ObjectInstanceService,
+  InboxService,
 } from '../services';
-import { createResponseWriter } from '../services/mall-export/mall-export.service';
+import { PlaceRepository } from '../repositories';
+import {
+  createResponseWriter,
+  EXPORT_ERROR_CODES,
+  exportFilename,
+} from '../services/mall-export/mall-export.service';
 // Removed unused import
+/**
+ * Reads a route object id, rejecting anything that is not wholly a positive
+ * integer.
+ *
+ * `parseInt` stops at the first character it cannot use, so `3339-not-an-id`
+ * reads as 3339 and the request quietly acts on a different object than the one
+ * named in the URL.
+ */
+/**
+ * Longest rejection reason accepted.
+ *
+ * The inbox body column is TEXT, so this is not a storage limit; it is a bound
+ * on staff-authored input, refused rather than silently truncated so the
+ * uploader never receives half an explanation.
+ */
+const MAX_REJECTION_REASON = 2000;
+
+function parseObjectId(value: string): number | null {
+  if (!/^[0-9]+$/.test(String(value || ''))) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 export class MallController {
   constructor(
     private memberService: MemberService,
@@ -21,6 +52,8 @@ export class MallController {
     private objectInstanceService: ObjectInstanceService,
     private mallInspectionService: MallInspectionService,
     private mallExportService: MallExportService,
+    private inboxService: InboxService,
+    private placeRepository: PlaceRepository,
   ) {}
 
   /**
@@ -65,8 +98,8 @@ export class MallController {
       return;
     }
 
-    const objectId = Number.parseInt(request.params.id, 10);
-    if (!Number.isFinite(objectId)) {
+    const objectId = parseObjectId(request.params.id);
+    if (objectId === null) {
       response.status(400).json({ error: 'Invalid object id.' });
       return;
     }
@@ -110,12 +143,32 @@ export class MallController {
 
     const includeDerived = request.query.derived === '1';
 
+    // Everything global runs before the response is committed, so a failure here
+    // is an ordinary error rather than a half-written document the client would
+    // have to detect by failing to parse it.
+    let preflight;
+    try {
+      preflight = await this.mallExportService.preflight();
+    } catch (error) {
+      console.error(error);
+      response.status(500).json({ error: EXPORT_ERROR_CODES.preflightFailed });
+      return;
+    }
+
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${exportFilename(new Date())}"`,
+    );
     response.status(200);
 
     try {
-      await this.mallExportService.export(createResponseWriter(response), { includeDerived });
+      await this.mallExportService.export(
+        createResponseWriter(response),
+        { includeDerived },
+        preflight,
+      );
     } catch (error) {
       console.error(error);
     } finally {
@@ -128,8 +181,8 @@ export class MallController {
       return;
     }
 
-    const objectId = Number.parseInt(request.params.id, 10);
-    if (!Number.isFinite(objectId)) {
+    const objectId = parseObjectId(request.params.id);
+    if (objectId === null) {
       response.status(400).json({ error: 'Invalid object id.' });
       return;
     }
@@ -359,7 +412,7 @@ export class MallController {
         return;
       }
 
-      this.objectService.updateStatusApproved(
+      await this.objectService.updateStatusApproved(
         parseInt(request.body.objectId));
       response.status(200).json({ status: 'success' });
     } catch (error) {
@@ -443,7 +496,7 @@ export class MallController {
         return;
       }
 
-      this.objectService.updateObjectLimit(
+      await this.objectService.updateObjectLimit(
         parseInt(request.body.objectId),request.body.limit);
       response.status(200).json({ status: 'success' });
     } catch (error) {
@@ -464,12 +517,50 @@ export class MallController {
         return;
       }
 
-      this.objectService.updateObjectName(
+      await this.objectService.updateObjectName(
         parseInt(request.body.objectId),request.body.name);
       response.status(200).json({ status: 'success' });
     } catch (error) {
       console.error(error);
       response.status(400).json({ error });
+    }
+  }
+
+  /**
+   * Tells an uploader why their object was rejected, through the same place
+   * inbox staff already use by hand.
+   *
+   * Recipient, subject and object name are resolved here from stored data. The
+   * browser sends only the object id and the reason, so it cannot choose who is
+   * told about a rejection or what the notice claims happened.
+   *
+   * Returns whether the notice was actually delivered; the caller reports that
+   * rather than claiming a notification that did not happen.
+   */
+  private async notifyRejection(
+    staffMemberId: number,
+    objectRecord: any,
+    reason: string,
+  ): Promise<boolean> {
+    try {
+      if (!objectRecord.member_id) {
+        return false;
+      }
+      const home = await this.placeRepository.findHomeByMemberId(objectRecord.member_id);
+      if (!home || !home.id) {
+        return false;
+      }
+      const body = await this.inboxService.sanitize(reason);
+      if (!body) {
+        return false;
+      }
+      // Control characters in a stored name must not break the subject line.
+      const name = String(objectRecord.name || '').replace(/[\r\n\t]+/g, ' ').trim();
+      await this.inboxService.postInboxMessage(staffMemberId, home.id, `rejected - ${name}`, body);
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
     }
   }
 
@@ -485,6 +576,22 @@ export class MallController {
         return;
       }
 
+      // Validated before anything mutates, so a missing reason can never leave
+      // an object rejected with its uploader untold.
+      const reason = typeof request.body.reason === 'string' ? request.body.reason.trim() : '';
+      if (reason === '') {
+        response.status(400).json({
+          error: 'A reason for rejection is required.',
+        });
+        return;
+      }
+      if (reason.length > MAX_REJECTION_REASON) {
+        response.status(400).json({
+          error: `A rejection reason may be at most ${MAX_REJECTION_REASON} characters.`,
+        });
+        return;
+      }
+
       const objectRecord = await this.objectService.findById(parseInt(request.body.id));
       if (!objectRecord) {
         response.status(400).json({
@@ -493,15 +600,31 @@ export class MallController {
         return;
       }
 
+      // A repeat request for an object that is already rejected must not refund
+      // a second time or send a second notice.
+      if (objectRecord.status === ObjectService.STATUS_DELETED) {
+        response.status(200).json({ status: 'success', notified: false, alreadyRejected: true });
+        return;
+      }
+
       const sellersFee = await this.objectService.getSellerFee(
         objectRecord.quantity,
         objectRecord.price,
       );
 
-      this.objectService.updateStatusRejected(objectRecord.id);
+      // Awaited: success has to mean the rejection happened, not that it started.
+      await this.objectService.updateStatusRejected(objectRecord.id);
+      await this.objectService.performObjectUploadRefundTransaction(
+        objectRecord.member_id,
+        sellersFee,
+      );
 
-      this.objectService.performObjectUploadRefundTransaction(objectRecord.member_id, sellersFee);
-      response.status(200).json({ status: 'success' });
+      // The refund above cannot be undone and carries no idempotency key, so a
+      // failed notification must not become a 500 that invites a retry and a
+      // second refund. It is reported honestly instead.
+      const notified = await this.notifyRejection(session.id, objectRecord, reason);
+
+      response.status(200).json({ status: 'success', notified });
     } catch (error) {
       console.error(error);
       response.status(400).json({ error });
@@ -548,7 +671,6 @@ export class MallController {
   }
 
   public async objectsForSale(request: Request, response: Response): Promise<void> {
-    const { apitoken } = request.headers;
     try {
       const placeId = parseInt(request.params.id);
       const objects = await this.objectService.getMallForSaleObjects(placeId);
@@ -755,6 +877,8 @@ const walletService = Container.get(WalletService);
 const objectInstanceService = Container.get(ObjectInstanceService);
 const mallInspectionService = Container.get(MallInspectionService);
 const mallExportService = Container.get(MallExportService);
+const inboxService = Container.get(InboxService);
+const placeRepository = Container.get(PlaceRepository);
 export const mallController = new MallController(
   memberService,
   mallService,
@@ -763,5 +887,7 @@ export const mallController = new MallController(
   objectInstanceService,
   mallInspectionService,
   mallExportService,
+  inboxService,
+  placeRepository,
 );
 

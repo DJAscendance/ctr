@@ -171,11 +171,21 @@ export default mallActions.extend({
         this.reportError(errorResponse);
       }
     },
+    /**
+     * Called from `mounted` without being awaited, so a rejection here escapes as
+     * an unhandled promise rejection and the store dropdown just stays empty --
+     * staff then hit "You must select a store!" with nothing to select and no
+     * indication why. The failure is reported like every other one on this page.
+     */
     async getStores() {
-      const stores = await this.$http.get("/mall/stores", { orderBy: "name" });
-      stores.data.stores.forEach(store => {
-        this.mallStoreData.push({ title: store.name, id: store.id });
-      });
+      try {
+        const stores = await this.$http.get("/mall/stores", { orderBy: "name" });
+        stores.data.stores.forEach(store => {
+          this.mallStoreData.push({ title: store.name, id: store.id });
+        });
+      } catch (errorResponse: any) {
+        this.reportError(errorResponse);
+      }
     },
     async refundUnsoldQuantity(objectId): Promise<void> {
       try {

@@ -62,7 +62,7 @@
                     @click="approve(object.id)">Accept</button>
             <button class="btn-ui"
                     :disabled="isProcessing"
-                    @click="reject(object.id)">Reject</button>
+                    @click="openReject(object)">Reject</button>
           </template>
         </mall-object-row>
       </div>
@@ -77,16 +77,48 @@
         </div>
       </div>
     </div>
+      <!--
+        Rejecting sends the uploader the reason verbatim, so it is collected in a
+        real field rather than a prompt, and validated with the same helper the
+        checker uses.
+      -->
+      <Modal v-if="rejecting">
+        <template v-slot:header>
+          <button class="btn-ui" :disabled="isProcessing" @click="cancelReject">X</button>
+      </template>
+      <template v-slot:body>
+        <p class="mb-2">Reject "{{ rejecting.name }}" (#{{ rejecting.id }})?</p>
+        <label class="block uppercase text-xs opacity-60 mb-1" for="pending-reject-reason">
+          Reason for rejection
+        </label>
+        <textarea id="pending-reject-reason"
+                  v-model="rejectReason"
+                  class="w-full p-1 mb-2"
+                  rows="4"
+                  :maxlength="rejectReasonMax"
+                  :disabled="isProcessing"
+                  placeholder="Tell the uploader what needs fixing."
+                  style="background: #001829;"></textarea>
+        <p v-if="rejectError" class="text-red-500 mb-2">{{ rejectError }}</p>
+        <button class="btn mr-2" :disabled="isProcessing" @click="confirmReject">Reject</button>
+        <button class="btn-ui" :disabled="isProcessing" @click="cancelReject">Cancel</button>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <script lang="ts">
 import MallObjectRow from "@/components/mall/MallObjectRow.vue";
-import mallActions from "./mall-actions.mixin";
+import Modal from "@/components/modals/Modal.vue";
+import mallActions, {
+  REJECT_REASON_MAX,
+  objectDisplayName,
+  rejectReasonError,
+} from "./mall-actions.mixin";
 
 export default mallActions.extend({
   name: "MallPending",
-  components: { MallObjectRow },
+  components: { MallObjectRow, Modal },
   data() {
     return {
       objects: [],
@@ -102,6 +134,10 @@ export default mallActions.extend({
       compare: "=",
       content: 2,
       isProcessing: false,
+      rejecting: null as any,
+      rejectReason: "",
+      rejectError: "",
+      rejectReasonMax: REJECT_REASON_MAX,
     };
   },
   computed: {
@@ -199,21 +235,63 @@ export default mallActions.extend({
         this.isProcessing = false;
       }
     },
-    async reject(objectId): Promise<void> {
+    openReject(object): void {
+      this.rejecting = object;
+      this.rejectReason = "";
+      this.rejectError = "";
+    },
+
+    cancelReject(): void {
       if (this.isProcessing) return;
+      this.rejecting = null;
+      this.rejectReason = "";
+      this.rejectError = "";
+    },
+
+    async confirmReject(): Promise<void> {
+      const reason = this.rejectReason.trim();
+      const invalid = rejectReasonError(reason);
+      if (invalid) {
+        this.rejectError = invalid;
+        return;
+      }
+      await this.reject(this.rejecting.id, reason);
+    },
+
+    /**
+     * Rejection has three outcomes and they are not interchangeable: a failure
+     * keeps the modal open with the reason intact so it can be retried, while a
+     * success that could not notify is still a completed rejection and closes
+     * normally with a warning rather than inviting a second Reject.
+     */
+    async reject(objectId, reason): Promise<void> {
+      if (this.isProcessing) return;
+
+      // Captured before the request, because a success reloads the list and the
+      // rejected row is gone by the time the message is shown.
+      const rejectedName = objectDisplayName(this.rejecting);
 
       this.showSuccess = false;
       this.showError = false;
+      this.rejectError = "";
       this.isProcessing = true;
       try {
-        await this.$http.post("/mall/reject", {
+        const response: any = await this.$http.post("/mall/reject", {
           id: objectId,
+          reason,
         });
-        this.success = "Object Rejected";
+        const data = response && response.data;
+        this.success = data && data.notified === false
+          ? `${rejectedName} was rejected, but the uploader could not be notified. `
+            + "Follow up manually."
+          : "Object rejected and the uploader notified.";
         this.showSuccess = true;
+        this.rejecting = null;
+        this.rejectReason = "";
         this.getResults();
       } catch (errorResponse: any) {
         this.reportError(errorResponse);
+        this.rejectError = this.error;
       } finally {
         this.isProcessing = false;
       }

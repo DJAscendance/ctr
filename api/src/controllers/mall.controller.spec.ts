@@ -9,6 +9,7 @@ jest.mock('../db/db.class', () =>
 
 import { MallController } from './mall.controller';
 import {
+  InboxService,
   MallExportService,
   MallInspectionService,
   MallService,
@@ -17,6 +18,7 @@ import {
   ObjectService,
   WalletService,
 } from '../services';
+import { PlaceRepository } from '../repositories';
 
 function mockResponse() {
   const response: any = {};
@@ -49,6 +51,8 @@ describe('MallController - staff-only inspection endpoints', () => {
   let objectInstanceService: jest.Mocked<ObjectInstanceService>;
   let mallInspectionService: jest.Mocked<MallInspectionService>;
   let mallExportService: jest.Mocked<MallExportService>;
+  let inboxService: jest.Mocked<InboxService>;
+  let placeRepository: jest.Mocked<PlaceRepository>;
   let controller: MallController;
 
   beforeEach(() => {
@@ -59,6 +63,8 @@ describe('MallController - staff-only inspection endpoints', () => {
     objectInstanceService = createSpyObj(ObjectInstanceService);
     mallInspectionService = createSpyObj(MallInspectionService);
     mallExportService = createSpyObj(MallExportService);
+    inboxService = createSpyObj(InboxService);
+    placeRepository = createSpyObj(PlaceRepository);
     controller = new MallController(
       memberService,
       mallService,
@@ -67,6 +73,8 @@ describe('MallController - staff-only inspection endpoints', () => {
       objectInstanceService,
       mallInspectionService,
       mallExportService,
+      inboxService,
+      placeRepository,
     );
 
     memberService.decodeMemberToken.mockReturnValue({ id: 7 } as never);
@@ -354,6 +362,226 @@ describe('MallController - staff-only inspection endpoints', () => {
       await controller.exportMallData(request({}, {}), response);
 
       expect(response.end).toHaveBeenCalled();
+    });
+  });
+
+  describe('object id validation - the whole parameter, not a prefix of it', () => {
+    const REJECTED = ['3339x', '3339-not-an-id', '12.5', '-1', '0', '', 'abc'];
+
+    it('rejects anything that is not wholly a positive integer, for inspection', async () => {
+      for (const id of REJECTED) {
+        const response = mockResponse();
+
+        await controller.getObjectInspection(request({ id }), response);
+
+        expect(response.status).toHaveBeenCalledWith(400);
+      }
+      expect(mallInspectionService.inspect).not.toHaveBeenCalled();
+    });
+
+    it('rejects anything that is not wholly a positive integer, for source', async () => {
+      for (const id of REJECTED) {
+        const response = mockResponse();
+
+        await controller.getObjectSource(request({ id }), response);
+
+        expect(response.status).toHaveBeenCalledWith(400);
+      }
+    });
+
+    it('still accepts an ordinary id', async () => {
+      const response = mockResponse();
+
+      await controller.getObjectInspection(request({ id: '3339' }), response);
+
+      expect(response.status).not.toHaveBeenCalledWith(400);
+      expect(mallInspectionService.inspect).toHaveBeenCalledWith(3339);
+    });
+  });
+
+  describe('rejectObject - the uploader is told why', () => {
+    const OBJECT = {
+      id: 3339,
+      name: 'Celestial Windchime1',
+      member_id: 42,
+      quantity: 25,
+      price: 75,
+      status: 2,
+    };
+
+    function rejectRequest(body: any = {}): any {
+      return {
+        headers: { apitoken: 'staff-token' },
+        body: { id: '3339', reason: 'WorldInfo says unlimited, the Mall limit says 25.', ...body },
+      };
+    }
+
+    beforeEach(() => {
+      objectService.findById.mockResolvedValue({ ...OBJECT } as never);
+      objectService.getSellerFee.mockReturnValue(100 as never);
+      objectService.updateStatusRejected.mockResolvedValue(undefined as never);
+      objectService.performObjectUploadRefundTransaction.mockResolvedValue(undefined as never);
+      placeRepository.findHomeByMemberId.mockResolvedValue({ id: 909 } as never);
+      inboxService.sanitize.mockImplementation((value: string) => Promise.resolve(value) as never);
+      inboxService.postInboxMessage.mockResolvedValue(undefined as never);
+    });
+
+    it('refuses a blank reason without touching the object', async () => {
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest({ reason: '' }), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
+      expect(objectService.performObjectUploadRefundTransaction).not.toHaveBeenCalled();
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+
+    it('refuses a whitespace-only reason', async () => {
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest({ reason: '   \n\t  ' }), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
+    });
+
+    it('refuses a reason longer than the accepted maximum rather than truncating', async () => {
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest({ reason: 'x'.repeat(2001) }), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+
+    it('completes the rejection and the refund before reporting success', async () => {
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      expect(objectService.updateStatusRejected).toHaveBeenCalledWith(3339);
+      expect(objectService.performObjectUploadRefundTransaction).toHaveBeenCalledWith(42, 100);
+      expect(response.status).toHaveBeenCalledWith(200);
+      expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: true });
+    });
+
+    it('does not report success if the rejection itself fails, and sends no notice', async () => {
+      objectService.updateStatusRejected.mockRejectedValue(new Error('db down') as never);
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      expect(response.status).not.toHaveBeenCalledWith(200);
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+
+    it('sends exactly one notice, to the uploader home, with the generated subject', async () => {
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      expect(placeRepository.findHomeByMemberId).toHaveBeenCalledWith(42);
+      expect(inboxService.postInboxMessage).toHaveBeenCalledTimes(1);
+      expect(inboxService.postInboxMessage).toHaveBeenCalledWith(
+        7,
+        909,
+        'rejected - Celestial Windchime1',
+        'WorldInfo says unlimited, the Mall limit says 25.',
+      );
+    });
+
+    it('ignores a recipient, subject or object name supplied by the browser', async () => {
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest({
+        recipient: 1,
+        member_id: 1,
+        place_id: 1,
+        subject: 'rejected - something else',
+        name: 'Spoofed Name',
+      }), response);
+
+      expect(placeRepository.findHomeByMemberId).toHaveBeenCalledWith(42);
+      expect(inboxService.postInboxMessage).toHaveBeenCalledWith(
+        7,
+        909,
+        'rejected - Celestial Windchime1',
+        expect.any(String),
+      );
+    });
+
+    it('trims the reason it delivers', async () => {
+      const response = mockResponse();
+
+      const padded = rejectRequest({ reason: '  please fix the price  ' });
+      await controller.rejectObject(padded, response);
+
+      expect(inboxService.postInboxMessage).toHaveBeenCalledWith(
+        7, 909, expect.any(String), 'please fix the price',
+      );
+    });
+
+    it('keeps a punctuated or unicode object name intact but never lets it break the subject',
+      async () => {
+        objectService.findById.mockResolvedValue(
+          { ...OBJECT, name: 'Café "Deluxe" — v2\nInjected' } as never,
+        );
+        const response = mockResponse();
+
+        await controller.rejectObject(rejectRequest(), response);
+
+        const subject = inboxService.postInboxMessage.mock.calls[0][2] as string;
+        expect(subject).toBe('rejected - Café "Deluxe" — v2 Injected');
+        expect(subject).not.toMatch(/[\r\n]/);
+      });
+
+    it('still rejects the object when the uploader can no longer be notified', async () => {
+      placeRepository.findHomeByMemberId.mockResolvedValue(undefined as never);
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      expect(objectService.updateStatusRejected).toHaveBeenCalledWith(3339);
+      expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: false });
+    });
+
+    it('does not claim a notification that the inbox refused', async () => {
+      inboxService.postInboxMessage.mockRejectedValue(new Error('inbox down') as never);
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      // Reported honestly rather than as a 500: the refund already happened and
+      // a retry would repeat it.
+      expect(response.status).toHaveBeenCalledWith(200);
+      expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: false });
+    });
+
+    it('does not refund or notify twice when the object is already rejected', async () => {
+      objectService.findById.mockResolvedValue({ ...OBJECT, status: 0 } as never);
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      expect(objectService.updateStatusRejected).not.toHaveBeenCalled();
+      expect(objectService.performObjectUploadRefundTransaction).not.toHaveBeenCalled();
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+      expect(response.json).toHaveBeenCalledWith(
+        { status: 'success', notified: false, alreadyRejected: true },
+      );
+    });
+
+    it('denies a member who is not Mall staff before reading the object', async () => {
+      mallService.canAdmin.mockResolvedValue(false as never);
+      const response = mockResponse();
+
+      await controller.rejectObject(rejectRequest(), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(objectService.findById).not.toHaveBeenCalled();
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
     });
   });
 });

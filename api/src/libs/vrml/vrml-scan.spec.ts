@@ -353,3 +353,115 @@ describe('scanVrml - malformed input', () => {
     expect(() => scanVrml('  not vrml at all " [ { }')).not.toThrow();
   });
 });
+
+describe('scanVrml - WorldInfo inside a PROTO is not the object metadata', () => {
+  const PROTO_AND_SCENE = withHeader(`
+PROTO Example [] {
+  WorldInfo {
+    title "Prototype metadata"
+  }
+}
+
+WorldInfo {
+  title "Actual object"
+}
+`);
+
+  it('compares against the scene-level node, not the PROTO-local one', () => {
+    const scan = scanVrml(PROTO_AND_SCENE);
+
+    expect(scan.worldInfo).toHaveLength(1);
+    expect(scan.worldInfo[0].title).toBe('Actual object');
+    expect(scan.warnings).not.toContain(FINDING_MULTIPLE_WORLDINFO);
+  });
+
+  it('still reports the PROTO-local node separately', () => {
+    const scan = scanVrml(PROTO_AND_SCENE);
+
+    expect(scan.protoWorldInfo).toHaveLength(1);
+    expect(scan.protoWorldInfo[0].title).toBe('Prototype metadata');
+  });
+
+  it('treats a file whose only WorldInfo is PROTO-local as having none', () => {
+    const scan = scanVrml(withHeader(`
+PROTO Example [] {
+  WorldInfo {
+    title "Prototype metadata"
+  }
+}
+Shape {}
+`));
+
+    expect(scan.worldInfo).toHaveLength(0);
+    expect(scan.warnings).toContain(FINDING_NO_WORLDINFO);
+  });
+
+  it('still reports two scene-level nodes as multiple', () => {
+    const scan = scanVrml(withHeader(`
+WorldInfo { title "One" }
+WorldInfo { title "Two" }
+`));
+
+    expect(scan.worldInfo).toHaveLength(2);
+    expect(scan.warnings).toContain(FINDING_MULTIPLE_WORLDINFO);
+  });
+
+  it('does not lose a scene WorldInfo nested inside ordinary grouping nodes', () => {
+    const scan = scanVrml(withHeader(`
+Transform {
+  children [
+    WorldInfo { title "Nested but real" }
+  ]
+}
+`));
+
+    expect(scan.worldInfo).toHaveLength(1);
+    expect(scan.worldInfo[0].title).toBe('Nested but real');
+  });
+});
+
+describe('externalReferences - a relative path can still leave the directory', () => {
+  function urlsOf(url: string) {
+    return externalReferences(scanVrml(withHeader(
+      `Shape { appearance Appearance { texture ImageTexture { url "${url}" } } }`,
+    ))).map(reference => reference.value);
+  }
+
+  it('flags a parent-traversal reference', () => {
+    expect(urlsOf('../wood.jpg')).toEqual(['../wood.jpg']);
+    expect(urlsOf('textures/../../secret.jpg')).toEqual(['textures/../../secret.jpg']);
+  });
+
+  it('leaves an object-local subdirectory alone', () => {
+    expect(urlsOf('textures/wood.jpg')).toEqual([]);
+    expect(urlsOf('textures/sub/wood.jpg')).toEqual([]);
+    expect(urlsOf('wood.jpg')).toEqual([]);
+  });
+
+  it('does not flag a traversal that resolves back inside', () => {
+    expect(urlsOf('textures/../wood.jpg')).toEqual([]);
+  });
+
+  it('still flags absolute and off-host references', () => {
+    expect(urlsOf('/etc/passwd')).toEqual(['/etc/passwd']);
+    expect(urlsOf('http://example.com/wood.jpg')).toEqual(['http://example.com/wood.jpg']);
+  });
+});
+
+describe('scanVrml - truncation is not malformed structure', () => {
+  it('does not call a file malformed just because scanning stopped early', () => {
+    // Three tokens per Shape, so this comfortably passes DEFAULT_MAX_TOKENS
+    // while leaving the Transform's brace and bracket legitimately unclosed.
+    const scan = scanVrml(withHeader(`Transform { children [\n${'Shape {}\n'.repeat(170000)}`));
+
+    expect(scan.truncated).toBe(true);
+    expect(scan.warnings).not.toContain(FINDING_MALFORMED_VRML);
+  });
+
+  it('still reports genuinely unbalanced structure that was read to the end', () => {
+    const scan = scanVrml(withHeader('Transform { children [ Shape {}'));
+
+    expect(scan.truncated).toBe(false);
+    expect(scan.warnings).toContain(FINDING_MALFORMED_VRML);
+  });
+});

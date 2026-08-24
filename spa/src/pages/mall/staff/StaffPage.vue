@@ -21,7 +21,13 @@
         <router-link class="btn-ui" :to="{name: 'MallObjectSearch'}">Search</router-link>
       </div>
       <br />
-      <div class="mb-2">
+      <!--
+        Pending only. The export publishes the submission queue to the Mall's own
+        site, so offering it from Stocked or Search would imply it exports what
+        that list shows. Kept in this layout rather than moved into pending.vue
+        so the dialog, its validation and its save path stay in one place.
+      -->
+      <div v-if="onPendingList" class="mb-2">
         <button class="btn-ui" @click="openExport">Export Mall Data</button>
       </div>
       <br />
@@ -83,6 +89,18 @@ export default Vue.extend({
     this.loaded = true;
     this.isMallStaff();
   },
+  computed: {
+    onPendingList(): boolean {
+      return this.$route.name === "MallPending";
+    },
+  },
+  watch: {
+    onPendingList(pending: boolean) {
+      if (!pending) {
+        this.showExport = false;
+      }
+    },
+  },
   methods: {
     async isMallStaff() {
       try {
@@ -134,7 +152,7 @@ export default Vue.extend({
           return;
         }
 
-        this.saveExport(payload);
+        this.saveExport(payload, response.headers);
         this.showExport = false;
       } catch (error) {
         this.exportError = "The export could not be completed. Not saved.";
@@ -143,25 +161,41 @@ export default Vue.extend({
       }
     },
 
-    saveExport(payload: any): void {
-      const blob = new Blob([JSON.stringify(payload, null, 1)], {
+    saveExport(payload: any, headers: any): void {
+      // Serialised compactly, matching what the server streamed. Re-indenting it
+      // built a third full copy of the largest string in the app -- the raw
+      // response, the parsed object, and then a pretty-printed rebuild of it --
+      // for a file that is read by tooling rather than by eye.
+      const blob = new Blob([JSON.stringify(payload)], {
         type: "application/json",
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `ctr-mall-export-${this.today()}.json`;
+      link.download = this.exportFilename(headers);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     },
 
-    today(): string {
-      const now = new Date();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      return `${now.getFullYear()}-${month}-${day}`;
+    /**
+     * Prefers the name the server already chose.
+     *
+     * `exportMallData` sends a Content-Disposition whose stamp is precise to the
+     * second, so two exports taken minutes apart are distinct files. The local
+     * fallback matches that precision rather than the old date-only name, which
+     * collided for every export after the first on any given day.
+     */
+    exportFilename(headers: any): string {
+      const disposition = headers && (headers["content-disposition"]
+        || headers["Content-Disposition"]);
+      const match = /filename="([^"]+)"/.exec(String(disposition || ""));
+      if (match && /^[\w.-]+$/.test(match[1])) {
+        return match[1];
+      }
+      const stamp = new Date().toISOString().split(".")[0].replace(/:/g, "");
+      return `ctr-mall-export-${stamp}Z.json`;
     },
   },
 });

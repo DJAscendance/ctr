@@ -1,18 +1,29 @@
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
-import { Object } from 'models';
+// Aliased: the model is literally named `Object`, and leaving it under that
+// name shadows the global built-in inside this file.
+import { Object as ObjectModel } from 'models';
+
+/**
+ * `ObjectService.STATUS_PENDING`, repeated rather than imported.
+ *
+ * A repository importing a service inverts the dependency direction every other
+ * repository here observes, and typedi would resolve the cycle at construction
+ * time. The value is part of the stored schema, not of the service.
+ */
+const PENDING_STATUS = 2;
 
 @Service()
 export class ObjectRepository {
   constructor(private db: Db) {}
 
-  public async find(objectSearchParams: Partial<Object>): Promise<Object> {
+  public async find(objectSearchParams: Partial<ObjectModel>): Promise<ObjectModel> {
     const [object] = await this.db.object.where(objectSearchParams);
     return object;
   }
 
-  public async findById(objectId: number): Promise<Object> {
+  public async findById(objectId: number): Promise<ObjectModel> {
     return this.find({ id: objectId });
   }
 
@@ -234,13 +245,22 @@ export class ObjectRepository {
   public async findViewRows(): Promise<any> {
     return this.db.object
       .select('id', 'status', 'quantity', 'limit')
+      .where('status', PENDING_STATUS)
       .orderBy('id', 'asc');
   }
 
-  /** One page of full object rows, in the export's deterministic id order. */
+  /**
+   * One page of full object rows, in the export's deterministic id order.
+   *
+   * Pending only. The export exists so the Mall Checker can publish the
+   * submission queue to the Mall's own site; objects already stocked, warehoused
+   * or removed are not part of that, and shipping them would put the whole CTR
+   * catalogue in a document meant for one queue.
+   */
   public async findPageForExport(limit: number, offset: number): Promise<any> {
     return this.db.object
       .select('object.*')
+      .where('status', PENDING_STATUS)
       .orderBy('id', 'asc')
       .limit(limit)
       .offset(offset);

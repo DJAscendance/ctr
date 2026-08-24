@@ -11,6 +11,7 @@ import {
   ctrViewsFor,
   CtrViews,
   externalReferences,
+  escapesObjectDirectory,
   FieldComparison,
   InterpretedWorldInfo,
   scanVrml,
@@ -51,10 +52,75 @@ export interface InspectionAsset {
   url: string | null;
 }
 
+/**
+ * How much a finding should move a checker.
+ *
+ * The distinction that matters on this page is not "how bad" but "can the page
+ * be believed". `needs_staff_review` means the inspection could not establish
+ * the facts shown below it, so the staff member has to look at the file or the
+ * asset themselves rather than trusting this screen. `warning` means the facts
+ * WERE established and they show a problem with the object. `info` is a fact
+ * worth surfacing that decides nothing on its own.
+ *
+ * None of these gate an action; the checker still accepts or rejects by hand.
+ */
+export type InspectionSeverity = 'info' | 'warning' | 'needs_staff_review';
+
 export interface InspectionFinding {
   code: string;
   message: string;
+  severity: InspectionSeverity;
 }
+
+/**
+ * Severity per finding code, in one place so it cannot drift between the sites
+ * that raise findings.
+ *
+ * Anything absent is treated as `needs_staff_review` -- an unrecognised scanner
+ * warning is precisely the case where we do not know what we are looking at,
+ * and silently downgrading it to `info` would be the one dishonest option.
+ */
+const FINDING_SEVERITY: { [code: string]: InspectionSeverity } = {
+  // The source could not be read, so nothing below it was established.
+  not_configured: 'needs_staff_review',
+  outside_assets_root: 'needs_staff_review',
+  missing: 'needs_staff_review',
+  too_large: 'needs_staff_review',
+  gzip_corrupt: 'needs_staff_review',
+  gzip_too_large: 'needs_staff_review',
+  unreadable: 'needs_staff_review',
+  // The scan ran but could not finish, so the facts shown are incomplete.
+  malformed_vrml: 'needs_staff_review',
+  too_complex: 'needs_staff_review',
+  encoding_warnings: 'needs_staff_review',
+  // The comparison had to pick one of several WorldInfo nodes; which one is
+  // authoritative is a judgement only a person can make.
+  multiple_worldinfo: 'needs_staff_review',
+
+  // Established facts that show something wrong with the object itself.
+  bad_header: 'warning',
+  no_worldinfo: 'warning',
+  forbidden_node: 'warning',
+  external_reference: 'warning',
+  decoded_exceeds_upload_limit: 'warning',
+  texture_missing: 'warning',
+  texture_subdirectory: 'warning',
+  texture_not_recorded: 'warning',
+
+  // True, worth seeing, and not a violation on its own.
+  multiple_textures: 'info',
+};
+
+export function findingSeverity(code: string): InspectionSeverity {
+  return FINDING_SEVERITY[code] || 'needs_staff_review';
+}
+
+/**
+ * What the helpers below produce. Severity is stamped once, at the point the
+ * findings are assembled, so no site that raises a finding can pick a severity
+ * that disagrees with `FINDING_SEVERITY`.
+ */
+type RawFinding = Pick<InspectionFinding, 'code' | 'message'>;
 
 export interface InspectionSource {
   encoding: ObjectSourceEncoding | null;
@@ -155,7 +221,7 @@ export class MallInspectionService {
       filename: record.filename,
     });
 
-    const findings: InspectionFinding[] = [];
+    const findings: RawFinding[] = [];
     let vrml: InspectionVrml | null = null;
     let interpreted: InterpretedWorldInfo | null = null;
     let comparisons: FieldComparison[] | null = null;
@@ -254,7 +320,10 @@ export class MallInspectionService {
       vrml,
       interpreted,
       comparisons,
-      findings,
+      findings: findings.map(finding => ({
+        ...finding,
+        severity: findingSeverity(finding.code),
+      })),
     };
   }
 
@@ -276,7 +345,7 @@ export class MallInspectionService {
     return { text: source.text, error: source.error };
   }
 
-  private describeSourceError(error: ObjectSourceError): InspectionFinding {
+  private describeSourceError(error: ObjectSourceError): RawFinding {
     const messages: { [key in ObjectSourceError]: string } = {
       not_configured: 'The server asset directory is not configured, so the file '
         + 'could not be read.',
@@ -292,7 +361,7 @@ export class MallInspectionService {
     return { code: error, message: messages[error] };
   }
 
-  private describeScanWarnings(warnings: string[]): InspectionFinding[] {
+  private describeScanWarnings(warnings: string[]): RawFinding[] {
     const messages: { [code: string]: string } = {
       bad_header: 'The first line is not "#VRML V2.0 utf8".',
       no_worldinfo: 'The object has no WorldInfo node. The Mall rules require one.',
@@ -316,8 +385,8 @@ export class MallInspectionService {
   private describeRuleObservations(
     vrml: InspectionVrml,
     decodedBytes: number | null,
-  ): InspectionFinding[] {
-    const findings: InspectionFinding[] = [];
+  ): RawFinding[] {
+    const findings: RawFinding[] = [];
 
     FORBIDDEN_NODES.forEach(node => {
       const count = vrml.nodeCounts[node] || 0;
@@ -370,18 +439,38 @@ export class MallInspectionService {
     directory: string,
     textures: VrmlUrlReference[],
     recordedTexture: string | null,
-  ): Promise<InspectionFinding[]> {
-    const findings: InspectionFinding[] = [];
-    const local = textures
-      .filter(reference => reference.kind === 'local')
+  ): Promise<RawFinding[]> {
+    const findings: RawFinding[] = [];
+
+    // A subdirectory reference such as `textures/wood.jpg` is still inside the
+    // object's own directory, so it is not an external reference -- but uploads
+    // are stored flat (`ObjectService.uploadObjectFiles` creates the one object
+    // directory and writes every file directly into it), so nothing ever puts a
+    // file there. Checking it alongside the bare filenames is what turns that
+    // into a finding instead of silence.
+    const checkable = textures
+      .filter(reference => reference.kind === 'local'
+        || (reference.kind === 'relative' && !escapesObjectDirectory(reference.value)))
       .slice(0, MAX_TEXTURE_EXISTENCE_CHECKS);
 
-    for (const reference of local) {
+    for (const reference of checkable) {
       const metadata = await this.objectSourceService.readAssetMetadata({
         directory,
         filename: reference.value,
       });
-      if (metadata.error === 'missing') {
+      // Only absence is reported. An unreadable or misconfigured asset root is
+      // a server problem, not something the uploader can fix, and saying "not
+      // stored with it" there would be a false accusation.
+      if (metadata.error !== 'missing') {
+        continue;
+      }
+      if (reference.kind === 'relative') {
+        findings.push({
+          code: 'texture_subdirectory',
+          message: `The object references "${reference.value}" in a subdirectory. Object `
+            + 'files are stored side by side, so this texture will not be found.',
+        });
+      } else {
         findings.push({
           code: 'texture_missing',
           message: `The object references "${reference.value}" but that file is not stored `

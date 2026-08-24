@@ -1,7 +1,6 @@
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
-import { MallObject } from '../../types/models';
 
 /** Repository for fetching/interacting with mall data in the database. */
 @Service()
@@ -57,8 +56,17 @@ export class MallRepository {
   /** The store every placed object sits in, in one query. */
   public async getAllStoresByObjectId(): Promise<{ [objectId: number]: any }> {
     const stores: { [objectId: number]: any } = {};
+    // Placement rides along here rather than being joined onto the export's
+    // page query: this already collapses to one row per object, so it cannot
+    // fan the page out. The columns are aliased because `place.*` owns the
+    // unprefixed names.
     const rows = await this.db.mallObject
-      .select('place.*', 'mall_object.object_id')
+      .select(
+        'place.*',
+        'mall_object.object_id',
+        'mall_object.position as mall_position',
+        'mall_object.rotation as mall_rotation',
+      )
       .join('place', 'place.id', 'mall_object.place_id');
     rows.forEach((row: any) => {
       if (!stores[row.object_id]) {

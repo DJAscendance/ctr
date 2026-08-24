@@ -1,8 +1,21 @@
 import crypto from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
+import util from 'util';
 import zlib from 'zlib';
 import { Service } from 'typedi';
+
+/**
+ * Decompression off the event loop.
+ *
+ * The synchronous form blocks the whole API for the duration of every inflate,
+ * and the export walks the entire catalogue one object at a time -- thousands of
+ * consecutive stalls that no other request can interleave with. The async form
+ * enforces `maxOutputLength` exactly the same way (verified on the deployed
+ * node 14.21.3: a 64 MiB zero-fill bomb is refused with ERR_BUFFER_TOO_LARGE
+ * before allocation), so the gzip-bomb guard below is unchanged.
+ */
+const gunzip = util.promisify(zlib.gunzip);
 
 /**
  * Reads the bytes CTR already stores for a Mall object, so staff can inspect an
@@ -154,9 +167,64 @@ export class ObjectSourceService {
     return { path: target, error: null };
   }
 
+  /**
+   * Containment as the filesystem actually sees it.
+   *
+   * `resolveAssetPath` only compares strings, so it stops `../` in a database
+   * value but not a symlink sitting inside the root that points somewhere else
+   * entirely. Both paths are canonicalised and compared, which also means a
+   * legitimately symlinked ASSETS_DIR keeps working: the root is resolved the
+   * same way the candidate is, so the two agree.
+   *
+   * A target that does not exist is reported as missing, not as an escape --
+   * absence is not an attack.
+   */
+  public async resolveRealAssetPath(
+    reference: ObjectAssetReference,
+  ): Promise<ResolvedAssetPath> {
+    const lexical = this.resolveAssetPath(reference);
+    if (lexical.error !== null || lexical.path === null) {
+      return lexical;
+    }
+
+    const realRoot = await this.canonicalise(path.resolve(this.getAssetsRoot(), 'object'));
+    if (realRoot.error !== null || realRoot.path === null) {
+      return { path: null, error: realRoot.error };
+    }
+
+    const realTarget = await this.canonicalise(lexical.path);
+    if (realTarget.error !== null || realTarget.path === null) {
+      return { path: null, error: realTarget.error };
+    }
+
+    const relative = path.relative(realRoot.path, realTarget.path);
+    if (
+      relative === ''
+      || relative === '..'
+      || relative.indexOf(`..${path.sep}`) === 0
+      || path.isAbsolute(relative)
+    ) {
+      return { path: null, error: 'outside_assets_root' };
+    }
+
+    return { path: realTarget.path, error: null };
+  }
+
+  private async canonicalise(target: string): Promise<ResolvedAssetPath> {
+    try {
+      return { path: await fs.realpath(target), error: null };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      return {
+        path: null,
+        error: code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unreadable',
+      };
+    }
+  }
+
   /** Size and hash of any object asset (thumbnail, texture) without decoding it. */
   public async readAssetMetadata(reference: ObjectAssetReference): Promise<ObjectAssetMetadata> {
-    const resolved = this.resolveAssetPath(reference);
+    const resolved = await this.resolveRealAssetPath(reference);
     if (resolved.error !== null) {
       return { bytes: null, sha256: null, error: resolved.error };
     }
@@ -200,7 +268,7 @@ export class ObjectSourceService {
    * unreadable upload must never take down a checker page or an export.
    */
   public async readSource(reference: ObjectAssetReference): Promise<ObjectSourceResult> {
-    const resolved = this.resolveAssetPath(reference);
+    const resolved = await this.resolveRealAssetPath(reference);
     if (resolved.error !== null) {
       return failure(resolved.error);
     }
@@ -237,7 +305,7 @@ export class ObjectSourceService {
     let decoded: Buffer;
     if (isGzip) {
       try {
-        decoded = zlib.gunzipSync(stored, { maxOutputLength: MAX_DECODED_BYTES });
+        decoded = await gunzip(stored, { maxOutputLength: MAX_DECODED_BYTES });
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         const tooLarge = code === 'ERR_BUFFER_TOO_LARGE'

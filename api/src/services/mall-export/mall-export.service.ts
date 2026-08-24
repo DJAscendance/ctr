@@ -36,7 +36,7 @@ import { ObjectSourceService } from '../object-source/object-source.service';
  *    catalogue.
  */
 
-export const EXPORT_SCHEMA_VERSION = '1.0.0';
+export const EXPORT_SCHEMA_VERSION = '2.0.0';
 export const EXPORT_GENERATOR = 'ctr-mall-export/1.0.0';
 
 /** Objects read per page while streaming. Bounds peak memory, not total output. */
@@ -55,6 +55,14 @@ export interface ExportWriter {
   isClosed(): boolean;
 }
 
+/** Everything global the document needs, gathered before the body opens. */
+export interface ExportPreflight {
+  stores: any[];
+  viewRows: any[];
+  allCounts: { [objectId: string]: number };
+  allStores: { [objectId: string]: any };
+}
+
 export interface ExportOptions {
   includeDerived: boolean;
   /** Injected so specs can drive the clock rather than wait on it. */
@@ -68,18 +76,94 @@ export interface ExportOptions {
  * it lets a slow client drive the process's memory up while the export keeps
  * reading files as fast as it can.
  */
+/**
+ * Raised when the client goes away mid-export.
+ *
+ * Distinct from a server fault: it carries a stable public code and tells the
+ * export loop to stop rather than keep reading files for a socket nobody is
+ * listening to.
+ */
+export class ExportAborted extends Error {
+  public readonly code: string;
+
+  constructor(code = 'export_aborted') {
+    super(code);
+    this.name = 'ExportAborted';
+    this.code = code;
+  }
+}
+
+/**
+ * Client-visible failure codes.
+ *
+ * Export payloads get downloaded and passed around, so they carry a stable code
+ * rather than an exception message: raw messages here have been observed to
+ * contain absolute filesystem paths.
+ */
+export const EXPORT_ERROR_CODES = {
+  aborted: 'export_aborted',
+  preflightFailed: 'export_preflight_failed',
+  budgetExceeded: 'export_budget_exceeded',
+  sourceUnreadable: 'source_unreadable',
+  failed: 'export_failed',
+};
+
+/** Maps any thrown value onto a code that is safe to put in the document. */
+export function publicErrorCode(error: unknown): string {
+  if (error instanceof ExportAborted) {
+    return error.code;
+  }
+  return EXPORT_ERROR_CODES.failed;
+}
+
 export function createResponseWriter(response: any): ExportWriter {
+  const isClosed = (): boolean => !!(response.writableEnded || response.destroyed);
+
   return {
     write(chunk: string): Promise<void> {
+      if (isClosed()) {
+        return Promise.reject(new ExportAborted());
+      }
       if (response.write(chunk)) {
         return Promise.resolve();
       }
-      return new Promise<void>(resolve => response.once('drain', resolve));
+      // A destroyed or ended response never emits `drain`, so waiting on that
+      // alone leaks this promise -- and with it the whole export handler -- for
+      // every client that disconnects while the buffer is full.
+      return new Promise<void>((resolve, reject) => {
+        const cleanup = (): void => {
+          response.removeListener('drain', onDrain);
+          response.removeListener('close', onTerminate);
+          response.removeListener('error', onTerminate);
+        };
+        const onDrain = (): void => {
+          cleanup();
+          resolve();
+        };
+        const onTerminate = (): void => {
+          cleanup();
+          reject(new ExportAborted());
+        };
+        response.once('drain', onDrain);
+        response.once('close', onTerminate);
+        response.once('error', onTerminate);
+      });
     },
-    isClosed(): boolean {
-      return !!(response.writableEnded || response.destroyed);
-    },
+    isClosed,
   };
+}
+
+/**
+ * Download name for one export.
+ *
+ * Colons are legal in a URL but not in a Windows filename, so the ISO time is
+ * emitted without them. UTC throughout -- this stamps when the download was
+ * made, which is a separate question from how the database's own timestamps
+ * should be read.
+ */
+export function exportFilename(at: Date): string {
+  const stamp = at.toISOString().split('.')[0].replace(/:/g, '');
+  return `ctr-mall-export-${stamp}Z.json`;
 }
 
 function assetUrl(directory: string | null, filename: string | null): string | null {
@@ -100,14 +184,37 @@ export class MallExportService {
     private objectSourceService: ObjectSourceService,
   ) {}
 
-  public async export(writer: ExportWriter, options: ExportOptions): Promise<ExportStatus> {
+  /**
+   * Every global query the document depends on, run before a byte is written.
+   *
+   * Keeping these ahead of the body is what lets a failure here surface as an
+   * ordinary HTTP error. Once the response has started, the only options left
+   * are a document that records its own failure or a truncated stream.
+   */
+  public async preflight(): Promise<ExportPreflight> {
+    const stores = await this.placeRepository.findAllStores('name');
+    const viewRows = await this.objectRepository.findViewRows();
+    const allCounts = await this.objectInstanceRepository.countAllByObjectId();
+    const allStores = await this.mallRepository.getAllStoresByObjectId();
+    return { stores, viewRows, allCounts, allStores };
+  }
+
+  public async export(
+    writer: ExportWriter,
+    options: ExportOptions,
+    preflight: ExportPreflight,
+  ): Promise<ExportStatus> {
     const now = options.now || (() => Date.now());
     const startedAt = now();
     const startedIso = new Date(startedAt).toISOString();
 
+    const { stores, viewRows, allCounts, allStores } = preflight;
+
     let status: ExportStatus = 'complete';
     let truncation: any = null;
     let objectsWritten = 0;
+    let bodyStarted = false;
+    let objectsOpened = false;
     const derivedTally = {
       attempted: 0,
       succeeded: 0,
@@ -117,8 +224,8 @@ export class MallExportService {
 
     try {
       await writer.write(`{"schema":${JSON.stringify(this.buildSchema(startedIso, options))}`);
+      bodyStarted = true;
 
-      const stores = await this.placeRepository.findAllStores('name');
       await writer.write(`,"stores":${JSON.stringify(stores.map((store: any) => ({
         id: store.id,
         name: store.name,
@@ -126,15 +233,14 @@ export class MallExportService {
         status: store.status,
       })))}`);
 
-      const viewRows = await this.objectRepository.findViewRows();
-      const allCounts = await this.objectInstanceRepository.countAllByObjectId();
       await writer.write(`,"ctrViews":${JSON.stringify(this.buildViews(viewRows, allCounts))}`);
 
-      const allStores = await this.mallRepository.getAllStoresByObjectId();
-
       await writer.write(',"objects":[');
+      objectsOpened = true;
+
       let offset = 0;
       let first = true;
+      let lastObjectId: number | null = null;
 
       for (;;) {
         if (writer.isClosed()) {
@@ -151,14 +257,17 @@ export class MallExportService {
           };
           break;
         }
-        if (objectsWritten >= MAX_OBJECTS) {
-          status = 'truncated';
-          truncation = { reason: 'object_cap', limit: MAX_OBJECTS, lastObjectId: null };
+        const page = await this.objectRepository.findPageForExport(PAGE_SIZE, offset);
+        if (!page.length) {
           break;
         }
 
-        const page = await this.objectRepository.findPageForExport(PAGE_SIZE, offset);
-        if (!page.length) {
+        // Checked only once a further page has actually been read, so a
+        // catalogue of exactly MAX_OBJECTS reports complete: nothing was left
+        // out, and the cap is a limit on what is omitted, not on what is sent.
+        if (objectsWritten >= MAX_OBJECTS) {
+          status = 'truncated';
+          truncation = { reason: 'object_cap', limit: MAX_OBJECTS, lastObjectId: null };
           break;
         }
 
@@ -177,19 +286,17 @@ export class MallExportService {
           await writer.write(`${first ? '' : ','}\n${JSON.stringify(entry)}`);
           first = false;
           objectsWritten += 1;
-          if (truncation) {
-            truncation.lastObjectId = row.id;
-          }
+          lastObjectId = row.id;
         }
 
-        if (truncation) {
-          truncation.lastObjectId = page[page.length - 1].id;
-        }
         offset += PAGE_SIZE;
       }
 
-      if (truncation && truncation.lastObjectId === null && objectsWritten > 0) {
-        truncation.lastObjectId = objectsWritten;
+      // Recorded once, here. Every branch that sets `truncation` above breaks
+      // out of the loop immediately, so the same assignment written inside the
+      // loop could never run -- it reported the object count instead of an id.
+      if (truncation) {
+        truncation.lastObjectId = lastObjectId;
       }
 
       await writer.write(']');
@@ -207,13 +314,23 @@ export class MallExportService {
         derivedTally,
       }))}}`);
     } catch (error) {
+      status = 'failed';
+
+      if (!bodyStarted) {
+        // Nothing reached the client, so there is no partial document to close
+        // and no way to make one parse. Let the controller answer instead.
+        throw error;
+      }
+
       // The document is already partially written, so the only honest thing left
       // is to close it with a failed result rather than pretend it succeeded.
-      status = 'failed';
+      // `objects` may not have been opened yet, in which case an empty array is
+      // what keeps the document parseable.
       try {
-        await writer.write(`],"result":${JSON.stringify({
+        const tail = objectsOpened ? ']' : ',"objects":[]';
+        await writer.write(`${tail},"result":${JSON.stringify({
           status: 'failed',
-          reason: String((error as Error).message || error),
+          reason: publicErrorCode(error),
           finishedAt: new Date(now()).toISOString(),
           objectsWritten,
         })}}`);
@@ -231,6 +348,14 @@ export class MallExportService {
       generator: EXPORT_GENERATOR,
       startedAt: startedIso,
       includesDerived: options.includeDerived,
+      scope: {
+        objects: 'pending',
+        note: 'Objects awaiting Mall review (CTR status 2) only. Stocked, warehoused, '
+          + 'sold-out and removed objects are deliberately absent: this document is the '
+          + 'submission queue the Mall Checker publishes, not the CTR catalogue. '
+          + '`stores` remains the full Mall store list, as reference data a consumer '
+          + 'needs to render a store name it may meet later.',
+      },
       timestamps: {
         source: 'MySQL TIMESTAMP columns via the mysql driver',
         connectionTimezoneOption: 'unset (driver default "local")',
@@ -270,9 +395,12 @@ export class MallExportService {
   private buildViews(viewRows: any[], counts: { [id: number]: number }): any {
     const views: any = {
       _definitions: CTR_VIEW_DEFINITIONS,
-      _note: 'Current CTR staff-panel view memberships, derived rather than stored. They '
-        + 'overlap by design. outOfStock reproduces the Out of Stock page exactly, '
-        + 'including its treatment of a zero limit.',
+      _note: 'Current CTR staff-panel view memberships, derived rather than stored. '
+        + 'Scoped to the objects in this document, which is pending-only -- so `pending` '
+        + 'lists every exported object and the other five views are empty by '
+        + 'construction rather than by accident. They are kept so a consumer never has '
+        + 'to infer membership from `status`, and so the shape does not change if the '
+        + 'export scope is ever widened again.',
       pending: [],
       warehouse: [],
       stocked: [],
@@ -315,8 +443,13 @@ export class MallExportService {
       status: row.status,
       statusName: statusName(row.status),
       store: context.store ? { id: context.store.id, name: context.store.name } : null,
+      // `position`/`rotation` are columns of `mall_object`, not `object`, so they
+      // arrive with the store rather than on the object row.
       placement: context.store
-        ? { position: this.parseJson(row.position), rotation: this.parseJson(row.rotation) }
+        ? {
+          position: this.parseJson(context.store.mall_position),
+          rotation: this.parseJson(context.store.mall_rotation),
+        }
         : null,
       ctrViews: ctrViewsFor({
         status: row.status,
@@ -424,7 +557,7 @@ export class MallExportService {
       derived.warnings = scan.warnings;
       tally.succeeded += 1;
     } catch (error) {
-      derived.parseError = String((error as Error).message || error);
+      derived.parseError = EXPORT_ERROR_CODES.sourceUnreadable;
       tally.failed += 1;
       tally.failuresByReason.parse_error = (tally.failuresByReason.parse_error || 0) + 1;
     }

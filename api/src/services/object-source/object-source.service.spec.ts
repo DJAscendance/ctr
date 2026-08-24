@@ -261,4 +261,137 @@ describe('ObjectSourceService', () => {
       expect(result.error).toBe('outside_assets_root');
     });
   });
+
+  describe('containment - the filesystem, not just the string', () => {
+    /** A file deliberately outside the assets root, the thing an escape reaches. */
+    function writeSecret(contents = 'TOP SECRET\n'): string {
+      const secret = path.join(assetsDir, 'secret.wrl');
+      fs.writeFileSync(secret, contents);
+      return secret;
+    }
+
+    it('still rejects lexical traversal out of the root', async () => {
+      writeSecret();
+
+      const result = await service.readSource({ directory: '..', filename: 'secret.wrl' });
+
+      expect(result.error).toBe('outside_assets_root');
+      expect(result.text).toBeNull();
+    });
+
+    it('still rejects a sibling directory that merely shares the root prefix', async () => {
+      const sibling = `${objectRoot}-evil`;
+      fs.mkdirSync(sibling, { recursive: true });
+      fs.writeFileSync(path.join(sibling, 'x.wrl'), VRML);
+
+      const result = await service.readSource({
+        directory: `../${path.basename(objectRoot)}-evil`,
+        filename: 'x.wrl',
+      });
+
+      expect(result.error).toBe('outside_assets_root');
+    });
+
+    it('rejects a file symlink pointing outside the root', async () => {
+      const secret = writeSecret();
+      fs.mkdirSync(path.join(objectRoot, 'uuid-link'), { recursive: true });
+      fs.symlinkSync(secret, path.join(objectRoot, 'uuid-link', 'a.wrl'));
+
+      const result = await service.readSource({ directory: 'uuid-link', filename: 'a.wrl' });
+
+      expect(result.error).toBe('outside_assets_root');
+      expect(result.text).toBeNull();
+    });
+
+    it('rejects a directory symlink pointing outside the root', async () => {
+      const outside = path.join(assetsDir, 'elsewhere');
+      fs.mkdirSync(outside, { recursive: true });
+      fs.writeFileSync(path.join(outside, 'a.wrl'), 'TOP SECRET\n');
+      fs.symlinkSync(outside, path.join(objectRoot, 'uuid-dir'));
+
+      const result = await service.readSource({ directory: 'uuid-dir', filename: 'a.wrl' });
+
+      expect(result.error).toBe('outside_assets_root');
+    });
+
+    it('allows a symlink that stays inside the root', async () => {
+      writeObject('uuid-real', 'a.wrl', VRML);
+      fs.mkdirSync(path.join(objectRoot, 'uuid-alias'), { recursive: true });
+      fs.symlinkSync(
+        path.join(objectRoot, 'uuid-real', 'a.wrl'),
+        path.join(objectRoot, 'uuid-alias', 'a.wrl'),
+      );
+
+      const result = await service.readSource({ directory: 'uuid-alias', filename: 'a.wrl' });
+
+      expect(result.error).toBeNull();
+      expect(result.text).toBe(VRML);
+    });
+
+    it('keeps working when ASSETS_DIR is itself a symlink', async () => {
+      // The deployment mounts assets through a link; the configured path and the
+      // real path differ for every file, which must not read as an escape.
+      const realAssets = fs.mkdtempSync(path.join(os.tmpdir(), 'ctr-real-assets-'));
+      fs.mkdirSync(path.join(realAssets, 'object', 'uuid-a'), { recursive: true });
+      fs.writeFileSync(path.join(realAssets, 'object', 'uuid-a', 'a.wrl'), VRML);
+
+      const linked = path.join(os.tmpdir(), `ctr-linked-assets-${process.pid}`);
+      fs.rmSync(linked, { recursive: true, force: true });
+      fs.symlinkSync(realAssets, linked);
+      process.env.ASSETS_DIR = linked;
+
+      try {
+        const result = await new ObjectSourceService()
+          .readSource({ directory: 'uuid-a', filename: 'a.wrl' });
+
+        expect(result.error).toBeNull();
+        expect(result.text).toBe(VRML);
+      } finally {
+        fs.rmSync(linked, { recursive: true, force: true });
+        fs.rmSync(realAssets, { recursive: true, force: true });
+      }
+    });
+
+    it('reports an absent file as missing rather than as an escape', async () => {
+      const result = await service.readSource({ directory: 'uuid-a', filename: 'nope.wrl' });
+
+      expect(result.error).toBe('missing');
+    });
+
+    it('reports a dangling symlink as missing rather than as an escape', async () => {
+      fs.mkdirSync(path.join(objectRoot, 'uuid-dangle'), { recursive: true });
+      fs.symlinkSync(
+        path.join(assetsDir, 'does-not-exist.wrl'),
+        path.join(objectRoot, 'uuid-dangle', 'a.wrl'),
+      );
+
+      const result = await service.readSource({ directory: 'uuid-dangle', filename: 'a.wrl' });
+
+      expect(result.error).toBe('missing');
+    });
+
+    it('reads an ordinary file inside the root exactly as before', async () => {
+      writeObject('uuid-a', 'a.wrl', VRML);
+
+      const result = await service.readSource({ directory: 'uuid-a', filename: 'a.wrl' });
+
+      expect(result.error).toBeNull();
+      expect(result.text).toBe(VRML);
+    });
+
+    it('applies the same containment to asset metadata reads', async () => {
+      const secret = writeSecret();
+      fs.mkdirSync(path.join(objectRoot, 'uuid-link'), { recursive: true });
+      fs.symlinkSync(secret, path.join(objectRoot, 'uuid-link', 't.jpg'));
+
+      const meta = await service.readAssetMetadata({
+        directory: 'uuid-link',
+        filename: 't.jpg',
+      });
+
+      expect(meta.error).toBe('outside_assets_root');
+      expect(meta.sha256).toBeNull();
+    });
+  });
+
 });

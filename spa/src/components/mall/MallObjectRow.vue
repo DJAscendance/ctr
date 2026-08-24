@@ -3,9 +3,15 @@
     <div class="w-full flex border">
       <div>
         <div class="flex justify-center" style="min-width:250px;min-height:250px;">
-          <img :src="thumbnailUrl"
+          <img v-if="thumbnailUrl"
+               :src="thumbnailUrl"
                :alt="`Thumbnail for ${object.name}`"
                style="max-width:250px;max-height:250px;height:auto;width:auto;" />
+          <div v-else
+               class="flex items-center justify-center text-center text-sm"
+               style="width:250px;height:250px;">
+            No thumbnail stored
+          </div>
         </div>
       </div>
       <div class="w-80">
@@ -94,8 +100,20 @@ export default Vue.extend({
     },
   },
   computed: {
-    thumbnailUrl(): string {
-      return `/assets/object/${this.object.directory}/${this.object.image}`;
+    /**
+     * Null when either half of the path is absent.
+     *
+     * Interpolating regardless produces `/assets/object/undefined/undefined`,
+     * which is a real request that 404s and leaves a broken-image icon in the
+     * row -- indistinguishable, at a glance, from an object whose thumbnail
+     * failed to upload.
+     */
+    thumbnailUrl(): string | null {
+      const { directory, image } = this.object;
+      if (!directory || !image) {
+        return null;
+      }
+      return `/assets/object/${directory}/${image}`;
     },
     storeName(): string {
       return this.object.store ? this.object.store.name : "-";
