@@ -416,6 +416,51 @@ export class MallController {
     }
   }
 
+  /**
+   * Tells an uploader their object was accepted.
+   *
+   * Deliberately the same architecture as `notifyRejection`: the uploader, their
+   * home place and the object's name are all resolved server-side from the row
+   * the moderation transaction returned, so the browser cannot choose who is
+   * told about an acceptance or what the notice claims happened.
+   *
+   * No date is invented. There is no authoritative next-Mall-drop date in this
+   * workflow, so the notice says the item is waiting for the next drop rather
+   * than promising one on a day nothing guarantees.
+   *
+   * Returns whether the notice was actually delivered; the caller reports that
+   * rather than claiming a notification that did not happen.
+   */
+  private async notifyApproval(
+    staffMemberId: number,
+    objectRecord: ObjectModel,
+  ): Promise<boolean> {
+    try {
+      if (!objectRecord.member_id) {
+        return false;
+      }
+      const home = await this.placeRepository.findHomeByMemberId(objectRecord.member_id);
+      if (!home || !home.id) {
+        return false;
+      }
+      // Control characters in a stored name must not break the subject line.
+      const name = String(objectRecord.name || '').replace(/[\r\n\t]+/g, ' ').trim();
+      const body = await this.inboxService.sanitize(
+        `Your Mall item "${name}" was accepted by Mall staff.\n\n`
+        + 'It is now marked Coming Soon and is waiting in the Mall Warehouse for the '
+        + 'next Mall drop.',
+      );
+      if (!body) {
+        return false;
+      }
+      await this.inboxService.postInboxMessage(staffMemberId, home.id, `accepted - ${name}`, body);
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
+  }
+
   public async approveObject(request: Request, response: Response): Promise<void> {
     const { apitoken } = request.headers;
 
@@ -453,8 +498,20 @@ export class MallController {
         });
         return;
       }
+      if (approval.outcome === ObjectService.REJECT_ALREADY_REJECTED) {
+        // A concurrent Accept already won the row lock and performed the real
+        // Pending -> Warehouse transition. This request moved nothing, so it
+        // must not send a second acceptance notice for the same acceptance.
+        response.status(200).json({ status: 'success', notified: false, alreadyAccepted: true });
+        return;
+      }
 
-      response.status(200).json({ status: 'success' });
+      // Only now, with the transition committed. A failure here cannot undo it,
+      // so it is reported rather than raised: a 500 would invite a retry that
+      // the guard above would answer with a bare success.
+      const notified = await this.notifyApproval(session.id, approval.object);
+
+      response.status(200).json({ status: 'success', notified });
     } catch (error) {
       console.error(error);
       response.status(400).json({ error });

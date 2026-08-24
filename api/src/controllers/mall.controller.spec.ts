@@ -686,4 +686,174 @@ describe('MallController - staff-only inspection endpoints', () => {
       expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
     });
   });
+
+  describe('approveObject - the uploader is told it was accepted', () => {
+    const OBJECT = {
+      id: 3339,
+      name: 'Celestial Windchime1',
+      member_id: 42,
+      quantity: 25,
+      price: 75,
+      status: 2,
+    };
+
+    function approveRequest(body: { [key: string]: unknown } = {}): MockRequest {
+      return {
+        headers: { apitoken: 'staff-token' },
+        body: { objectId: '3339', ...body },
+      } as unknown as MockRequest;
+    }
+
+    beforeEach(() => {
+      objectService.approvePendingObject.mockResolvedValue(
+        { outcome: ObjectService.REJECT_REJECTED, object: { ...OBJECT } } as never,
+      );
+      placeRepository.findHomeByMemberId.mockResolvedValue({ id: 909 } as never);
+      inboxService.sanitize.mockImplementation((value: string) => Promise.resolve(value) as never);
+      inboxService.postInboxMessage.mockResolvedValue(undefined as never);
+    });
+
+    it('sends exactly one notice, to the uploader home, with the generated subject',
+      async () => {
+        const response = mockResponse();
+
+        await controller.approveObject(approveRequest(), response);
+
+        expect(placeRepository.findHomeByMemberId).toHaveBeenCalledWith(42);
+        expect(inboxService.postInboxMessage).toHaveBeenCalledTimes(1);
+
+        const [sender, place, subject, body] = inboxService.postInboxMessage.mock.calls[0];
+        expect(sender).toBe(7);
+        expect(place).toBe(909);
+        expect(subject).toBe('accepted - Celestial Windchime1');
+        expect(body).toContain('Celestial Windchime1');
+        expect(body).toContain('Coming Soon');
+        expect(body).toContain('Warehouse');
+        // No calendar date is invented: there is no authoritative next-drop
+        // date in this workflow, so the notice must not promise one.
+        expect(body).not.toMatch(/\b(19|20)\d\d\b/);
+        expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: true });
+      });
+
+    it('ignores a recipient, subject or object name supplied by the browser', async () => {
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest({
+        member_id: 1,
+        place_id: 1,
+        subject: 'accepted - something else',
+        name: 'Something Else',
+      }), response);
+
+      expect(inboxService.postInboxMessage).toHaveBeenCalledWith(
+        7,
+        909,
+        'accepted - Celestial Windchime1',
+        expect.any(String),
+      );
+    });
+
+    it('keeps control characters in a stored name out of the subject line', async () => {
+      objectService.approvePendingObject.mockResolvedValue(
+        {
+          outcome: ObjectService.REJECT_REJECTED,
+          object: { ...OBJECT, name: 'Wind\r\nchime\tTwo' },
+        } as never,
+      );
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest(), response);
+
+      const subject = inboxService.postInboxMessage.mock.calls[0][2] as string;
+      expect(subject).toBe('accepted - Wind chime Two');
+    });
+
+    it('refuses an object that is not a pending submission, and notifies no one', async () => {
+      objectService.approvePendingObject.mockResolvedValue(
+        { outcome: ObjectService.REJECT_INVALID_STATE, object: { ...OBJECT } } as never,
+      );
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest(), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+
+    it('refuses an object id that does not exist, and notifies no one', async () => {
+      objectService.approvePendingObject.mockResolvedValue(
+        { outcome: ObjectService.REJECT_NOT_FOUND, object: null } as never,
+      );
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest(), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+
+    it('sends no notice when the transition itself failed', async () => {
+      objectService.approvePendingObject.mockRejectedValue(new Error('deadlock') as never);
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest(), response);
+
+      // Nothing moved, so telling the uploader their item was accepted would
+      // be a lie.
+      expect(response.status).not.toHaveBeenCalledWith(200);
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+
+    it('does not roll the acceptance back when the notice cannot be delivered', async () => {
+      inboxService.postInboxMessage.mockRejectedValue(new Error('inbox down') as never);
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest(), response);
+
+      // Reported honestly rather than as a 500: the transition already
+      // committed and a retry would answer with a bare success.
+      expect(response.status).toHaveBeenCalledWith(200);
+      expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: false });
+    });
+
+    it('reports notified:false when the uploader has no home to deliver to', async () => {
+      placeRepository.findHomeByMemberId.mockResolvedValue(undefined as never);
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest(), response);
+
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+      expect(response.json).toHaveBeenCalledWith({ status: 'success', notified: false });
+    });
+
+    it('does not notify twice when a concurrent Accept already won the race', async () => {
+      objectService.approvePendingObject.mockResolvedValue(
+        {
+          outcome: ObjectService.REJECT_ALREADY_REJECTED,
+          object: { ...OBJECT, status: 3 },
+        } as never,
+      );
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest(), response);
+
+      // This request performed no transition, so it must not send a second
+      // acceptance notice for the one acceptance that did happen.
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+      expect(response.json).toHaveBeenCalledWith(
+        { status: 'success', notified: false, alreadyAccepted: true },
+      );
+    });
+
+    it('denies a member who is not Mall staff before touching the object', async () => {
+      mallService.canAdmin.mockResolvedValue(false as never);
+      const response = mockResponse();
+
+      await controller.approveObject(approveRequest(), response);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(objectService.approvePendingObject).not.toHaveBeenCalled();
+      expect(inboxService.postInboxMessage).not.toHaveBeenCalled();
+    });
+  });
 });
