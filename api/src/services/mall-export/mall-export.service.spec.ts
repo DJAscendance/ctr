@@ -66,11 +66,20 @@ interface ExportEntry {
   assetDirectory: string | null;
   name: string | null;
   status: number;
+  statusName: string;
   quantity: number | null;
   limit: number | null;
   creator: { memberId: number | null; username: string | null };
   store: { id: number; name: string } | null;
   placement: { position: unknown; rotation: unknown } | null;
+  ctrViews: {
+    pending: boolean;
+    warehouse: boolean;
+    stocked: boolean;
+    outOfStock: boolean;
+    removed: boolean;
+    inactive: boolean;
+  };
   assets?: { [kind: string]: { filename: string; url: string } | null };
   derived?: DerivedBlock;
 }
@@ -644,6 +653,35 @@ describe('MallExportService', () => {
         expect(document.result.status).toBe('truncated');
         expect(document.result.truncation.reason).toBe('snapshot_rows_missing');
       });
+
+    it('serializes status, statusName, quantity, limit and ctrViews from the '
+      + 'snapshot, not a later live read', async () => {
+      // Object 10 is captured Pending (status 2) in `findViewRows`, but the
+      // full-row fetch that happens later returns it already approved
+      // (status 1) -- exactly what a concurrent Accept produces between
+      // preflight and this page's fetch.
+      objectRepository.findRowsByIds.mockImplementation(
+        (ids: number[]) =>
+          Promise.resolve(
+            OBJECTS.filter(object => ids.includes(object.id))
+              .map(object => (object.id === 10 ? { ...object, status: 1 } : object)),
+          ) as never,
+      );
+
+      const { document } = await runExport();
+
+      const entry = document.objects.find((object: ExportEntry) => object.id === 10);
+      // Snapshot-sourced: still the Pending values `findViewRows` captured,
+      // not the live "already approved" row the page fetch returned.
+      expect(entry.status).toBe(PENDING_STATUS);
+      expect(entry.statusName).not.toBe('accepted');
+      expect(entry.ctrViews.pending).toBe(true);
+      expect(entry.ctrViews.stocked).toBe(false);
+      // The document's own top-level ctrViews and byStatus, also built from
+      // the snapshot, must agree with what the entry itself claims.
+      expect(document.ctrViews.pending).toContain(10);
+      expect(document.result.counts.byStatus).toEqual({ '2': 3 });
+    });
   });
 
   describe('MallExportService - placement is a mall_object fact', () => {

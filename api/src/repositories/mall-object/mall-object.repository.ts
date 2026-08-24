@@ -71,8 +71,16 @@ export class MallRepository {
     if (!objectIds.length) {
       return stores;
     }
+    // Placement rides along here rather than being joined onto the export's
+    // page query, same as `getAllStoresByObjectId`: this already collapses to
+    // one row per object, so it cannot fan the page out.
     const rows = await this.db.mallObject
-      .select('place.*', 'mall_object.object_id')
+      .select(
+        'place.*',
+        'mall_object.object_id',
+        'mall_object.position as mall_position',
+        'mall_object.rotation as mall_rotation',
+      )
       .whereIn('mall_object.object_id', objectIds)
       .join('place', 'place.id', 'mall_object.place_id');
     rows.forEach((row: StoreRow) => {

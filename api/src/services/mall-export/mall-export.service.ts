@@ -124,6 +124,15 @@ export interface ExportObjectContext {
   store: StoreRow | null;
   includeDerived: boolean;
   derivedTally: DerivedTally;
+  /**
+   * This object's own preflight snapshot row: the status, quantity and limit
+   * captured before streaming began. `status`, `statusName`, `quantity`,
+   * `limit` and `ctrViews` are all built from this, not from the live row a
+   * later page fetch returns, so a status change mid-export cannot make one
+   * object's entry disagree with the document's own top-level `ctrViews` and
+   * counts -- both of which are also built from the snapshot.
+   */
+  snapshot: ObjectViewRow;
 }
 
 /** What `buildResult` measures once the body is written. */
@@ -337,6 +346,7 @@ export class MallExportService {
       // rejecting an object mid-export changes what that id's row looks like,
       // never which ids this export visits or how many pages remain.
       const pendingIds = viewRows.map(row => row.id);
+      const snapshotById = new Map(viewRows.map(row => [row.id, row]));
       let chunkStart = 0;
       let first = true;
       let lastObjectId: number | null = null;
@@ -400,6 +410,9 @@ export class MallExportService {
             member: row.member_id ? members[row.member_id] : null,
             includeDerived: options.includeDerived,
             derivedTally,
+            // Always present: `row` came from a page fetched by an id drawn
+            // from `pendingIds`, and `pendingIds` is exactly `viewRows`' ids.
+            snapshot: snapshotById.get(row.id),
           });
           await writer.write(`${first ? '' : ','}\n${JSON.stringify(entry)}`);
           first = false;
@@ -565,7 +578,12 @@ export class MallExportService {
     row: ObjectWithUsername,
     context: ExportObjectContext,
   ): Promise<ExportObject> {
-    const limit = row.limit === undefined ? null : row.limit;
+    // Snapshot-sourced, not row-sourced: this is what the document's own
+    // schema.scope, top-level ctrViews and counts already describe this
+    // object as, so a status change between preflight and this page's fetch
+    // must not make this entry disagree with them.
+    const { snapshot } = context;
+    const limit = snapshot.limit === undefined ? null : snapshot.limit;
     const entry: ExportObject = {
       id: row.id,
       assetDirectory: row.directory ?? null,
@@ -575,11 +593,11 @@ export class MallExportService {
         username: context.member ? context.member.username : null,
       },
       price: row.price ?? null,
-      quantity: row.quantity ?? null,
+      quantity: snapshot.quantity,
       limit,
       sold: context.sold,
-      status: row.status,
-      statusName: statusName(row.status),
+      status: snapshot.status,
+      statusName: statusName(snapshot.status),
       store: context.store ? { id: context.store.id, name: context.store.name } : null,
       // `position`/`rotation` are columns of `mall_object`, not `object`, so they
       // arrive with the store rather than on the object row.
@@ -590,9 +608,9 @@ export class MallExportService {
         }
         : null,
       ctrViews: ctrViewsFor({
-        status: row.status,
+        status: snapshot.status,
         sold: context.sold,
-        quantity: row.quantity,
+        quantity: snapshot.quantity,
         limit,
       }),
       createdAt: row.created_at ?? null,

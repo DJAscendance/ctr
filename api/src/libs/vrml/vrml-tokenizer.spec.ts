@@ -82,4 +82,46 @@ describe('tokenize', () => {
     expect(DEFAULT_MAX_TOKENS).toBeGreaterThan(0);
     expect(tokenize('Shape {}').truncated).toBe(false);
   });
+
+  describe('the budget check ignores trailing non-tokens', () => {
+    // `a b c` is exactly 3 tokens with maxTokens: 3, so nothing was cut off
+    // in any of these -- the budget was reached exactly at EOF, not before
+    // it, and reporting `truncated` for any of them would be a false
+    // positive a checker page or export would show as data loss that never
+    // happened.
+    it('reports complete at exactly maxTokens with nothing following', () => {
+      const result = tokenize('a b c', { maxTokens: 3 });
+
+      expect(result.truncated).toBe(false);
+      expect(result.tokens).toHaveLength(3);
+    });
+
+    it('reports complete at exactly maxTokens followed only by whitespace', () => {
+      const result = tokenize('a b c   \n\t  ', { maxTokens: 3 });
+
+      expect(result.truncated).toBe(false);
+      expect(result.tokens).toHaveLength(3);
+    });
+
+    it('reports complete at exactly maxTokens followed only by a comment', () => {
+      const result = tokenize('a b c # trailing comment, not a token', { maxTokens: 3 });
+
+      expect(result.truncated).toBe(false);
+      expect(result.tokens).toHaveLength(3);
+    });
+
+    it('still reports truncated when one real token follows the budget', () => {
+      const result = tokenize('a b c d', { maxTokens: 3 });
+
+      expect(result.truncated).toBe(true);
+      expect(result.tokens).toHaveLength(3);
+    });
+
+    it('still reports truncated when a real token follows trailing whitespace', () => {
+      const result = tokenize('a b c   d', { maxTokens: 3 });
+
+      expect(result.truncated).toBe(true);
+      expect(result.tokens).toHaveLength(3);
+    });
+  });
 });

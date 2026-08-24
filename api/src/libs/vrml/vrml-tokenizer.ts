@@ -126,10 +126,6 @@ export function tokenize(text: string, options: TokenizeOptions = {}): TokenizeR
   }
 
   while (position < text.length) {
-    if (tokens.length >= maxTokens) {
-      return { tokens, truncated: true, unterminatedString };
-    }
-
     const character = text[position];
 
     if (isWhitespace(character)) {
@@ -142,6 +138,15 @@ export function tokenize(text: string, options: TokenizeOptions = {}): TokenizeR
         position += 1;
       }
       continue;
+    }
+
+    // Checked only once whitespace and comments are already skipped, so the
+    // budget is spent on tokens, not on how much trailing filler happens to
+    // follow the last one. A file with exactly `maxTokens` real tokens must
+    // not be reported truncated just because a blank line or a comment comes
+    // after the last of them.
+    if (tokens.length >= maxTokens) {
+      return { tokens, truncated: true, unterminatedString };
     }
 
     if (character === '"') {

@@ -518,6 +518,12 @@ export default Vue.extend({
       this.showRawSource = false;
       this.rawSource = "";
       this.rawSourceError = "";
+      // Invalidates any in-flight source request for the object being left:
+      // `toggleRawSource`'s guard compares `rawSourceFor` against the id it
+      // requested for, so leaving it pointed at the old object would let that
+      // object's response land in `rawSource` after navigation, silently
+      // showing stale source under the new object's id.
+      this.rawSourceFor = null;
       // Cleared here rather than in loadInspection(), which is also called to
       // refresh the *same* object after Edit Name / Update Limit -- clearing
       // there would flash "Loading..." on every edit. Navigating to a
