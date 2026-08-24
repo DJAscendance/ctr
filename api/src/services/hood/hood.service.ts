@@ -10,6 +10,8 @@ import {
 } from '../../repositories';
 import { Place } from '../../types/models';
 import {includes} from 'lodash';
+import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
+import { PlaceAccessService } from '../place-access/place-access.service';
 
 /** Service for dealing with blocks */
 @Service()
@@ -21,6 +23,8 @@ export class HoodService {
     private roleAssignmentRepository: RoleAssignmentRepository,
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
+    private roleAssignmentService: RoleAssignmentService,
+    private placeAccessService: PlaceAccessService,
   ) {}
   
   public async find(hoodId: number): Promise<Place> {
@@ -28,8 +32,13 @@ export class HoodService {
   }
   
   public async getAccessInfoByUsername(hoodId: number): Promise<object> {
-    const deputyCode = await this.roleRepository.roleMap.NeighborhoodDeputy;
-    const ownerCode = await this.roleRepository.roleMap.NeighborhoodLeader;
+    // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
+    // NUMBER, which resolves immediately and waits for nothing -- so during the startup
+    // window before population these were both undefined and the role codes below
+    // silently addressed no role at all.
+    const roleMap = await this.roleRepository.awaitRoleMap();
+    const deputyCode = roleMap.NeighborhoodDeputy;
+    const ownerCode = roleMap.NeighborhoodLeader;
     return await this.roleAssignmentRepository.getAccessInfoByUsername(
       hoodId, 
       ownerCode, 
@@ -45,8 +54,13 @@ export class HoodService {
      * old is coming from database
      * new is coming from access rights page
      */
-    const deputyCode = await this.roleRepository.roleMap.NeighborhoodDeputy;
-    const ownerCode = await this.roleRepository.roleMap.NeighborhoodLeader;
+    // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
+    // NUMBER, which resolves immediately and waits for nothing -- so during the startup
+    // window before population these were both undefined and the role codes below
+    // silently addressed no role at all.
+    const roleMap = await this.roleRepository.awaitRoleMap();
+    const deputyCode = roleMap.NeighborhoodDeputy;
+    const ownerCode = roleMap.NeighborhoodLeader;
     let oldOwner = null;
     let newOwner = 0;
     const oldDeputies = [0,0,0,0,0,0,0,0];
@@ -65,29 +79,14 @@ export class HoodService {
         newOwner = result[0].id;
       }
     }
+    // Both branches previously removed the old owner identically, so the removal is
+    // hoisted out rather than duplicated.
+    if (oldOwner !== 0) {
+      await this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldOwner, ownerCode);
+      await this.roleAssignmentService.reconcilePrimaryRole(oldOwner);
+    }
     if (newOwner !== 0) {
-      if (oldOwner !== 0) {
-        await this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldOwner, ownerCode);
-        const response: any = await this.memberRepository.getPrimaryRoleName(oldOwner);
-        if (response.length !== 0) {
-          const primaryRoleId = response[0].primary_role_id;
-          if (ownerCode === primaryRoleId){
-            await this.memberRepository.update(oldOwner, {primary_role_id: null});
-          }
-        }
-      }
       await this.roleAssignmentRepository.addIdToAssignment(hoodId, newOwner, ownerCode);
-    } else {
-      if (oldOwner !== 0) {
-        await this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldOwner, ownerCode);
-        const response: any = await this.memberRepository.getPrimaryRoleName(oldOwner);
-        if (response.length !== 0) {
-          const primaryRoleId = response[0].primary_role_id;
-          if (ownerCode === primaryRoleId){
-            await this.memberRepository.update(oldOwner, {primary_role_id: null});
-          }
-        }
-      }
     }
     data.deputies.forEach((deputies, index) => {
       oldDeputies[index] = deputies.member_id;
@@ -95,44 +94,26 @@ export class HoodService {
     for (let i = 0; i < givenDeputies.length; i++) {
       newDeputies[i] = await this.updateDeputyId(givenDeputies[i]);
     }
-    oldDeputies.forEach((oldDeputies, index) => {
-      if (oldDeputies !== newDeputies[index]) {
-        if (newDeputies[index] === 0) {
-          try {
-            this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldDeputies, deputyCode);
-          } catch (e) {
-            console.log(e);
-          }
-          if (oldDeputies !== 0) {
-            this.memberRepository.getPrimaryRoleName(oldDeputies)
-              .then((response: any) => {
-                if (response.length !== 0) {
-                  const primaryRoleId = response[0].primary_role_id;
-                  if (primaryRoleId && deputyCode === primaryRoleId) {
-                    this.memberRepository.update(oldDeputies, {primary_role_id: null});
-                  }
-                }
-              });
-          }
-        } else {
-          try {
-            this.roleAssignmentRepository.removeIdFromAssignment(hoodId, oldDeputies, deputyCode);
-            this.memberRepository.getPrimaryRoleName(oldDeputies)
-              .then((response: any) => {
-                if (response.length !== 0) {
-                  const primaryRoleId = response[0].primary_role_id;
-                  if (deputyCode === primaryRoleId) {
-                    this.memberRepository.update(oldDeputies, {primary_role_id: null});
-                  }
-                }
-              });
-            this.roleAssignmentRepository.addIdToAssignment(hoodId, newDeputies[index], deputyCode);
-          } catch (e) {
-            console.log(e);
-          }
+    // Was a forEach containing un-awaited promise chains, so the primary-role write
+    // could land after the request had already returned. A for loop lets these await.
+    for (let index = 0; index < oldDeputies.length; index++) {
+      const oldDeputy = oldDeputies[index];
+      const newDeputy = newDeputies[index];
+      if (oldDeputy === newDeputy) continue;
+      try {
+        if (oldDeputy !== 0) {
+          await this.roleAssignmentRepository
+            .removeIdFromAssignment(hoodId, oldDeputy, deputyCode);
+          await this.roleAssignmentService.reconcilePrimaryRole(oldDeputy);
         }
+        if (newDeputy !== 0) {
+          await this.roleAssignmentRepository
+            .addIdToAssignment(hoodId, newDeputy, deputyCode);
+        }
+      } catch (e) {
+        console.log(e);
       }
-    });
+    }
   }
   
   public async getColony(hoodId: number): Promise<Place> {
@@ -144,36 +125,29 @@ export class HoodService {
     return await this.hoodRepository.getBlocks(hoodId);
   }
 
+  /**
+   * Delegates to the shared hierarchy walk, which resolves the hood -> colony chain from
+   * map_location rather than fetching the colony by hand.
+   *
+   * Behaviour is unchanged: global Admin / Colony Representative, Colony Leader or Deputy
+   * at the parent colony, or Neighborhood Leader or Deputy at this hood. It also picks up
+   * a fix -- the old version read roleRepository.roleMap directly, which is populated by an
+   * un-awaited constructor call and so is empty for a window after startup, quietly
+   * denying real admins.
+   */
   public async canAdmin(hoodId: number, memberId: number): Promise<boolean> {
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-    const colony = await this.getColony(hoodId);
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([
-            this.roleRepository.roleMap.ColonyLeader,
-            this.roleRepository.roleMap.ColonyDeputy,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === colony.id) ||
-          ([
-            this.roleRepository.roleMap.NeighborhoodDeputy,
-            this.roleRepository.roleMap.NeighborhoodLeader,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === hoodId)
-        );
-      })
-    ) {
-      return true;
-    }
-    return false;
+    return this.placeAccessService.hasGeographicAuthority(hoodId, memberId);
   }
 
+  /**
+   * Kept on its own role set rather than delegated to placeAccessService: manage-access is
+   * deliberately narrower than canAdmin (Leader, not Deputy).
+   *
+   * roleMap is awaited because the constructor populates it without awaiting, so for a
+   * window after startup every lookup is undefined and a real admin is denied.
+   */
   public async canManageAccess(hoodId: number, memberId: number): Promise<boolean> {
+    await this.roleRepository.awaitRoleMap();
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     const colony = await this.getColony(hoodId);
 

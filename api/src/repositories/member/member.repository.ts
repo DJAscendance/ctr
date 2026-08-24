@@ -128,6 +128,22 @@ export class MemberRepository {
   }
 
   /**
+   * Returns the member's primary_role_id, or null.
+   *
+   * Deliberately separate from getPrimaryRoleName, which INNER JOINs role and so returns
+   * an empty set when the column is null -- indistinguishable from "member not found".
+   * Reconciliation needs to tell those apart.
+   */
+  public async getPrimaryRoleId(memberId: number): Promise<number | null> {
+    const row = await this.db.knex
+      .select('primary_role_id')
+      .from('member')
+      .where('id', memberId)
+      .first();
+    return row ? row.primary_role_id : null;
+  }
+
+  /**
    * This is to assist with the pagination of the user search
    * @param search
    * @return number
