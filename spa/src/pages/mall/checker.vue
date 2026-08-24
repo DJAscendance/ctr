@@ -1,5 +1,5 @@
 <template>
-  <div class="w-full h-full flex flex-col">
+  <div class="ctr-checker">
     <div v-if="accessDenied" class="w-full flex h-full justify-center items-center">
       <div class="text-red-500">Access Denied!</div>
     </div>
@@ -13,86 +13,107 @@
 
     <template v-else-if="inspection">
       <!-- Identity, moderation state and queue position -->
-      <div class="w-full border-b border-white p-2 flex flex-wrap items-center">
-        <div class="flex-1 min-w-0">
-          <div class="text-2xl truncate">
+      <header class="ctr-checker-head">
+        <div class="ctr-checker-identity">
+          <h2 class="ctr-checker-title">
             <span class="opacity-60">#{{ object.id }}</span>
-            {{ object.name }}
-            <span class="text-sm border px-2 ml-2">{{ object.statusLabel }}</span>
-          </div>
-          <div class="text-sm opacity-80">
-            by {{ creatorLabel }}
-            &middot; {{ object.price }} CC
-            &middot; qty {{ object.quantity }}
-            &middot; limit {{ limitLabel }}
-            &middot; {{ storeLabel }}
-            &middot; uploaded {{ formatDate(object.createdAt) }}
-          </div>
+            <span class="ctr-checker-name">{{ object.name }}</span>
+            <span class="ctr-status-badge">{{ object.statusLabel }}</span>
+          </h2>
+          <dl class="ctr-checker-facts">
+            <div><dt>Uploaded by</dt><dd>{{ creatorLabel }}</dd></div>
+            <div><dt>Price</dt><dd>{{ object.price }} CC</dd></div>
+            <div><dt>Quantity</dt><dd>{{ object.quantity }}</dd></div>
+            <div><dt>Limit</dt><dd>{{ limitLabel }}</dd></div>
+            <div><dt>Store</dt><dd>{{ storeLabel }}</dd></div>
+            <div><dt>Uploaded</dt><dd>{{ formatDate(object.createdAt) }}</dd></div>
+          </dl>
         </div>
-        <div class="text-right">
-          <div v-if="queue.ids.length" class="mb-1">
-            <button class="btn-ui-inline" :disabled="!previousId" @click="goTo(previousId)">
-              &#9664; Prev
-            </button>
-            <span class="mx-2">{{ queueLabel }}</span>
-            <button class="btn-ui-inline" :disabled="!nextId" @click="goTo(nextId)">
-              Next &#9654;
-            </button>
+        <nav class="ctr-checker-queue">
+          <div v-if="queue.ids.length" class="ctr-queue-step">
+            <button class="btn-ui-inline"
+                    :disabled="!previousId"
+                    @click="goTo(previousId)">&#9664; Previous Item</button>
+            <span class="ctr-queue-count">{{ queueLabel }}</span>
+            <button class="btn-ui-inline"
+                    :disabled="!nextId"
+                    @click="goTo(nextId)">Next Item &#9654;</button>
           </div>
           <div>
             <button class="btn-ui-inline" @click="backToList">
               &#9664; Back to {{ fromLabel }}
             </button>
-            <a class="btn-ui-inline" :href="ownUrl" target="_blank" rel="noopener">New tab</a>
+            <a class="btn-ui-inline"
+               :href="ownUrl"
+               target="_blank"
+               rel="noopener">Open in New Tab</a>
           </div>
-        </div>
-      </div>
+        </nav>
+      </header>
 
       <!-- Inspection panes -->
-      <div class="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        <div class="lg:w-1/2 flex flex-col border-r border-white" style="min-height: 24rem;">
-          <div class="flex-1">
+      <div class="ctr-checker-body">
+        <!--
+          Preview first, then what was found in it. A checker looks at the
+          object before they read about it, so Findings sits directly under
+          what it is describing rather than in a separate column.
+        -->
+        <div class="ctr-pane ctr-pane-primary">
+          <div class="ctr-preview">
             <object-viewer v-if="object.assets.wrl.url" :object-url="object.assets.wrl.url" />
             <div v-else class="h-full flex items-center justify-center text-red-500">
               This object has no stored WRL file.
             </div>
           </div>
-          <div class="border-t border-white p-2 flex items-center">
-            <img v-if="object.assets.thumbnail.url"
-                 :src="object.assets.thumbnail.url"
-                 alt="Object thumbnail"
-                 style="max-width:160px;max-height:160px;height:auto;width:auto;" />
-            <div v-else class="text-red-500">No thumbnail.</div>
-            <div class="text-xs opacity-80 ml-3">Thumbnail as buyers will see it.</div>
-          </div>
-        </div>
 
-        <div class="lg:w-1/2 overflow-y-auto p-2">
-          <!-- Findings first: they are why a checker is looking -->
-          <section class="mb-4">
-            <h3 class="border-b border-white mb-1">Findings</h3>
+          <section class="ctr-section ctr-findings">
+            <h3 class="ctr-section-head">Findings</h3>
             <div v-if="!inspection.findings.length" class="text-green">
               Nothing flagged. Size, position and content still need your eye.
             </div>
             <template v-else>
-              <div v-for="group in findingGroups" :key="group.severity" class="mb-2">
-                <div class="text-sm font-bold" :class="group.className">{{ group.label }}</div>
-                <ul class="list-disc ml-5">
-                  <li v-for="(finding, index) in group.findings" :key="index" class="mb-1">
-                    {{ finding.message }}
-                    <span class="text-xs opacity-60">({{ finding.code }})</span>
+              <div v-for="group in findingGroups" :key="group.severity" class="mb-3">
+                <div class="ctr-finding-group" :class="group.className">{{ group.label }}</div>
+                <ul class="ctr-finding-list">
+                  <li v-for="(finding, index) in group.findings" :key="index">
+                    <p class="ctr-finding-message">{{ finding.message }}</p>
+                    <p class="ctr-finding-code">
+                      <span class="opacity-60">Technical:</span> {{ finding.code }}
+                    </p>
                   </li>
                 </ul>
               </div>
             </template>
-            <div class="text-xs opacity-60 mt-1">
-              Advisory only. Nothing here accepts or rejects anything.
+            <p class="ctr-note">Advisory only. Nothing here accepts or rejects anything.</p>
+          </section>
+        </div>
+
+        <div class="ctr-pane ctr-pane-technical">
+          <!--
+            The thumbnail is what a buyer sees, so it leads the record column
+            and is itself the control that opens the full-size view.
+          -->
+          <section class="ctr-section">
+            <h3 class="ctr-section-head">Thumbnail</h3>
+            <div class="ctr-thumb-row">
+              <button v-if="object.assets.thumbnail.url"
+                      class="ctr-thumb-button"
+                      type="button"
+                      title="View the full-size thumbnail"
+                      @click="openThumbnail">
+                <img :src="object.assets.thumbnail.url" alt="Object thumbnail" />
+              </button>
+              <div v-else class="text-red-500">No thumbnail.</div>
+              <p class="ctr-note ml-2">
+                Thumbnail as buyers will see it. Select it to view full size.
+              </p>
             </div>
           </section>
 
           <!-- WorldInfo, verbatim -->
-          <section class="mb-4">
-            <h3 class="border-b border-white mb-1">WorldInfo</h3>
+          <section class="ctr-section">
+            <h3 class="ctr-section-head">WorldInfo</h3>
+            <p class="ctr-plain">What the uploader wrote inside the file itself.</p>
             <div v-if="!vrml" class="opacity-60">
               The file could not be read, so there is no WorldInfo to show.
             </div>
@@ -113,69 +134,91 @@
           </section>
 
           <!-- WorldInfo against the CTR record -->
-          <section v-if="comparisons" class="mb-4">
-            <h3 class="border-b border-white mb-1">WorldInfo vs CTR record</h3>
-            <table class="w-full">
-              <tr v-for="comparison in comparisons" :key="comparison.field">
-                <td class="align-top pr-2 opacity-60">{{ comparison.field }}</td>
-                <td class="align-top pr-2">{{ displayValue(comparison.ctrValue) }}</td>
-                <td class="align-top pr-2">{{ displayValue(comparison.worldInfoValue) }}</td>
-                <td class="align-top" :class="verdictClass(comparison.verdict)">
-                  {{ comparison.verdict }}
-                  <div v-if="comparison.note" class="text-xs opacity-60">
-                    {{ comparison.note }}
-                  </div>
-                </td>
-              </tr>
-            </table>
+          <section v-if="comparisons" class="ctr-section">
+            <h3 class="ctr-section-head">WorldInfo vs CTR record</h3>
+            <p class="ctr-plain">
+              Where the file and the Mall submission disagree about the same thing.
+            </p>
+            <div class="ctr-table-scroll">
+              <table class="ctr-table">
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    <th>CTR record</th>
+                    <th>WorldInfo</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="comparison in comparisons" :key="comparison.field">
+                    <td class="opacity-60">{{ comparison.field }}</td>
+                    <td>{{ displayValue(comparison.ctrValue) }}</td>
+                    <td>{{ displayValue(comparison.worldInfoValue) }}</td>
+                    <td :class="verdictClass(comparison.verdict)">
+                      {{ comparison.verdict }}
+                      <div v-if="comparison.note" class="text-xs opacity-60">
+                        {{ comparison.note }}
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <!-- File and asset facts -->
-          <section class="mb-4">
-            <h3 class="border-b border-white mb-1">File and assets</h3>
-            <table class="w-full">
-              <tr>
-                <td class="opacity-60 pr-2">Stored as</td>
-                <td>{{ object.assets.wrl.filename }} ({{ encodingLabel }})</td>
-              </tr>
-              <tr>
-                <td class="opacity-60 pr-2">Stored bytes</td>
-                <td>{{ formatBytes(source.storedBytes) }}</td>
-              </tr>
-              <tr>
-                <td class="opacity-60 pr-2">Decoded VRML bytes</td>
-                <td>{{ formatBytes(source.decodedBytes) }}</td>
-              </tr>
-              <tr v-if="vrml">
-                <td class="opacity-60 pr-2">Header</td>
-                <td :class="vrml.headerIsVrml97 ? '' : 'text-red-500'">{{ vrml.header }}</td>
-              </tr>
-              <tr>
-                <td class="opacity-60 pr-2">Texture uploaded</td>
-                <td>{{ object.assets.texture ? object.assets.texture.filename : 'none' }}</td>
-              </tr>
-              <tr v-if="vrml">
-                <td class="opacity-60 pr-2">Textures referenced</td>
-                <td>{{ textureList }}</td>
-              </tr>
-              <tr v-if="vrml && vrml.externalReferences.length">
-                <td class="opacity-60 pr-2">External references</td>
-                <td class="text-red-500">
-                  <div v-for="(reference, index) in vrml.externalReferences" :key="index">
-                    {{ reference.value }}
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="vrml && vrml.viewpoints.length">
-                <td class="opacity-60 pr-2">Viewpoints</td>
-                <td>{{ viewpointList }}</td>
-              </tr>
-            </table>
+          <section class="ctr-section">
+            <h3 class="ctr-section-head">File and assets</h3>
+            <div class="ctr-table-scroll">
+              <table class="ctr-table">
+                <tr>
+                  <td class="opacity-60">Stored as</td>
+                  <td>{{ object.assets.wrl.filename }} ({{ encodingLabel }})</td>
+                </tr>
+                <tr>
+                  <td class="opacity-60">Stored bytes</td>
+                  <td>{{ formatBytes(source.storedBytes) }}</td>
+                </tr>
+                <tr>
+                  <td class="opacity-60">Decoded VRML bytes</td>
+                  <td>{{ formatBytes(source.decodedBytes) }}</td>
+                </tr>
+                <tr v-if="vrml">
+                  <td class="opacity-60">Header</td>
+                  <td :class="vrml.headerIsVrml97 ? '' : 'text-red-500'">{{ vrml.header }}</td>
+                </tr>
+                <tr>
+                  <td class="opacity-60">Texture uploaded</td>
+                  <td>{{ object.assets.texture ? object.assets.texture.filename : 'none' }}</td>
+                </tr>
+                <tr v-if="vrml">
+                  <td class="opacity-60">Textures referenced</td>
+                  <td>{{ textureList }}</td>
+                </tr>
+                <tr v-if="vrml && vrml.externalReferences.length">
+                  <td class="opacity-60">External references</td>
+                  <td class="text-red-500">
+                    <div v-for="(reference, index) in vrml.externalReferences" :key="index">
+                      {{ reference.value }}
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="vrml && vrml.viewpoints.length">
+                  <td class="opacity-60">Viewpoints</td>
+                  <td>{{ viewpointList }}</td>
+                </tr>
+              </table>
+            </div>
+            <div class="ctr-actions">
+              <button class="btn-ui-inline" @click="openRawSource">View Source</button>
+              <button class="btn-ui-inline" @click="openFileDetails">File Details</button>
+            </div>
+            <p v-if="rawSourceError" class="text-red-400 mt-1">{{ rawSourceError }}</p>
           </section>
 
           <!-- Raw node counts, as facts rather than judgements -->
-          <section v-if="vrml" class="mb-4">
-            <h3 class="border-b border-white mb-1">VRML nodes</h3>
+          <section v-if="vrml" class="ctr-section">
+            <h3 class="ctr-section-head">VRML nodes</h3>
             <div v-if="!presentNodes.length" class="opacity-60">
               None of the nodes the Mall rules mention are present.
             </div>
@@ -188,89 +231,156 @@
               <span class="opacity-60">PROTO:</span> {{ vrml.protoDefinitions.join(', ') }}
             </div>
           </section>
+
+          <!-- Staff actions, deliberately separated from everything above -->
+          <section class="ctr-section ctr-moderation">
+            <h3 class="ctr-section-head ctr-moderation-head">Staff actions</h3>
+            <!--
+              The reason is required and goes to the uploader verbatim, so it is
+              a real field rather than a prompt: staff are writing to a person.
+            -->
+            <template v-if="canTriage">
+              <label class="ctr-field-label" for="reject-reason">Reason for rejection</label>
+              <p class="ctr-note">
+                Only used when you reject. The uploader is sent this text exactly as typed.
+              </p>
+              <textarea
+                id="reject-reason"
+                v-model="rejectReason"
+                class="ctr-reason"
+                rows="3"
+                :maxlength="rejectReasonMax"
+                :disabled="isProcessing"
+                placeholder="Tell the uploader what needs fixing."
+              ></textarea>
+            </template>
+            <div class="ctr-actions">
+              <!--
+                Accept and Reject are the Pending triage decisions. The checker
+                is also opened from Warehouse, Stocked, Out of Stock and Search,
+                and both endpoints mutate status regardless of the current one --
+                Reject would delete and refund a stocked object. Editing stays
+                available everywhere.
+              -->
+              <template v-if="canTriage">
+                <button class="btn" :disabled="isProcessing" @click="confirmApprove">Accept</button>
+                <button class="btn" :disabled="isProcessing" @click="confirmReject">Reject</button>
+              </template>
+              <span v-else class="ctr-note">
+                Accept and Reject apply to pending objects only.
+              </span>
+              <button class="btn-ui-inline" :disabled="isProcessing" @click="updateName">
+                Edit Name
+              </button>
+              <button class="btn-ui-inline" :disabled="isProcessing" @click="updateLimit">
+                Update Limit
+              </button>
+            </div>
+            <p v-if="actionError" class="text-red-500 mt-1">{{ actionError }}</p>
+            <p v-else-if="actionSuccess" class="text-green mt-1">{{ actionSuccess }}</p>
+            <!--
+              A moderation action that could not notify is still complete, so
+              this is a warning to follow up by hand, never an invitation to
+              press the button again.
+            -->
+            <p v-if="actionWarning" class="text-yellow-400 mt-1 font-bold">{{ actionWarning }}</p>
+          </section>
         </div>
       </div>
 
-      <!-- Raw source and downloads -->
-      <div class="border-t border-white p-2">
-        <button class="btn-ui-inline" @click="toggleRawSource">
-          {{ showRawSource ? 'Hide' : 'Show' }} raw VRML
-        </button>
-        <button class="btn-ui-inline" :disabled="isDownloading" @click="downloadSource">
-          {{ isDownloading ? 'Preparing...' : 'Download decompressed .wrl' }}
-        </button>
-        <a v-if="object.assets.thumbnail.url"
-           class="btn-ui-inline"
-           :href="object.assets.thumbnail.url"
-           target="_blank"
-           rel="noopener">Thumbnail</a>
-        <a v-if="object.assets.texture"
-           class="btn-ui-inline"
-           :href="object.assets.texture.url"
-           target="_blank"
-           rel="noopener">Texture</a>
-        <a v-if="object.assets.wrl.url"
-           class="btn-ui-inline"
-           :href="object.assets.wrl.url"
-           target="_blank"
-           rel="noopener">Original stored bytes</a>
-        <p v-if="rawSourceError" class="text-red-400 mt-2">{{ rawSourceError }}</p>
-        <pre v-if="showRawSource && rawSource"
-             class="mt-2 p-2 overflow-auto text-xs"
-             style="max-height: 20rem; background: #001829;">{{ rawSource }}</pre>
-      </div>
+      <!-- Full-size thumbnail -->
+      <checker-modal v-if="showThumbnail"
+                     :title="`Thumbnail - ${object.name}`"
+                     @close="showThumbnail = false">
+        <div class="ctr-lightbox">
+          <img :src="object.assets.thumbnail.url" alt="Object thumbnail, full size" />
+        </div>
+      </checker-modal>
 
-      <!-- Staff actions, deliberately separated from everything above -->
-      <div class="border-t-4 border-red-500 p-2">
-        <!--
-          The reason is required and goes to the uploader verbatim, so it is a
-          full textarea rather than a prompt: staff are writing to a person.
-        -->
-        <label v-if="canTriage" class="block uppercase text-xs opacity-60 mb-1" for="reject-reason">
-          Reason for rejection
-        </label>
-        <textarea
-          v-if="canTriage"
-          id="reject-reason"
-          v-model="rejectReason"
-          class="w-full p-1 mb-2"
-          rows="3"
-          :maxlength="rejectReasonMax"
-          :disabled="isProcessing"
-          placeholder="Tell the uploader what needs fixing. Sent to them when you reject."
-          style="background: #001829;"
-        ></textarea>
-        <div class="flex flex-wrap items-center">
-        <span class="uppercase text-xs opacity-60 mr-2">Staff actions</span>
-        <!--
-          Accept and Reject are the Pending triage decisions. The checker is also
-          opened from Warehouse, Stocked, Out of Stock and Search, and both
-          endpoints mutate status regardless of the current one -- Reject would
-          delete and refund a stocked object. Editing stays available everywhere.
-        -->
-        <template v-if="canTriage">
-          <button class="btn mr-2" :disabled="isProcessing" @click="confirmApprove">Accept</button>
-          <button class="btn mr-2" :disabled="isProcessing" @click="confirmReject">Reject</button>
+      <!--
+        Raw VRML in a bounded dialog rather than inline. Owner QA: a real file's
+        long lines expanded the page past the Cybertown frame and the whole
+        document scrolled sideways. Here the source is the only thing that
+        scrolls, and it scrolls inside its own box.
+      -->
+      <checker-modal v-if="showRawSource"
+                     :title="`Source - ${object.assets.wrl.filename}`"
+                     @close="showRawSource = false">
+        <template v-slot:actions>
+          <label class="ctr-wrap-toggle">
+            <input type="checkbox" v-model="wrapSource" />
+            Wrap lines
+          </label>
         </template>
-        <span v-else class="text-xs opacity-60 mr-2">
-          Accept and Reject apply to pending objects only.
-        </span>
-        <button class="btn-ui-inline" :disabled="isProcessing" @click="updateName">
-          Edit Name
-        </button>
-        <button class="btn-ui-inline" :disabled="isProcessing" @click="updateLimit">
-          Update Limit
-        </button>
-        <span v-if="actionError" class="text-red-500 ml-2">{{ actionError }}</span>
-        <span v-else-if="actionSuccess" class="text-green ml-2">{{ actionSuccess }}</span>
-        </div>
+        <div v-if="rawSourceError" class="text-red-400">{{ rawSourceError }}</div>
+        <div v-else-if="rawSource === ''" class="opacity-60">Loading&hellip;</div>
         <!--
-          A rejection that could not notify is still a completed rejection, so
-          this is a warning to follow up by hand, never an invitation to press
-          Reject again.
+          The decoded file, byte for byte. Wrapping changes how it is displayed
+          and nothing else -- indentation and newlines are the file's own.
         -->
-        <p v-if="actionWarning" class="text-yellow-400 mt-2 font-bold">{{ actionWarning }}</p>
-      </div>
+        <pre v-else
+             class="ctr-source"
+             :class="wrapSource ? 'ctr-source-wrap' : ''">{{ rawSource }}</pre>
+      </checker-modal>
+
+      <!-- Stored-file facts and the downloads that belong with them -->
+      <checker-modal v-if="showFileDetails"
+                     title="Stored file details"
+                     @close="showFileDetails = false">
+        <table class="ctr-table mb-3">
+          <tr>
+            <td class="opacity-60">Stored filename</td>
+            <td>{{ object.assets.wrl.filename }}</td>
+          </tr>
+          <tr>
+            <td class="opacity-60">Encoding</td>
+            <td>{{ encodingLabel }}</td>
+          </tr>
+          <tr>
+            <td class="opacity-60">Stored bytes</td>
+            <td>{{ formatBytes(source.storedBytes) }}</td>
+          </tr>
+          <tr>
+            <td class="opacity-60">Decoded bytes</td>
+            <td>{{ formatBytes(source.decodedBytes) }}</td>
+          </tr>
+          <tr v-if="source.sha256">
+            <td class="opacity-60">SHA-256</td>
+            <td class="ctr-hash">{{ source.sha256 }}</td>
+          </tr>
+          <tr v-if="vrml">
+            <td class="opacity-60">Header</td>
+            <td>{{ vrml.header }}</td>
+          </tr>
+          <tr>
+            <td class="opacity-60">Texture uploaded</td>
+            <td>{{ object.assets.texture ? object.assets.texture.filename : 'none' }}</td>
+          </tr>
+          <tr v-if="vrml">
+            <td class="opacity-60">Textures referenced</td>
+            <td>{{ textureList }}</td>
+          </tr>
+        </table>
+        <div class="ctr-actions">
+          <button class="btn-ui-inline" :disabled="isDownloading" @click="downloadSource">
+            {{ isDownloading ? 'Preparing...' : 'Download decoded .wrl' }}
+          </button>
+          <!--
+            The stored bytes are served as they sit on disk. Gzip is binary, so
+            it is offered as a download rather than rendered as text.
+          -->
+          <a v-if="object.assets.wrl.url"
+             class="btn-ui-inline"
+             :href="object.assets.wrl.url"
+             target="_blank"
+             rel="noopener">Download original stored file</a>
+          <a v-if="object.assets.texture"
+             class="btn-ui-inline"
+             :href="object.assets.texture.url"
+             target="_blank"
+             rel="noopener">Texture</a>
+        </div>
+      </checker-modal>
     </template>
 
     <div v-else class="w-full flex h-full justify-center items-center">Loading&hellip;</div>
@@ -280,6 +390,7 @@
 <script lang="ts">
 import Vue from "vue";
 
+import CheckerModal from "@/components/mall/CheckerModal.vue";
 import ObjectViewer from "@/components/mall/ObjectViewer.vue";
 import {
   REJECT_REASON_MAX,
@@ -339,7 +450,7 @@ const REPORTED_NODES = [
 
 export default Vue.extend({
   name: "MallChecker",
-  components: { ObjectViewer },
+  components: { CheckerModal, ObjectViewer },
   data() {
     return {
       accessDenied: false,
@@ -360,6 +471,16 @@ export default Vue.extend({
       inspectionFor: null as number | null,
       rawSourceFor: null as number | null,
       showRawSource: false,
+      showThumbnail: false,
+      showFileDetails: false,
+      /**
+       * Soft-wrap in the source viewer.
+       *
+       * Display only. The bytes shown are the decoded file exactly as stored;
+       * wrapping changes where the viewport breaks a line and never what the
+       * file contains.
+       */
+      wrapSource: false,
       isProcessing: false,
       actionError: "",
       actionSuccess: "",
@@ -516,10 +637,12 @@ export default Vue.extend({
       // The reason belongs to the object it was written about.
       this.rejectReason = "";
       this.showRawSource = false;
+      this.showThumbnail = false;
+      this.showFileDetails = false;
       this.rawSource = "";
       this.rawSourceError = "";
       // Invalidates any in-flight source request for the object being left:
-      // `toggleRawSource`'s guard compares `rawSourceFor` against the id it
+      // `openRawSource`'s guard compares `rawSourceFor` against the id it
       // requested for, so leaving it pointed at the old object would let that
       // object's response land in `rawSource` after navigation, silently
       // showing stale source under the new object's id.
@@ -713,9 +836,24 @@ export default Vue.extend({
       return true;
     },
 
-    async toggleRawSource(): Promise<void> {
-      this.showRawSource = !this.showRawSource;
-      if (!this.showRawSource || this.rawSource) {
+    openThumbnail(): void {
+      this.showThumbnail = true;
+    },
+
+    openFileDetails(): void {
+      this.showFileDetails = true;
+    },
+
+    /**
+     * Opens the source viewer, fetching the decoded file the first time.
+     *
+     * The dialog is opened before the fetch resolves so it can show its own
+     * loading state, rather than leaving the button apparently dead while a
+     * large gzip-backed object is read and decompressed server-side.
+     */
+    async openRawSource(): Promise<void> {
+      this.showRawSource = true;
+      if (this.rawSource) {
         return;
       }
       this.rawSourceError = "";
@@ -784,7 +922,41 @@ export default Vue.extend({
       if (!window.confirm(`Accept "${this.object.name}" (#${this.object.id})?`)) {
         return;
       }
-      this.performAction("/mall/approve", { objectId: this.object.id }, "Object accepted.");
+      this.approveObject();
+    },
+
+    /**
+     * Acceptance has the same three outcomes rejection does, and they must not
+     * be conflated. `alreadyAccepted` means a concurrent request already won
+     * the row-lock race and performed the real transition -- this request moved
+     * nothing and notified no one, so it must not ask staff to follow up on a
+     * notification that was never attempted. A genuine notification failure is
+     * still a completed acceptance and warns rather than inviting a second
+     * Accept.
+     */
+    async approveObject(): Promise<void> {
+      // Captured before the request, because a success advances the queue and
+      // `this.object` is then the next object rather than the accepted one.
+      const acceptedName = objectDisplayName(this.object);
+
+      const data = await this.performAction(
+        "/mall/approve",
+        { objectId: this.object.id },
+        "Object accepted and the uploader notified.",
+      );
+
+      if (this.actionError) {
+        return;
+      }
+
+      // Set after the queue has advanced, so navigation does not clear it.
+      if (data && data.alreadyAccepted) {
+        this.actionSuccess = "Object was already accepted.";
+      } else if (data && data.notified === false) {
+        this.actionSuccess = "Object accepted.";
+        this.actionWarning = `${acceptedName} was accepted, but the uploader `
+          + "could not be notified. Follow up manually.";
+      }
     },
 
     confirmReject(): void {
@@ -1010,3 +1182,319 @@ export default Vue.extend({
   },
 });
 </script>
+
+<style scoped>
+/*
+ * The checker renders inside the site's normal content region, so every rule
+ * here is about staying inside it. Nothing uses a fixed pixel width: the owner's
+ * desktop is not the only screen this is used on, and a tablet in portrait must
+ * not push the historical right-hand control panel off the page.
+ */
+.ctr-checker {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ctr-checker-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid #ffffff;
+  min-width: 0;
+}
+
+.ctr-checker-identity {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.ctr-checker-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.ctr-checker-name {
+  overflow-wrap: anywhere;
+}
+
+.ctr-status-badge {
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
+  padding: 0 0.5rem;
+  white-space: nowrap;
+}
+
+/* Labelled pairs rather than a run of middots: a novice checker should not have
+   to work out which number is the price and which is the quantity. */
+.ctr-checker-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.ctr-checker-facts > div {
+  display: flex;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.ctr-checker-facts dt {
+  opacity: 0.6;
+}
+
+.ctr-checker-facts dd {
+  overflow-wrap: anywhere;
+}
+
+.ctr-checker-queue {
+  flex: 0 1 auto;
+  text-align: right;
+  min-width: 0;
+}
+
+.ctr-queue-step {
+  margin-bottom: 0.25rem;
+}
+
+.ctr-queue-count {
+  margin: 0 0.5rem;
+  white-space: nowrap;
+}
+
+.ctr-checker-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+.ctr-pane {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ctr-pane-technical {
+  padding: 0.5rem;
+}
+
+.ctr-preview {
+  flex: 1 1 auto;
+  min-height: 20rem;
+}
+
+.ctr-findings {
+  border-top: 1px solid #ffffff;
+  padding: 0.5rem;
+}
+
+.ctr-section {
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.ctr-section-head {
+  border-bottom: 1px solid #ffffff;
+  margin-bottom: 0.25rem;
+}
+
+/* Plain language first, exact fact second. Both are kept: simplifying by
+   deleting the technical value would make the page useless to the people who
+   can actually read VRML. */
+.ctr-plain {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  margin-bottom: 0.35rem;
+}
+
+.ctr-note {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.ctr-finding-group {
+  font-size: 0.85rem;
+  font-weight: bold;
+}
+
+.ctr-finding-list {
+  list-style: disc;
+  margin-left: 1.25rem;
+}
+
+.ctr-finding-list > li {
+  margin-bottom: 0.5rem;
+}
+
+.ctr-finding-message {
+  overflow-wrap: anywhere;
+}
+
+.ctr-finding-code {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  overflow-wrap: anywhere;
+}
+
+.ctr-thumb-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.ctr-thumb-button {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 0;
+  line-height: 0;
+  cursor: pointer;
+  background: none;
+}
+
+.ctr-thumb-button img {
+  display: block;
+  max-width: 12rem;
+  max-height: 12rem;
+  width: auto;
+  height: auto;
+}
+
+/* Wide tables scroll inside their own box. Without this a long external
+   reference or a hash widens the whole document. */
+.ctr-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.ctr-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ctr-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  opacity: 0.6;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  padding-right: 0.5rem;
+}
+
+.ctr-table td {
+  vertical-align: top;
+  padding-right: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.ctr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.ctr-moderation {
+  border-top: 3px solid #ef4444;
+  padding-top: 0.5rem;
+}
+
+.ctr-moderation-head {
+  border-bottom-color: #ef4444;
+}
+
+.ctr-field-label {
+  display: block;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+/* A few lines, not the width of the page. The 2000-character server limit is
+   unchanged -- this bounds how much is shown at once, never how much can be
+   written. */
+.ctr-reason {
+  display: block;
+  width: 100%;
+  max-width: 40rem;
+  padding: 0.25rem;
+  margin-top: 0.25rem;
+  background: #001829;
+  resize: vertical;
+}
+
+.ctr-lightbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ctr-lightbox img {
+  max-width: 100%;
+  max-height: 78vh;
+  width: auto;
+  height: auto;
+}
+
+.ctr-wrap-toggle {
+  font-size: 0.75rem;
+  margin-right: 0.5rem;
+  white-space: nowrap;
+}
+
+/*
+ * Default is horizontal scroll INSIDE this box, not wrapping: a VRML line is a
+ * meaningful unit and re-flowing it by default would misrepresent the file.
+ * `Wrap lines` opts into a soft-wrapped view of the same bytes.
+ */
+.ctr-source {
+  font-size: 0.75rem;
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 0;
+}
+
+.ctr-source-wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+}
+
+.ctr-hash {
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+
+/* Two columns only when there is genuinely room for them. Below this the panes
+   stack, which is what keeps 768px portrait usable. */
+@media (min-width: 1024px) {
+  .ctr-checker-body {
+    flex-direction: row;
+  }
+
+  .ctr-pane-primary {
+    width: 50%;
+    border-right: 1px solid #ffffff;
+  }
+
+  .ctr-pane-technical {
+    width: 50%;
+    overflow-y: auto;
+  }
+}
+</style>

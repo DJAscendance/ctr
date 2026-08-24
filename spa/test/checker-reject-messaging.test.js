@@ -19,7 +19,7 @@ const { loadComponentOptions } = require("./support/load-vue-options");
 const CHECKER_PATH = path.join(__dirname, "..", "src", "pages", "mall", "checker.vue");
 
 function resolveImport(specifier) {
-  if (specifier.endsWith("ObjectViewer.vue")) {
+  if (specifier.endsWith("ObjectViewer.vue") || specifier.endsWith("CheckerModal.vue")) {
     return {};
   }
   if (specifier.endsWith("mall-actions.mixin")) {

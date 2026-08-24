@@ -4,7 +4,7 @@
  *
  * `watch.objectId` clears `rawSource`/`rawSourceError`/`showRawSource` on
  * navigation, but previously left `rawSourceFor` pointed at the object being
- * left. `toggleRawSource`'s own stale-response guard compares against
+ * left. `openRawSource`'s own stale-response guard compares against
  * `rawSourceFor`, so a request begun for the old object and still in flight
  * at navigation time would pass that guard when it resolved late and write
  * the old object's source into `rawSource` under the new object's id --
@@ -25,6 +25,9 @@ const CHECKER_PATH = path.join(__dirname, "..", "src", "pages", "mall", "checker
 
 function resolveImport(specifier) {
   if (specifier.endsWith("ObjectViewer.vue")) {
+    return {};
+  }
+  if (specifier.endsWith("CheckerModal.vue")) {
     return {};
   }
   if (specifier.endsWith("mall-actions.mixin")) {
@@ -61,6 +64,8 @@ async function run() {
 
   const self = {
     rawSource: "",
+    showThumbnail: false,
+    showFileDetails: false,
     rawSourceError: "",
     rawSourceFor: null,
     showRawSource: false,
@@ -87,7 +92,7 @@ async function run() {
 
   // --- Step 1: object A is rendered; staff opens the raw-source pane. ---
   self.objectId = 1;
-  const openA = options.methods.toggleRawSource.call(self); // fire-and-forget
+  const openA = options.methods.openRawSource.call(self); // fire-and-forget
   assert.strictEqual(self.rawSourceFor, 1, "the in-flight request must be tagged as A's");
 
   // --- Step 2: before A's source resolves, staff navigates to object B. ---
@@ -106,7 +111,7 @@ async function run() {
     "a late response for the object that was left must not populate rawSource under B");
 
   // --- Step 4: staff opens the raw-source pane for B. ---
-  const openB = options.methods.toggleRawSource.call(self);
+  const openB = options.methods.openRawSource.call(self);
   assert.strictEqual(self.rawSourceFor, 2, "the new request must be tagged as B's");
   pending[2].resolve({ data: "source of object B" });
   await Promise.all([openB, flush()]);
