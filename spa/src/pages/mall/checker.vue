@@ -518,6 +518,13 @@ export default Vue.extend({
       this.showRawSource = false;
       this.rawSource = "";
       this.rawSourceError = "";
+      // Cleared here rather than in loadInspection(), which is also called to
+      // refresh the *same* object after Edit Name / Update Limit -- clearing
+      // there would flash "Loading..." on every edit. Navigating to a
+      // different object must drop the previous one immediately, before the
+      // new request is even sent, so its Accept/Reject/Edit controls cannot
+      // be clicked while they still belong to the object no longer on screen.
+      this.inspection = null;
       this.loadInspection();
     },
   },
