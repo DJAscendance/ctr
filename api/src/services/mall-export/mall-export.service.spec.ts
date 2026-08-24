@@ -13,6 +13,7 @@ import {
   MallExportService,
   MAX_DURATION_MS,
   MAX_OBJECTS,
+  PAGE_SIZE,
 } from './mall-export.service';
 import { ObjectSourceService } from '../object-source/object-source.service';
 import {
@@ -242,15 +243,32 @@ describe('MallExportService', () => {
     objectRepository.findViewRows.mockResolvedValue(
       VIEW_ROWS.filter(row => row.status === PENDING_STATUS) as never,
     );
-    objectRepository.findPageForExport.mockImplementation(
-      (limit: number, offset: number) =>
+    // Id-scoped, not status-scoped: this is what makes the query stable
+    // against a status change on an already-captured id, exactly like the
+    // real `WHERE id IN (...)` query.
+    objectRepository.findRowsByIds.mockImplementation(
+      (ids: number[]) =>
         Promise.resolve(
-          OBJECTS.filter(object => object.status === PENDING_STATUS)
-            .slice(offset, offset + limit),
+          OBJECTS.filter(object => ids.includes(object.id)),
         ) as never,
     );
-    objectInstanceRepository.countAllByObjectId.mockResolvedValue(COUNTS as never);
-    mallRepository.getAllStoresByObjectId.mockResolvedValue(STORES as never);
+    // Both queries filter to the ids handed in, so the mocks filter too: a
+    // mock that ignored the argument would let a whole-catalogue scan
+    // regression pass unnoticed.
+    objectInstanceRepository.countByObjectIds.mockImplementation(
+      (ids: number[]) => Promise.resolve(
+        Object.fromEntries(
+          Object.entries(COUNTS).filter(([id]) => ids.includes(Number(id))),
+        ),
+      ) as never,
+    );
+    mallRepository.getStoresByObjectIds.mockImplementation(
+      (ids: number[]) => Promise.resolve(
+        Object.fromEntries(
+          Object.entries(STORES).filter(([id]) => ids.includes(Number(id))),
+        ),
+      ) as never,
+    );
     memberRepository.findByIds.mockResolvedValue(
       { 100: { id: 100, username: 'BassMekanik' } } as never,
     );
@@ -554,8 +572,78 @@ describe('MallExportService', () => {
       const status = await service.export(writer, { includeDerived: false }, preflight);
 
       expect(status).toBe('failed');
-      expect(objectRepository.findPageForExport).not.toHaveBeenCalled();
+      expect(objectRepository.findRowsByIds).not.toHaveBeenCalled();
     });
+  });
+
+  describe('export identity snapshot', () => {
+    it('does not skip a later pending object when an earlier one is mutated mid-export',
+      async () => {
+        // Enough rows to span two pages, so the second page's fetch happens
+        // only after the first page has already been written -- exactly where
+        // a mutable `WHERE status = ... OFFSET ...` page would have shifted
+        // under a concurrent status change on an earlier row.
+        const template = OBJECTS[1];
+        const count = PAGE_SIZE + 5;
+        const rows: ExportObjectRow[] = new Array(count);
+        for (let index = 0; index < count; index += 1) {
+          rows[index] = { ...template, id: 2000 + index, name: `Snapshot ${index}` };
+        }
+        const byId = new Map(rows.map(row => [row.id, row]));
+
+        objectRepository.findViewRows.mockResolvedValue(
+          rows.map(row => (
+            { id: row.id, status: row.status, quantity: row.quantity, limit: row.limit }
+          )) as never,
+        );
+
+        let firstPageFetched = false;
+        objectRepository.findRowsByIds.mockImplementation((ids: number[]) => {
+          if (!firstPageFetched) {
+            firstPageFetched = true;
+          } else {
+            // Staff approve the very first object in the snapshot between the
+            // first and second page's fetches. A live `status = 2` OFFSET
+            // query would now see one fewer pending row ahead of every later
+            // id, shifting each of them one slot earlier and skipping the
+            // last one.
+            byId.get(rows[0].id).status = 1;
+          }
+          return Promise.resolve(ids.map(id => byId.get(id)).filter(Boolean)) as never;
+        });
+
+        const { document } = await runExport();
+
+        const ids = document.objects.map((object: ExportEntry) => object.id);
+        expect(ids).toEqual(rows.map(row => row.id));
+        expect(ids).toContain(rows[rows.length - 1].id);
+        expect(new Set(ids).size).toBe(ids.length);
+        expect(document.result.status).toBe('complete');
+      });
+
+    it('does not admit an object added to Pending after the snapshot was taken', async () => {
+      const { document } = await runExport();
+
+      // The fixture's `findViewRows` mock returns exactly ids [10, 11, 12];
+      // nothing else may appear even though `findRowsByIds` would happily
+      // return whatever ids it's asked for.
+      expect(document.objects.map((object: ExportEntry) => object.id)).toEqual([10, 11, 12]);
+    });
+
+    it('reports truncated, not complete, when a captured id no longer resolves to a row',
+      async () => {
+        objectRepository.findRowsByIds.mockImplementation(
+          (ids: number[]) =>
+            Promise.resolve(
+              OBJECTS.filter(object => ids.includes(object.id) && object.id !== 12),
+            ) as never,
+        );
+
+        const { document } = await runExport();
+
+        expect(document.result.status).toBe('truncated');
+        expect(document.result.truncation.reason).toBe('snapshot_rows_missing');
+      });
   });
 
   describe('MallExportService - placement is a mall_object fact', () => {
@@ -608,11 +696,16 @@ describe('MallExportService', () => {
 
     async function exportCatalogue(count: number): Promise<ExportRun> {
       const rows = catalogueOf(count);
-      objectRepository.findPageForExport.mockImplementation(
-        (limit: number, offset: number) =>
-          Promise.resolve(rows.slice(offset, offset + limit)) as never,
+      const byId = new Map(rows.map(row => [row.id, row]));
+      objectRepository.findRowsByIds.mockImplementation(
+        (ids: number[]) =>
+          Promise.resolve(ids.map(id => byId.get(id)).filter(Boolean)) as never,
       );
-      objectRepository.findViewRows.mockResolvedValue([] as never);
+      objectRepository.findViewRows.mockResolvedValue(
+        rows.map(row => (
+          { id: row.id, status: row.status, quantity: row.quantity, limit: row.limit }
+        )) as never,
+      );
       return runExport();
     }
 

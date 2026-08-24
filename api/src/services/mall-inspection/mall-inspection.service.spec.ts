@@ -347,6 +347,43 @@ DEF Anim Script { url "vrmlscript: function f(a, t) { return a; }" }
     });
   });
 
+  describe('UTF-8 validity', () => {
+    beforeEach(() => {
+      objectRepository.findById.mockResolvedValue(record() as never);
+    });
+
+    it('does not raise an encoding finding for a file that legitimately contains U+FFFD',
+      async () => {
+        // U+FFFD has a valid UTF-8 encoding of its own (EF BF BD); a creator
+        // is allowed to include it, so its mere presence must not be read as
+        // proof the stored bytes were malformed.
+        writeAsset('uuid-moon', 'moon.wrl', `#VRML V2.0 utf8
+WorldInfo { title "Pocket Moon Playset" }
+# comment containing a literal replacement character: �
+`);
+
+        const inspection = await service.inspect(3339);
+
+        expect(inspection.source.replacementCharacters).toBeGreaterThan(0);
+        expect(inspection.source.utf8Valid).toBe(true);
+        expect(findingCodes(inspection.findings)).not.toContain('encoding_warnings');
+      });
+
+    it('raises the encoding finding for genuinely malformed UTF-8 bytes', async () => {
+      writeAsset('uuid-moon', 'moon.wrl', Buffer.concat([
+        Buffer.from('#VRML V2.0 utf8\nWorldInfo { title "Pocket Moon Playset" }\n'),
+        Buffer.from([0xff, 0xfe, 0xfd]),
+      ]));
+
+      const inspection = await service.inspect(3339);
+
+      expect(inspection.source.utf8Valid).toBe(false);
+      const finding = inspection.findings.find(f => f.code === 'encoding_warnings');
+      expect(finding).toBeDefined();
+      expect(finding.severity).toBe('needs_staff_review');
+    });
+  });
+
   describe('broken uploads still produce a usable page', () => {
     beforeEach(() => {
       objectRepository.findById.mockResolvedValue(record() as never);

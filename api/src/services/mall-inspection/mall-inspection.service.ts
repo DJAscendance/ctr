@@ -128,6 +128,7 @@ export interface InspectionSource {
   decodedBytes: number | null;
   sha256: string | null;
   replacementCharacters: number;
+  utf8Valid: boolean;
   error: ObjectSourceError | null;
 }
 
@@ -259,11 +260,16 @@ export class MallInspectionService {
       findings.push(...this.describeRuleObservations(vrml, source.decodedBytes));
       findings.push(...await this.checkTextureFiles(record.directory, textures, record.texture));
 
-      if (source.replacementCharacters > 0) {
+      if (!source.utf8Valid) {
+        // `replacementCharacters` is reported alongside as context, not as the
+        // proof: U+FFFD has a valid UTF-8 encoding of its own, so a creator
+        // legitimately including it would not make `utf8Valid` false.
         findings.push({
           code: 'encoding_warnings',
-          message: `The file is not valid UTF-8: ${source.replacementCharacters} `
-            + 'character(s) could not be decoded.',
+          message: source.replacementCharacters > 0
+            ? `The file is not valid UTF-8: ${source.replacementCharacters} `
+              + 'character(s) could not be decoded.'
+            : 'The file is not valid UTF-8.',
         });
       }
     }
@@ -315,6 +321,7 @@ export class MallInspectionService {
         decodedBytes: source.decodedBytes,
         sha256: source.sha256,
         replacementCharacters: source.replacementCharacters,
+        utf8Valid: source.utf8Valid,
         error: source.error,
       },
       vrml,

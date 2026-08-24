@@ -49,6 +49,7 @@ describe('ObjectSourceService', () => {
       expect(result.storedBytes).toBe(Buffer.byteLength(VRML));
       expect(result.decodedBytes).toBe(Buffer.byteLength(VRML));
       expect(result.replacementCharacters).toBe(0);
+      expect(result.utf8Valid).toBe(true);
       expect(result.sha256).toMatch(/^[0-9a-f]{64}$/);
     });
   });
@@ -157,6 +158,59 @@ describe('ObjectSourceService', () => {
         expect(result.replacementCharacters).toBeGreaterThan(0);
         expect(result.text).toContain('#VRML V2.0 utf8');
       });
+
+    it('reports genuinely malformed bytes as invalid UTF-8', async () => {
+      // 0xff, 0xfe and 0xfd are not valid UTF-8 lead bytes at all -- there is
+      // no legitimate character these bytes could be encoding.
+      writeObject('uuid-j', 'j.wrl', Buffer.concat([
+        Buffer.from('#VRML V2.0 utf8\n'),
+        Buffer.from([0xff, 0xfe, 0xfd]),
+      ]));
+
+      const result = await service.readSource({ directory: 'uuid-j', filename: 'j.wrl' });
+
+      expect(result.utf8Valid).toBe(false);
+    });
+
+    it('does not mistake a literal U+FFFD for invalid UTF-8', async () => {
+      // The replacement character itself has a valid UTF-8 encoding (EF BF
+      // BD), so a creator including it on purpose must not be flagged as if
+      // the file were malformed.
+      const withReplacementCharacter = `${VRML}# � literal replacement character\n`;
+      writeObject('uuid-k', 'k.wrl', withReplacementCharacter);
+
+      const result = await service.readSource({ directory: 'uuid-k', filename: 'k.wrl' });
+
+      expect(result.error).toBeNull();
+      expect(result.replacementCharacters).toBeGreaterThan(0);
+      expect(result.utf8Valid).toBe(true);
+      expect(result.text).toBe(withReplacementCharacter);
+    });
+
+    it('reports malformed UTF-8 the same way through a gzip-decoded source', async () => {
+      const malformed = Buffer.concat([
+        Buffer.from('#VRML V2.0 utf8\n'),
+        Buffer.from([0xff, 0xfe, 0xfd]),
+      ]);
+      writeObject('uuid-l', 'l.wrl', zlib.gzipSync(malformed));
+
+      const result = await service.readSource({ directory: 'uuid-l', filename: 'l.wrl' });
+
+      expect(result.error).toBeNull();
+      expect(result.encoding).toBe('gzip');
+      expect(result.utf8Valid).toBe(false);
+    });
+
+    it('confirms a literal U+FFFD stays valid through a gzip-decoded source', async () => {
+      const withReplacementCharacter = Buffer.from(`${VRML}# � literal\n`, 'utf8');
+      writeObject('uuid-m', 'm.wrl', zlib.gzipSync(withReplacementCharacter));
+
+      const result = await service.readSource({ directory: 'uuid-m', filename: 'm.wrl' });
+
+      expect(result.error).toBeNull();
+      expect(result.encoding).toBe('gzip');
+      expect(result.utf8Valid).toBe(true);
+    });
   });
 
   describe('resolveAssetPath - containment', () => {

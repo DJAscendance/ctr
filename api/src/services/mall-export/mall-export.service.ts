@@ -46,7 +46,7 @@ export const EXPORT_SCHEMA_VERSION = '2.0.0';
 export const EXPORT_GENERATOR = 'ctr-mall-export/1.0.0';
 
 /** Objects read per page while streaming. Bounds peak memory, not total output. */
-const PAGE_SIZE = 200;
+export const PAGE_SIZE = 200;
 
 /** Wall-clock budget for one export. Exceeding it truncates rather than hangs. */
 export const MAX_DURATION_MS = 120000;
@@ -145,6 +145,17 @@ export interface ExportOptions {
   includeDerived: boolean;
   /** Injected so specs can drive the clock rather than wait on it. */
   now?: () => number;
+  /**
+   * When the export's wall-clock budget actually began.
+   *
+   * `preflight()` runs before this method is called, and it is not free: an
+   * expensive preflight must count against `MAX_DURATION_MS` too, or the
+   * advertised budget only bounds the streaming half of the work. The
+   * controller captures this before calling `preflight()` and passes it
+   * through unchanged; defaulting to `now()` here only covers callers (and
+   * specs) that do not care about preflight's own cost.
+   */
+  startedAt?: number;
 }
 
 /**
@@ -272,8 +283,13 @@ export class MallExportService {
   public async preflight(): Promise<ExportPreflight> {
     const stores = await this.placeRepository.findAllStores('name');
     const viewRows = await this.objectRepository.findViewRows();
-    const allCounts = await this.objectInstanceRepository.countAllByObjectId();
-    const allStores = await this.mallRepository.getAllStoresByObjectId();
+    // Scoped to the pending ids this export actually covers -- the export is
+    // pending-only, so scanning every object instance or every Mall placement
+    // in the catalogue would make preflight scale with the whole catalogue
+    // instead of with the queue this document is about.
+    const pendingIds = viewRows.map(row => row.id);
+    const allCounts = await this.objectInstanceRepository.countByObjectIds(pendingIds);
+    const allStores = await this.mallRepository.getStoresByObjectIds(pendingIds);
     return { stores, viewRows, allCounts, allStores };
   }
 
@@ -283,7 +299,7 @@ export class MallExportService {
     preflight: ExportPreflight,
   ): Promise<ExportStatus> {
     const now = options.now || (() => Date.now());
-    const startedAt = now();
+    const startedAt = options.startedAt ?? now();
     const startedIso = new Date(startedAt).toISOString();
 
     const { stores, viewRows, allCounts, allStores } = preflight;
@@ -316,9 +332,15 @@ export class MallExportService {
       await writer.write(',"objects":[');
       objectsOpened = true;
 
-      let offset = 0;
+      // The identity set this export commits to is fixed here, from the
+      // preflight snapshot -- not re-queried per page. Staff approving or
+      // rejecting an object mid-export changes what that id's row looks like,
+      // never which ids this export visits or how many pages remain.
+      const pendingIds = viewRows.map(row => row.id);
+      let chunkStart = 0;
       let first = true;
       let lastObjectId: number | null = null;
+      let missingSnapshotRows = 0;
 
       for (;;) {
         if (writer.isClosed()) {
@@ -335,8 +357,7 @@ export class MallExportService {
           };
           break;
         }
-        const page = await this.objectRepository.findPageForExport(PAGE_SIZE, offset);
-        if (!page.length) {
+        if (chunkStart >= pendingIds.length) {
           break;
         }
 
@@ -348,6 +369,11 @@ export class MallExportService {
           truncation = { reason: 'object_cap', limit: MAX_OBJECTS, lastObjectId: null };
           break;
         }
+
+        const idsPage = pendingIds.slice(chunkStart, chunkStart + PAGE_SIZE);
+        chunkStart += PAGE_SIZE;
+        const page = await this.objectRepository.findRowsByIds(idsPage);
+        missingSnapshotRows += idsPage.length - page.length;
 
         const members = await this.memberRepository.findByIds(
           page.map(row => row.member_id).filter((id: number) => !!id),
@@ -384,14 +410,24 @@ export class MallExportService {
         if (truncation) {
           break;
         }
+      }
 
-        offset += PAGE_SIZE;
+      // A row from the preflight snapshot that no longer comes back by id is
+      // the one case none of the loop's own break conditions catch: nothing
+      // client-visible went wrong, but a captured identity was silently
+      // dropped, so `complete` would be a lie. This never happens in practice
+      // today -- Mall moderation only ever updates `object.status`, it never
+      // deletes the row -- but the check is what makes that an observed fact
+      // rather than an assumption the export quietly depends on.
+      if (!truncation && missingSnapshotRows > 0) {
+        status = 'truncated';
+        truncation = { reason: 'snapshot_rows_missing', lastObjectId };
       }
 
       // Recorded once, here. Every branch that sets `truncation` above breaks
       // out of the loop immediately, so the same assignment written inside the
       // loop could never run -- it reported the object count instead of an id.
-      if (truncation) {
+      if (truncation && truncation.lastObjectId === null) {
         truncation.lastObjectId = lastObjectId;
       }
 

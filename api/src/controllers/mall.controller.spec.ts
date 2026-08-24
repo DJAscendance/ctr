@@ -20,6 +20,7 @@ import {
   WalletService,
 } from '../services';
 import { PlaceRepository } from '../repositories';
+import { EXPORT_ERROR_CODES, MAX_DURATION_MS } from '../services/mall-export/mall-export.service';
 
 /**
  * A response double.
@@ -384,6 +385,46 @@ describe('MallController - staff-only inspection endpoints', () => {
 
       expect(response.end).toHaveBeenCalled();
     });
+
+    it('captures the export deadline before preflight runs, and threads it through',
+      async () => {
+        const response = streamingResponse();
+        mallExportService.export.mockResolvedValue('complete' as never);
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+
+        await controller.exportMallData(request({}, {}), response);
+
+        expect(mallExportService.export.mock.calls[0][1]).toEqual(
+          expect.objectContaining({ startedAt: 1_000_000 }),
+        );
+
+        nowSpy.mockRestore();
+      });
+
+    it('fails safely, before the response starts, when preflight alone exhausts the budget',
+      async () => {
+        const response = streamingResponse();
+        let now = 0;
+        const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+        // Simulates preflight itself taking longer than the whole export
+        // budget: nothing has counted against MAX_DURATION_MS until now, so a
+        // clock reset here would give the streaming body a fresh budget on
+        // top of it.
+        mallExportService.preflight.mockImplementation(async () => {
+          now = MAX_DURATION_MS + 1;
+          return {} as never;
+        });
+
+        await controller.exportMallData(request({}, {}), response);
+
+        expect(response.status).toHaveBeenCalledWith(503);
+        expect(response.json).toHaveBeenCalledWith({ error: EXPORT_ERROR_CODES.budgetExceeded });
+        expect(mallExportService.export).not.toHaveBeenCalled();
+        expect(response.write).not.toHaveBeenCalled();
+        expect(response.end).not.toHaveBeenCalled();
+
+        nowSpy.mockRestore();
+      });
   });
 
   describe('object id validation - the whole parameter, not a prefix of it', () => {

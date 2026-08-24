@@ -309,20 +309,25 @@ export class ObjectRepository {
   }
 
   /**
-   * One page of full object rows, in the export's deterministic id order.
+   * Full object rows for exactly the given ids, in ascending id order.
    *
-   * Pending only. The export exists so the Mall Checker can publish the
-   * submission queue to the Mall's own site; objects already stocked, warehoused
-   * or removed are not part of that, and shipping them would put the whole CTR
-   * catalogue in a document meant for one queue.
+   * Deliberately id-scoped rather than a `status`/`OFFSET` page: the export
+   * takes its identity set from `findViewRows()` once, before streaming
+   * starts, and pages through THAT snapshot. A live `WHERE status = ... LIMIT
+   * ... OFFSET ...` page shifts under staff action -- approving or rejecting
+   * an object already emitted moves every later row's offset, which can skip
+   * an object the export already committed to including. Querying by id
+   * instead means a status change after the snapshot can change what a row
+   * looks like, but never which rows are visited.
    */
-  public async findPageForExport(limit: number, offset: number): Promise<ObjectWithUsername[]> {
+  public async findRowsByIds(ids: number[]): Promise<ObjectWithUsername[]> {
+    if (!ids.length) {
+      return [];
+    }
     return this.db.object
       .select('object.*')
-      .where('status', PENDING_STATUS)
-      .orderBy('id', 'asc')
-      .limit(limit)
-      .offset(offset);
+      .whereIn('id', ids)
+      .orderBy('id', 'asc');
   }
 
   public async getUserUploadedObjects(

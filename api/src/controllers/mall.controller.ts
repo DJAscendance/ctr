@@ -17,6 +17,7 @@ import {
   createResponseWriter,
   EXPORT_ERROR_CODES,
   exportFilename,
+  MAX_DURATION_MS,
 } from '../services/mall-export/mall-export.service';
 // Removed unused import
 /**
@@ -144,6 +145,12 @@ export class MallController {
 
     const includeDerived = request.query.derived === '1';
 
+    // Captured before preflight, not after: preflight runs real queries and is
+    // not free, so it must count against the advertised budget too. Resetting
+    // the clock here would let an expensive preflight run for free and hand
+    // the streaming body a fresh MAX_DURATION_MS on top of it.
+    const startedAt = Date.now();
+
     // Everything global runs before the response is committed, so a failure here
     // is an ordinary error rather than a half-written document the client would
     // have to detect by failing to parse it.
@@ -153,6 +160,14 @@ export class MallController {
     } catch (error) {
       console.error(error);
       response.status(500).json({ error: EXPORT_ERROR_CODES.preflightFailed });
+      return;
+    }
+
+    // Preflight alone already exhausted the budget: no document could finish
+    // from here, so the honest response is an ordinary failure before the body
+    // starts, not a stream nothing will ever complete.
+    if (Date.now() - startedAt > MAX_DURATION_MS) {
+      response.status(503).json({ error: EXPORT_ERROR_CODES.budgetExceeded });
       return;
     }
 
@@ -167,7 +182,7 @@ export class MallController {
     try {
       await this.mallExportService.export(
         createResponseWriter(response),
-        { includeDerived },
+        { includeDerived, startedAt },
         preflight,
       );
     } catch (error) {

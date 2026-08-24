@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
-import util from 'util';
+import util, { TextDecoder } from 'util';
 import zlib from 'zlib';
 import { Service } from 'typedi';
 
@@ -58,11 +58,19 @@ export interface ObjectSourceResult {
   sha256: string | null;
   text: string | null;
   /**
-   * Count of U+FFFD in the decoded text. A non-zero value usually means the file
-   * is not valid UTF-8; a file could in principle contain the character legitimately,
-   * so this is reported rather than treated as an error.
+   * Count of literal U+FFFD in the decoded text. Kept as neutral information
+   * only: U+FFFD has a valid UTF-8 encoding (`EF BF BD`) and a creator is
+   * allowed to include it on purpose, so this count is NOT proof the source
+   * bytes were malformed -- `utf8Valid` is.
    */
   replacementCharacters: number;
+  /**
+   * Whether the STORED bytes are valid UTF-8, decided from the bytes
+   * themselves via a fatal decode, not from whether U+FFFD shows up in the
+   * result. `true` whenever no bytes were decoded at all (failure results),
+   * since nothing was found invalid.
+   */
+  utf8Valid: boolean;
   error: ObjectSourceError | null;
 }
 
@@ -109,6 +117,7 @@ function failure(error: ObjectSourceError): ObjectSourceResult {
     sha256: null,
     text: null,
     replacementCharacters: 0,
+    utf8Valid: true,
     error,
   };
 }
@@ -121,6 +130,26 @@ function countReplacementCharacters(text: string): number {
     index = text.indexOf(REPLACEMENT_CHARACTER, index + 1);
   }
   return count;
+}
+
+/**
+ * Decodes bytes as UTF-8 and reports whether they actually were UTF-8.
+ *
+ * `fatal: true` is what makes this trustworthy: a plain `buffer.toString('utf8')`
+ * silently substitutes U+FFFD for anything it cannot decode and never reports
+ * that it happened, which is indistinguishable from a file that legitimately
+ * contains that character. A fatal decode throws instead, so validity comes
+ * from the bytes, not from counting a character that has a valid encoding of
+ * its own. On failure the text is still produced (non-fatal) so a checker can
+ * see it and decide, but `valid` is what the finding must key off.
+ */
+function decodeUtf8(buffer: Buffer): { text: string; valid: boolean } {
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    return { text, valid: true };
+  } catch (error) {
+    return { text: buffer.toString('utf8'), valid: false };
+  }
 }
 
 @Service()
@@ -317,6 +346,7 @@ export class ObjectSourceService {
           sha256,
           text: null,
           replacementCharacters: 0,
+          utf8Valid: true,
           error: tooLarge ? 'gzip_too_large' : 'gzip_corrupt',
         };
       }
@@ -331,6 +361,7 @@ export class ObjectSourceService {
           sha256,
           text: null,
           replacementCharacters: 0,
+          utf8Valid: true,
           error: 'gzip_too_large',
         };
       }
@@ -338,7 +369,7 @@ export class ObjectSourceService {
       decoded = stored;
     }
 
-    const text = decoded.toString('utf8');
+    const { text, valid } = decodeUtf8(decoded);
 
     return {
       encoding: isGzip ? 'gzip' : 'identity',
@@ -347,6 +378,7 @@ export class ObjectSourceService {
       sha256,
       text,
       replacementCharacters: countReplacementCharacters(text),
+      utf8Valid: valid,
       error: null,
     };
   }

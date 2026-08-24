@@ -39,6 +39,11 @@ export interface RoleCreditRow {
   income_xp: number;
 }
 
+/** The one column `getDonor` selects: a role's name, or no row at all. */
+export interface RoleNameRow {
+  name: string;
+}
+
 /** A role assignment flattened for display: the role, and where it applies. */
 export interface RoleNameAndId {
   id: number;
@@ -164,7 +169,7 @@ export class RoleAssignmentRepository {
       .orderBy('role_assignment.id', 'desc');
   }
   
-  public async getDonor(memberId: number, roleId: DonorRoleIds): Promise<string> {
+  public async getDonor(memberId: number, roleId: DonorRoleIds): Promise<RoleNameRow | undefined> {
     return this.db.knex
       .select('role.name')
       .from('role_assignment')

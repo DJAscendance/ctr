@@ -23,7 +23,10 @@ import {
   OnlineUserRow,
 } from '../../repositories/member/member.repository';
 import { BackpackRow } from '../../repositories/object-instance/object-instance.repository';
-import { RoleNameAndId } from '../../repositories/role-assignment/role-assignment.repository';
+import {
+  RoleNameAndId,
+  RoleNameRow,
+} from '../../repositories/role-assignment/role-assignment.repository';
 
 /** The active ban row `BanRepository.getBanMaxDate` returns, if there is one. */
 interface BanRow {
@@ -213,7 +216,7 @@ export class MemberService {
     return this.memberRepository.findByPasswordResetToken(resetToken);
   }
 
-  public async getDonorLevel(memberId: number): Promise<string> {
+  public async getDonorLevel(memberId: number): Promise<RoleNameRow | undefined> {
     const donorId = {
       supporter: await this.roleRepository.roleMap.Supporter,
       advocate: await this.roleRepository.roleMap.Advocate,
