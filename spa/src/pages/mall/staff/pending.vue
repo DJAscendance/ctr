@@ -115,6 +115,7 @@ import mallActions, {
   objectDisplayName,
   rejectReasonError,
 } from "./mall-actions.mixin";
+import mallStaffState from "./mall-staff-state";
 
 export default mallActions.extend({
   name: "MallPending",
@@ -154,6 +155,12 @@ export default mallActions.extend({
     this.restoreListState();
     this.isMallStaff();
     this.getResults();
+  },
+  destroyed(): void {
+    // Leaving the list makes its count meaningless; clearing it stops the
+    // export control from briefly reappearing on a later visit with the
+    // previous visit's number.
+    mallStaffState.pendingCount = null;
   },
   methods: {
     /** Reads page, limit and sort back out of the URL on load or browser Back. */
@@ -204,6 +211,9 @@ export default mallActions.extend({
           orderBy: this.orderBy,
         });
         this.totalCount = response.data.objects.total[0].count;
+        // Published for the export control in the right-hand panel, which is
+        // offered only when this queue actually has something in it.
+        mallStaffState.pendingCount = this.totalCount;
         this.objects = response.data.objects.objects;
         this.showSuccess = true;
         const pages = Math.ceil(this.totalCount / this.limit);
@@ -223,10 +233,18 @@ export default mallActions.extend({
       try {
         this.error = "";
         this.showError = false;
-        await this.$http.post("/mall/approve", {
+        const response: any = await this.$http.post("/mall/approve", {
           objectId: objectId,
         });
-        this.success = "Object Approved";
+        const data = response && response.data;
+        if (data && data.alreadyAccepted) {
+          this.success = "Object was already accepted.";
+        } else if (data && data.notified === false) {
+          this.success = "Object accepted, but the uploader could not be notified. "
+            + "Follow up manually.";
+        } else {
+          this.success = "Object accepted and the uploader notified.";
+        }
         this.showSuccess = true;
         this.getResults();
       } catch (errorResponse: any) {

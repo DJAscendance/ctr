@@ -18,12 +18,12 @@ const assert = require("assert");
 const { loadComponentOptions } = require("./support/load-vue-options");
 
 const CHECKER_PATH = path.join(__dirname, "..", "src", "pages", "mall", "checker.vue");
-const STAFF_PAGE_PATH = path.join(
-  __dirname, "..", "src", "pages", "mall", "staff", "StaffPage.vue",
+const STAFF_TOOLS_PATH = path.join(
+  __dirname, "..", "src", "pages", "mall", "staff", "StaffTools.vue",
 );
 
 function checkerResolveImport(specifier) {
-  if (specifier.endsWith("ObjectViewer.vue")) {
+  if (specifier.endsWith("ObjectViewer.vue") || specifier.endsWith("CheckerModal.vue")) {
     return {};
   }
   if (specifier.endsWith("mall-actions.mixin")) {
@@ -134,9 +134,13 @@ async function testCheckerDownload() {
   console.log("PASS: checker.vue downloadSource defers blob revocation");
 }
 
-async function testStaffPageExportDownload() {
+async function testStaffToolsExportDownload() {
   const dom = buildDomFakes();
-  const options = loadComponentOptions(STAFF_PAGE_PATH, () => undefined, dom);
+  const options = loadComponentOptions(
+    STAFF_TOOLS_PATH,
+    (specifier) => (specifier.endsWith("mall-staff-state") ? { pendingCount: null } : undefined),
+    dom,
+  );
 
   const self = { exportFilename: options.methods.exportFilename };
   const payload = { result: { status: "complete" } };
@@ -156,12 +160,12 @@ async function testStaffPageExportDownload() {
   assert.deepStrictEqual(dom.revokeCalls, [url],
     "revokeObjectURL must run exactly once, with the created url, once the deferred tick runs");
 
-  console.log("PASS: StaffPage.vue saveExport defers blob revocation");
+  console.log("PASS: StaffTools.vue saveExport defers blob revocation");
 }
 
 async function run() {
   await testCheckerDownload();
-  await testStaffPageExportDownload();
+  await testStaffToolsExportDownload();
   console.log("PASS: blob-download-revocation.test.js");
 }
 

@@ -2,6 +2,12 @@
   <div class="w-full flex">
     <div class="flex flex-col w-full place-items-center">
       <div class="text-red-500" v-show="error">{{ error }}</div>
+      <!--
+        The dropper works from this window while the main Cybertown window
+        stays in the Mall, so the outcome of a Drop has to be visible here --
+        there is nowhere else they are looking.
+      -->
+      <div class="text-green" v-show="showSuccess && success">{{ success }}</div>
       <div class="text-center w-full text-5xl mb-1">Mall Warehouse</div>
       <div class="grid grid-cols-2 w-4/6 justify-items-center">
         <div v-if="totalCount !== 0">

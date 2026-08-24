@@ -16,6 +16,9 @@ function resolveImport(specifier, identityExtend) {
   if (specifier.endsWith("MallObjectRow.vue") || specifier.endsWith("Modal.vue")) {
     return {};
   }
+  if (specifier.endsWith("mall-staff-state")) {
+    return { pendingCount: null };
+  }
   if (specifier.endsWith("mall-actions.mixin")) {
     // `pending.vue` is `mallActions.extend({...})`: the default export needs
     // its own `.extend()`, matching the real mixin's shape -- reuse the same

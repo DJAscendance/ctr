@@ -77,6 +77,7 @@ import CreatorStocked from "@/pages/mall/creator/stocked.vue";
 import CreatorRestock from "@/pages/mall/creator/restock.vue";
 import CreatorCatalog from "@/pages/mall/creator/catalog.vue";
 import MallStaffPage from "@/pages/mall/staff/StaffPage.vue";
+import MallStaffTools from "@/pages/mall/staff/StaffTools.vue";
 import MallWarehouse from "@/pages/mall/staff/warehouse.vue";
 import MallPending from "@/pages/mall/staff/pending.vue";
 import MallStocked from "@/pages/mall/staff/stocked.vue";
@@ -647,20 +648,31 @@ export default [
     },
   },
   {
+    // The staff tools render inside the normal Cybertown shell, so `tools`
+    // supplies their navigation to the site's own right-hand control panel
+    // rather than a second, detached application shell with its own sidebar.
     path: "/mall/staff",
-    component: MallStaffPage,
+    components: {
+      default: MallStaffPage,
+      tools: MallStaffTools,
+    },
     name: "mall-staff",
     meta: {
       title: "Mall Staff Panel",
-      wrapper: false,
+      wrapper: true,
     },
     children: [
       {
+        // Deliberately the one staff route that stays bare: the dropper opens
+        // the warehouse as a popup utility and keeps the main window in the
+        // Mall, so this route is rendered in a window that has no room for --
+        // and no use for -- a second copy of the site chrome.
         path: "/mall/warehouse",
         component: MallWarehouse,
         name: "MallWarehouse",
         meta: {
           title: "Mall Object Warehouse - Mall Staff Panel",
+          wrapper: false,
         },
       },
       {
@@ -669,6 +681,7 @@ export default [
         name: "MallPending",
         meta: {
           title: "Mall Object Pending - Mall Staff Panel",
+          wrapper: true,
         },
       },
       {
@@ -677,6 +690,7 @@ export default [
         name: "MallStocked",
         meta: {
           title: "Mall Object Stocked - Mall Staff Panel",
+          wrapper: true,
         },
       },
       {
@@ -685,6 +699,7 @@ export default [
         name: "MallSoldOut",
         meta: {
           title: "Mall Object Sold Out - Mall Staff Panel",
+          wrapper: true,
         },
       },
       {
@@ -693,17 +708,19 @@ export default [
         name: "MallObjectSearch",
         meta: {
           title: "Mall Object Search - Mall Staff Panel",
+          wrapper: true,
         },
       },
       {
-        // A child of the staff panel so the checker keeps the panel chrome and
-        // inherits its can_admin gate, rather than opening as a bare popup with
-        // no way back to the list.
+        // A child of the staff panel so the checker inherits its can_admin gate
+        // and its right-panel navigation, rather than opening as a bare popup
+        // with no way back to the list.
         path: "/mall/checker/:object_id",
         component: MallChecker,
         name: "mall-checker",
         meta: {
           title: "Mall Checker - Mall Staff Panel",
+          wrapper: true,
         },
       },
     ],
