@@ -237,8 +237,7 @@ describeWithDb('weekly role credit (real database)', () => {
         earners.push(member);
       }
 
-      const batch = await Container.get(RoleAssignmentService).getMembersDueRoleCredit(2);
-      const selected = batch.map(row => row.member_id);
+      const selected = await Container.get(RoleAssignmentService).getMembersDueRoleCredit(2);
 
       expect(selected).toHaveLength(2);
       expect(selected.sort()).toEqual(earners.map(member => member.id).sort());

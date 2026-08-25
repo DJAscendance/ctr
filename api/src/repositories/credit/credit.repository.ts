@@ -27,6 +27,27 @@ export interface CreditOutcome {
 }
 
 /**
+ * Restricts a role join to roles that actually earn: ones paying CityCash, XP, or both.
+ *
+ * A role paying neither is not a job. Payroll's inner join used to exist only to ask
+ * "does this member hold any role at all", so an Admin assignment - seeded at 0 CityCash
+ * and 0 XP - qualified its holder, took a slot in the capped batch, produced a
+ * zero-value ledger row, and got the eligibility timestamp stamped.
+ *
+ * The two income columns are independent, so the predicate is "pays CityCash OR pays XP",
+ * never CityCash alone: filtering on CityCash would stop an XP-only role ever accruing
+ * its XP. Applied to eligibility and to role selection alike, so a member cannot be
+ * selected on one role and paid for another.
+ *
+ * Shared with RoleAssignmentRepository, which asks the same question when it picks the
+ * batch.
+ * @param builder grouped-where builder supplied by knex
+ */
+export function wherePayingRole(builder: Knex.QueryBuilder): void {
+  builder.where('role.income_cc', '>', 0).orWhere('role.income_xp', '>', 0);
+}
+
+/**
  * Whether a member has already had their daily login bonus since the beginning
  * (00:00:00) of the current day.
  *
@@ -103,6 +124,85 @@ export class CreditRepository {
 
       return { credited: true, amount };
     });
+  }
+
+  /**
+   * Pays a member for one week of the highest-paying role they hold, unless they have
+   * already been paid today or hold no earning role.
+   *
+   * Takes only an id: the batch query that produced it read the member's XP, wallet and
+   * roles before any lock was held, and none of that is authoritative by the time the
+   * money moves. Everything the payout needs is re-read here, under the lock.
+   * @param memberId id of the member to pay
+   * @returns what was paid, or `credited: false` if the member was not due pay
+   */
+  public async giveWeeklyRoleCredit(memberId: number): Promise<CreditOutcome> {
+    return this.db.knex.transaction(async trx => {
+      const member = await this.lockMemberDueWeeklyCredit(trx, memberId);
+      if (!member || !member.due) return { credited: false };
+
+      // One role, not every role held: paying a citizen for a single job is the
+      // behaviour established when single pay landed, and is preserved here.
+      const role = await trx('role_assignment')
+        .select('role_assignment.role_id', 'role.income_cc', 'role.income_xp')
+        .innerJoin('role', 'role_assignment.role_id', 'role.id')
+        .where('role_assignment.member_id', memberId)
+        .where(wherePayingRole)
+        // Highest CityCash wins; among roles paying the same CityCash, the one granting
+        // more XP wins rather than whichever row the database happened to return first.
+        .orderBy('role.income_cc', 'desc')
+        .orderBy('role.income_xp', 'desc')
+        .first();
+      if (!role) return { credited: false };
+
+      const amount: CreditAmount = { cc: role.income_cc, xp: role.income_xp };
+      await this.pay(
+        trx,
+        member.wallet_id,
+        amount.cc,
+        `${TransactionReason.WeeklyCredit} for ${role.role_id}`,
+      );
+      await trx<Member>('member')
+        .where({ id: memberId })
+        .update({
+          xp: trx.raw('xp + ?', [amount.xp]),
+          // Stamped from the database clock, because the predicate that reads it back is
+          // also evaluated there. A JS timestamp would open a double-pay window whenever
+          // the API and the database disagree about the date.
+          last_weekly_role_credit: trx.fn.now(),
+        });
+
+      return { credited: true, amount, roleId: role.role_id };
+    });
+  }
+
+  /**
+   * Locks a member row and answers, in the same statement, whether they are due weekly
+   * pay.
+   *
+   * One statement rather than a lock followed by a separate check, so that the answer
+   * cannot come from a different point in time than the lock. Under REPEATABLE READ a
+   * plain SELECT reads the transaction's snapshot rather than the latest committed row,
+   * which is exactly the mistake this method exists to avoid making.
+   *
+   * The three conditions are deliberately the ones the batch query selects on, evaluated
+   * by the database so that "today" and "within the last seven days" mean the same thing
+   * in both places.
+   */
+  private async lockMemberDueWeeklyCredit(
+    trx: Knex.Transaction,
+    memberId: number,
+  ): Promise<{ wallet_id: number; due: number }> {
+    return trx('member')
+      .select('wallet_id')
+      .select(trx.raw(
+        `status = 1
+           AND DATE(last_weekly_role_credit) <> DATE(NOW())
+           AND DATE(last_daily_login_credit) >= DATE(NOW() - INTERVAL 7 DAY) AS due`,
+      ))
+      .where({ id: memberId })
+      .forUpdate()
+      .first();
   }
 
   /**
