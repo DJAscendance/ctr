@@ -67,6 +67,16 @@ interface StorageUnitSummary {
 }
 
 /**
+ * A member identified from their wallet, as `findByWalletId` actually returns them.
+ *
+ * The query behind it selects `username` alone, so a full `Member` is not available
+ * here however much the name suggests otherwise.
+ */
+interface WalletMemberSummary {
+  username: string;
+}
+
+/**
  * The value `MemberService.getAccessLevel()` resolves to.
  *
  * At runtime this is always a `string[]` of the access tags the member holds
@@ -688,7 +698,9 @@ export class MemberService {
     return unit;
   }
 
-  public async getMemberByWalletId(walletId: number): Promise<Member[]> {
+  public async getMemberByWalletId(
+    walletId: number,
+  ): Promise<WalletMemberSummary[]> {
     const user = await this.memberRepository.findByWalletId(walletId);
     return user;
   }
