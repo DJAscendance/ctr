@@ -228,18 +228,23 @@ describeWithDb('daily login credit (real database)', () => {
   describe('rollback', () => {
     afterEach(async () => {
       await knex.raw('DROP TRIGGER IF EXISTS b1_block_member_update');
+      await knex.raw('DROP TRIGGER IF EXISTS b1_block_ledger_insert');
     });
 
-    it('moves no money when the member half of the credit fails', async () => {
-      const member = await createDueMember();
+    async function failMemberUpdatesFor(memberId: number): Promise<void> {
       await knex.raw(
         `CREATE TRIGGER b1_block_member_update BEFORE UPDATE ON member FOR EACH ROW
          BEGIN
-           IF NEW.id = ${member.id} THEN
+           IF NEW.id = ${memberId} THEN
              SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'b1 injected member update failure';
            END IF;
          END`,
       );
+    }
+
+    it('moves no money when the member half of the credit fails', async () => {
+      const member = await createDueMember();
+      await failMemberUpdatesFor(member.id);
 
       await expect(service.maybeGiveDailyCredits(member.id)).rejects.toThrow();
 
@@ -247,6 +252,37 @@ describeWithDb('daily login credit (real database)', () => {
       expect(await dailyLedgerRows(member)).toHaveLength(0);
       expect((await memberRow(member)).xp).toBe(0);
       expect(await stampedToday(member)).toBe(false);
+    });
+
+    it('leaves the member untouched when the ledger half of the credit fails', async () => {
+      const member = await createDueMember();
+      await knex.raw(
+        `CREATE TRIGGER b1_block_ledger_insert BEFORE INSERT ON transaction FOR EACH ROW
+         BEGIN
+           IF NEW.recipient_wallet_id = ${member.walletId} THEN
+             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'b1 injected ledger failure';
+           END IF;
+         END`,
+      );
+
+      await expect(service.maybeGiveDailyCredits(member.id)).rejects.toThrow();
+
+      expect(await balanceOf(member)).toBe(1000);
+      expect((await memberRow(member)).xp).toBe(0);
+      expect(await stampedToday(member)).toBe(false);
+    });
+
+    it('credits exactly once when the attempt is retried after that failure', async () => {
+      const member = await createDueMember();
+      await failMemberUpdatesFor(member.id);
+      await expect(service.maybeGiveDailyCredits(member.id)).rejects.toThrow();
+
+      await knex.raw('DROP TRIGGER IF EXISTS b1_block_member_update');
+      await service.maybeGiveDailyCredits(member.id);
+
+      expect(await balanceOf(member)).toBe(1000 + UNEMPLOYED_CC);
+      expect(await dailyLedgerRows(member)).toHaveLength(1);
+      expect((await memberRow(member)).xp).toBe(UNEMPLOYED_XP);
     });
   });
 });

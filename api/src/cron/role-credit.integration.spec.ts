@@ -299,8 +299,42 @@ describeWithDb('weekly role credit (real database)', () => {
       );
     }
 
+    /**
+     * Fails the ledger half instead, so the two halves are proven to depend on each
+     * other in both directions rather than only in the one the implementation happens
+     * to write first.
+     */
+    async function failLedgerWritesFor(walletId: number): Promise<void> {
+      await knex.raw('DROP TRIGGER IF EXISTS b1_block_ledger_insert');
+      await knex.raw(
+        `CREATE TRIGGER b1_block_ledger_insert BEFORE INSERT ON transaction FOR EACH ROW
+         BEGIN
+           IF NEW.recipient_wallet_id = ${walletId} THEN
+             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'b1 injected ledger failure';
+           END IF;
+         END`,
+      );
+    }
+
     afterEach(async () => {
       await knex.raw('DROP TRIGGER IF EXISTS b1_block_member_update');
+      await knex.raw('DROP TRIGGER IF EXISTS b1_block_ledger_insert');
+    });
+
+    it('leaves the member untouched when the ledger half of the payout fails', async () => {
+      const member = await createDueMember();
+      await assignRole(knex, member.id, await createRole(knex, {
+        name: fixtureName('RealWorker'),
+        income_cc: 50,
+        income_xp: 5,
+      }));
+      await failLedgerWritesFor(member.walletId);
+
+      await expect(runRoleCreditCron()).rejects.toThrow();
+
+      expect(await balanceOf(member)).toBe(1000);
+      expect((await memberRow(member)).xp).toBe(0);
+      expect(await stampedToday(member)).toBe(false);
     });
 
     it('leaves no money moved when the member half of the payout fails', async () => {
