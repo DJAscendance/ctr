@@ -66,6 +66,21 @@ interface StorageUnitSummary {
   count?: number;
 }
 
+/**
+ * The value `MemberService.getAccessLevel()` resolves to.
+ *
+ * At runtime this is always a `string[]` of the access tags the member holds
+ * ('admin', 'security', 'leader'). The `'admin'` and `'security'` scalar members
+ * exist purely for compatibility: some legacy callers still compare the whole
+ * return value to a bare string (`accessLevel === 'admin'` in
+ * admin.controller.ts, `accessLevel === 'security'` in member.controller.ts)
+ * instead of testing membership. Those comparisons are an existing authority
+ * bug: they can never be true against the array this method actually returns.
+ * Repairing them changes who can reach admin functionality, so it is
+ * deliberately out of scope here and is tracked as separate authority work.
+ */
+type LegacyAccessLevel = string[] | 'admin' | 'security';
+
 /** Service for dealing with members */
 @Service()
 export class MemberService {
@@ -146,7 +161,7 @@ export class MemberService {
     });
   }
 
-  public async getAccessLevel(memberId: number): Promise<any> {
+  public async getAccessLevel(memberId: number): Promise<LegacyAccessLevel> {
     const security = await this.canAdmin(memberId);
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     const leader = await this.canLeader(memberId);
