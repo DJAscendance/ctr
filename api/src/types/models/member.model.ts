@@ -44,4 +44,10 @@ export interface Member extends Model {
   is_3d: number;
   /** This is when the user was last active */
   last_activity?: Date;
+  /**
+   * When the member was paid the one-time settle-a-home experience award, or null if they
+   * never have been. See the 20260829120100 migration for why current home ownership
+   * cannot answer this.
+   */
+  first_homestead_rewarded_at?: Date;
 }

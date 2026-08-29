@@ -2,7 +2,13 @@ import { Knex } from 'knex';
 import { Service } from 'typedi';
 import { Db } from '../../db/db.class';
 import { CountRow } from '../row.types';
-import { Member, Wallet } from 'models';
+import { IMMIGRATION_GRANT_CC } from '../../libs/economy';
+// Relative rather than the bare 'models' specifier used elsewhere in this file's
+// neighbourhood. TransactionReason is an enum, i.e. a runtime value, so this import is
+// emitted rather than elided as a type-only one would be -- and jest cannot resolve
+// 'models', which is a tsconfig `paths` alias with no matching moduleNameMapper. Files that
+// import only types get away with it; this one would not.
+import { Member, Transaction, TransactionReason, Wallet } from '../../types/models';
 import { knex } from '../../db';
 
 /**
@@ -41,13 +47,102 @@ export class MemberRepository {
    */
   public async create(memberParams: Partial<Member>): Promise<number> {
     return await this.db.knex.transaction(async trx => {
-      const [walletId] = await trx<Wallet>('wallet').insert({});
+      // Opened at zero and then credited, rather than relying on the wallet column's
+      // DEFAULT. Two reasons: `m_immigrate` was historically an awarded EVENT rather than
+      // an opening balance, and the largest single grant in the economy should leave a
+      // ledger row. A schema default leaves none, which is how the previous 1000cc start
+      // came to be the one piece of money in CTR that nothing could account for.
+      const [walletId] = await trx<Wallet>('wallet').insert({ balance: 0 });
       const [memberId] = await trx<Member>('member').insert({
         ...memberParams,
         wallet_id: walletId,
       });
+
+      // Same transaction as the member and wallet inserts, so a new citizen either exists
+      // WITH their grant and its ledger row, or does not exist at all. `increment` rather
+      // than an absolute write for consistency with every other money path, even though
+      // nothing else can hold this wallet yet.
+      await trx<Wallet>('wallet')
+        .where({ id: walletId })
+        .increment('balance', IMMIGRATION_GRANT_CC);
+      await trx<Transaction>('transaction').insert({
+        amount: IMMIGRATION_GRANT_CC,
+        reason: TransactionReason.Immigration,
+        recipient_wallet_id: walletId,
+      });
+
       return memberId;
     });
+  }
+
+  /**
+   * Pays the one-time settle-a-home experience award to a member who has earned it and has
+   * not yet been paid.
+   *
+   * `e_propsettle` in colonycity/config/exper.cfg -- 50 XP for settling a home. Historical
+   * behaviour, not a revival addition.
+   *
+   * RECONCILIATION, NOT AN AWARD. This is deliberately safe to call at any time, from any
+   * path, as many times as anything likes -- it asks "does this member deserve the award and
+   * still lack it?" rather than "pay this member". That is what lets one statement serve two
+   * jobs that would otherwise need separate mechanisms:
+   *
+   *   - called immediately after a successful settle, it pays the new homesteader;
+   *   - called on every successful login, it pays anyone the first call missed.
+   *
+   * The second is what makes the award RECOVERABLE. An earlier revision called this only
+   * from the settle path and swallowed the failure, so a transient database error there
+   * meant the home existed, the marker stayed NULL, and the citizen could never earn the
+   * award again -- CTR gives nobody a second first home. Independent QA proved that
+   * permanently lost the 50 XP. Now the marker staying NULL is precisely the condition that
+   * makes the next login retry, so a failure costs a delay rather than the award.
+   *
+   * It is also the backfill. Citizens who homesteaded before this column existed have a home
+   * and a NULL marker, which is the same state as a failed award and is answered the same
+   * way: one payment, on their next login. No migration mutates the member table, and no
+   * separate backfill job exists to be run once and then be wrong for everyone who signs up
+   * afterwards.
+   *
+   * THREE CONDITIONS, all in the one statement, so there is no read-then-decide anywhere for
+   * a racing request to slip between and no lock to take:
+   *
+   *   1. `id = ?`                            -- this member;
+   *   2. `first_homestead_rewarded_at IS NULL` -- never paid. Two concurrent calls both run
+   *      the UPDATE; MySQL serialises them on the row and the second matches nothing;
+   *   3. `EXISTS (a home)`                   -- has actually earned it. Without this a login
+   *      would pay every citizen who has never owned a home.
+   *
+   * Condition 3 asks `place`, which is CTR's authoritative record of home ownership
+   * (`type = 'home'`, `member_id`), and is the same relationship every other home path uses.
+   * Not `home.image` or profile data, neither of which is ownership.
+   *
+   * Note what conditions 2 and 3 do TOGETHER: 3 alone would pay again after a move-out and
+   * move-back, and 2 alone would pay someone who never homesteaded. Both are required, and
+   * 2 is what makes "once per member ever" true rather than "once per home".
+   *
+   * `xp = xp + ?` in SQL rather than a JavaScript read plus a write of the total, for the
+   * same reason every other money and XP path in this codebase does it that way: a daily or
+   * weekly credit landing at the same moment must not be overwritten.
+   *
+   * @param memberId member to reconcile
+   * @param amount experience to award
+   * @returns true if this call is the one that paid; false if the member had already been
+   * rewarded, has no home, or does not exist
+   */
+  public async reconcileFirstHomesteadXp(memberId: number, amount: number): Promise<boolean> {
+    const updated = await this.db.knex('member')
+      .where({ id: memberId })
+      .whereNull('first_homestead_rewarded_at')
+      .whereExists(builder => builder
+        .select(this.db.knex.raw('1'))
+        .from('place')
+        .where('place.type', 'home')
+        .andWhereRaw('place.member_id = member.id'))
+      .update({
+        xp: this.db.knex.raw('xp + ?', [amount]),
+        first_homestead_rewarded_at: this.db.knex.fn.now(),
+      });
+    return updated === 1;
   }
 
   /**

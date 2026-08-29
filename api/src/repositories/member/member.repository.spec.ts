@@ -29,24 +29,37 @@ describe('MemberRepository', () => {
   describe('create', () => {
     let walletInsert;
     let memberInsert;
+    let transactionInsert;
+    let walletIncrement;
+    let walletWhere;
+
     beforeEach(async () => {
       walletInsert = jest.fn().mockResolvedValue([fakeWallet.id]);
       memberInsert = jest.fn().mockResolvedValue([fakeMember.id]);
+      transactionInsert = jest.fn().mockResolvedValue([1]);
+      walletIncrement = jest.fn().mockResolvedValue(1);
+      walletWhere = jest.fn().mockReturnValue({ increment: walletIncrement });
+
       await repository.create(fakeMember);
-      mockDb.knex.transaction.mock.lastCall[0](tableName => {
-        const insert =(() => {
-          switch(tableName) {
-          case 'wallet':
-            return walletInsert;
-          case 'member':
-            return memberInsert;
-          }
-        })();
-        return { insert };
+      await mockDb.knex.transaction.mock.lastCall[0](tableName => {
+        switch (tableName) {
+        case 'wallet':
+          return { insert: walletInsert, where: walletWhere };
+        case 'member':
+          return { insert: memberInsert };
+        case 'transaction':
+          return { insert: transactionInsert };
+        }
       });
     });
+
     it('should create a wallet for a new member', () => {
       expect(walletInsert).toHaveBeenCalled();
+    });
+    it('should open the wallet empty rather than relying on the column default', () => {
+      // The immigration grant is credited explicitly below so that it leaves a ledger row.
+      // Opening at the schema's DEFAULT would silently add money nothing can account for.
+      expect(walletInsert).toHaveBeenCalledWith({ balance: 0 });
     });
     it('should assign a wallet id to the new member', () => {
       expect(memberInsert).toHaveBeenCalledWith(
@@ -60,6 +73,18 @@ describe('MemberRepository', () => {
           username: 'foo',
         }),
       );
+    });
+    it('should credit the new citizen their immigration grant', () => {
+      // `m_immigrate` -- see libs/economy.ts for the config file this comes from.
+      expect(walletWhere).toHaveBeenCalledWith({ id: fakeWallet.id });
+      expect(walletIncrement).toHaveBeenCalledWith('balance', 20000);
+    });
+    it('should record the immigration grant in the ledger', () => {
+      expect(transactionInsert).toHaveBeenCalledWith({
+        amount: 20000,
+        reason: 'immigration-grant',
+        recipient_wallet_id: fakeWallet.id,
+      });
     });
     it('should return the id of the new member', async () => {
       const id = await repository.create(fakeMember);

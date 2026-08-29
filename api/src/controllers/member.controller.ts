@@ -328,6 +328,12 @@ class MemberController {
         const { banned, banInfo } = await this.memberService.isBanned(session.id);
         if (!banned) {
           await this.memberService.giveDailyCreditsForLogin(session.id);
+          // The same reconciliation `login` runs, at the other boundary a citizen can
+          // arrive through. A returning citizen whose token is still valid never calls
+          // `login`, so without this the settle-a-home backfill would only reach them once
+          // their session finally expired. Both calls are conditional UPDATEs that match
+          // nothing after the award has been paid, and neither can fail the request.
+          await this.memberService.reconcileFirstHomesteadXpForLogin(session.id);
           const homeInfo = await this.homeService.getHome(session.id);
           const chatdefault = await this.memberService.getMemberChat(session.id);
           session.hasHome = !!homeInfo;
