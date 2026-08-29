@@ -9,6 +9,8 @@ export * from './home/home.service';
 export * from './hood/hood.service';
 export * from './mall/mall.service';
 export * from './member/member.service';
+export * from './member-data/member-data.service';
+export * from './roster/roster.service';
 export * from './message/message.service';
 export * from './object/object.service';
 export * from './object-instance/object-instance.service';

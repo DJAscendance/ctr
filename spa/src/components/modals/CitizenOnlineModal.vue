@@ -7,7 +7,11 @@
     <div class="grid" style="grid-template-rows: calc(100vh - 225px) 115px; max-width: 250px;">
       <div class="overflow-y-auto">
         <div class="pb-5">
-          <h1 align="center">{{ users.length }} <span v-if="users.length > 1">Citizens</span><span v-else>Citizen</span> Online</h1>
+          <h1 align="center">
+            {{ count }}
+            <span v-if="count !== 1">Citizens</span><span v-else>Citizen</span>
+            Online
+          </h1>
         </div>
         <div class="flex-1 justify-center text-center">
           <div class="pb-5" v-if="action">
@@ -58,14 +62,22 @@
               </span>-->
             </p>
           </div>
-          <ul class="p-5">
+          <ul class="p-5" v-if="canSeeUsers">
             <li v-for="user in users" :key="user.username">
               <span class="cursor-pointer" @click="openMemberProfile(user)">
                 <span v-if="user.hasHome" style="color:lime;">{{ user.username }}</span>
                 <span v-else>{{ user.username }}</span>
-              </span>  
+              </span>
             </li>
           </ul>
+          <!--
+            A visitor sees the count and no names. message/count.html in the original emitted
+            the roster link only when NNM != "Visitor", so this is the intended behaviour
+            rather than a degraded one.
+          -->
+          <p class="p-5" v-else>
+            Sign in to see who is online.
+          </p>
         </div>
       </div>
       <div>
@@ -110,12 +122,23 @@ export default Vue.extend({
       users: [],
       security: [],
       jailId: null,
+      /** Visibly-online count, which the endpoint returns to visitors and members alike. */
+      count: 0,
+      /** False for a visitor: they get the count and no names. */
+      canSeeUsers: true,
     };
   },
   methods: {
     async getOnlineMembers(){
       const onlineUsers = await this.$http.get("/member/online_users");
-      this.users = onlineUsers.data.returnUsers;
+      this.count = onlineUsers.data.count || 0;
+      const returnUsers = onlineUsers.data.returnUsers;
+      // null means "you may not see who is online", which is not the same as [] meaning
+      // "nobody is online" -- so it is recorded as a flag rather than coerced to an empty
+      // list. It must not be assigned to this.users directly either: the template iterates
+      // it and the old code called .forEach on it, so a visitor got a TypeError.
+      this.canSeeUsers = returnUsers !== null && returnUsers !== undefined;
+      this.users = this.canSeeUsers ? returnUsers : [];
       this.users.forEach((user) => {
         if(user.security){
           this.security.push(user);
