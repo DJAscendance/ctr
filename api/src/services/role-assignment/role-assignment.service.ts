@@ -2,9 +2,10 @@ import { Service } from 'typedi';
 
 import { RoleAssignment } from '../../types/models';
 import {
-  RoleAssignmentRepository,
+  AssignmentCount,
+  CreditRepository,
   MemberRepository,
-  TransactionRepository,
+  RoleAssignmentRepository,
 } from '../../repositories';
 
 /** Service for interacting with roles */
@@ -13,7 +14,7 @@ export class RoleAssignmentService {
   constructor(
     private roleAssignmentRepository: RoleAssignmentRepository,
     private memberRepository: MemberRepository,
-    private transactionRepository: TransactionRepository,
+    private creditRepository: CreditRepository,
   ) {}
   
   public async getMembersRoles(memberId: number): Promise<RoleAssignment[]> {
@@ -214,36 +215,33 @@ export class RoleAssignmentService {
   }
 
   /**
-   * Grabs all payments due to users from database 50 at a time and
-   * places them in response array sorts respone into highest cc payout
-   * then drops all other payouts to the same user
+   * Finds up to `limit` members who are due weekly job pay.
+   * @param limit maximum number of members to return
+   * @returns ids of members eligible for weekly pay
    */
-  public async getMembersDueRoleCredit(limit: number): Promise<any[]> {
-    const response = await this.roleAssignmentRepository.getMembersDueRoleCredit(limit);
-    return response;
-  }
-  public async giveWeeklyRoleCredit(
-    memberId: number,
-    memberXp: number,
-    walletId: number,
-    incomeXp: number,
-    incomeCc: number,
-    roleId: number,
-  ): Promise<void> {
-    await this.transactionRepository.createWeeklyRoleCreditTransaction(
-      walletId,
-      incomeCc,
-      roleId,
-    );
-
-    await this.memberRepository.update(memberId, {
-      last_weekly_role_credit: new Date(),
-      xp: memberXp + incomeXp,
-      
-    });
+  public async getMembersDueRoleCredit(limit: number): Promise<number[]> {
+    return this.roleAssignmentRepository.getMembersDueRoleCredit(limit);
   }
 
-  public async countByAssigned(id: number): Promise<RoleAssignment[]> {
+  /**
+   * Pays a member for one week of the highest-paying role they hold.
+   *
+   * Eligibility is rechecked, and the paying role re-resolved, inside the transaction
+   * that moves the money, so a member already paid by another worker is a no-op rather
+   * than a second payment.
+   * @param memberId id of the member to pay
+   * @returns promise resolving when the payout has been decided, rejecting on error
+   */
+  public async giveWeeklyRoleCredit(memberId: number): Promise<void> {
+    await this.creditRepository.giveWeeklyRoleCredit(memberId);
+  }
+
+  /**
+   * Counts how many members hold the role with the given id.
+   * @param id id of the role to count assignments of
+   * @returns a single-row count, as knex returns it
+   */
+  public async countByAssigned(id: number): Promise<AssignmentCount[]> {
     return await this.roleAssignmentRepository.countByAssigned(id);
   }
 }

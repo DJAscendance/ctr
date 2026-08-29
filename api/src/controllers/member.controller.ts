@@ -99,7 +99,7 @@ class MemberController {
     }
   }
 
-  public async check3d(request: Request, response: Response): Promise<any> {
+  public async check3d(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if(!session) return;
     try {
@@ -111,7 +111,7 @@ class MemberController {
     }
   }
 
-  public async getActivePlaces(request: Request, response: Response): Promise<any> {
+  public async getActivePlaces(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if(!session) return;
     try {
@@ -314,7 +314,7 @@ class MemberController {
         const token = await this.memberService.getMemberToken(session.id);
         const { banned, banInfo } = await this.memberService.isBanned(session.id);
         if (!banned) {
-          await this.memberService.maybeGiveDailyCredits(session.id);
+          await this.memberService.giveDailyCreditsForLogin(session.id);
           const homeInfo = await this.homeService.getHome(session.id);
           const chatdefault = await this.memberService.getMemberChat(session.id);
           session.hasHome = !!homeInfo;
@@ -510,7 +510,7 @@ class MemberController {
    * how many people are online and nothing more. `null` rather than `[]` so the client can
    * tell "not permitted to see" from "nobody online".
    */
-  public async getOnlineUsers(request: Request, response: Response): Promise<any> {
+  public async getOnlineUsers(request: Request, response: Response): Promise<void> {
     const session = this.memberService.peekSession(request);
     try {
       const roster = await this.memberService.getRoster(session ? session.id : null);
@@ -577,7 +577,7 @@ class MemberController {
     }
   }
 
-  public async getStorage(request: Request, response: Response): Promise<any> {
+  public async getStorage(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const member_id = parseInt(request.body.member_id);
@@ -590,7 +590,7 @@ class MemberController {
     }
   }
 
-  public async updateStorage(request: Request, response: Response): Promise<any> {
+  public async updateStorage(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if(!session) return;
     try {
