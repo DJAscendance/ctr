@@ -166,6 +166,10 @@ export class PlaceService {
     return await this.placeRepository.findByUserId(userId);
   }
 
+  public async getLiveEventDestinations(): Promise<any[]> {
+    return this.placeRepository.findLiveEventDestinations();
+}
+
   public async removeVirtualPet(id: number): Promise<any> {
     await this.virtualPetRepository.removeVirtualPet(id);
   }
