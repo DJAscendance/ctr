@@ -1,5 +1,10 @@
 # CTR beta stack -- STANDALONE, not an overlay on docker-compose.yml.
 #
+# It is deployed as a normal Coolify Git-based Docker Compose application; Coolify owns the
+# network, the Traefik routing and the environment. To run it by hand for local verification
+# (nothing is published, so reach nginx from inside the network, e.g.
+# `docker compose -f docker-compose.beta.yml exec nginx curl -sI localhost/`):
+#
 #   docker compose -f docker-compose.beta.yml up -d --build
 #   docker compose -f docker-compose.beta.yml --profile bootstrap run --rm ct-bootstrap
 #
@@ -14,8 +19,11 @@
 #
 # What that buys, point by point:
 #
-#  * nginx is the ONLY service with a published port. Everything else talks over the
-#    compose network by service name.
+#  * NO service publishes a host port. nginx is the only ingress and it is reachable on
+#    container port 80 only; Coolify's Traefik routes beta.cybertown.dev to it, and Traefik
+#    is what owns host 80/443. Everything else talks over the compose network by service
+#    name. Publishing a port here would additionally expose the stack beside Traefik,
+#    outside the proxy's TLS and Cloudflare's filter, so the ingress is `expose:` only.
 #  * no debugger anywhere. `npm run dev` (API) and `npm run dev-server` (socket) both open
 #    an inspector bound to 0.0.0.0; neither is used here.
 #  * the API runs compiled JavaScript (`dist/api.js`), not ts-node.
@@ -27,7 +35,8 @@
 #    a mail UI for a service nothing sends to is pure exposure. Beta mail delivery is an
 #    open question for the owner -- see docs/beta-integration-2026-08.md.
 #
-# Secrets come from the environment (a .env beside this file, or the deployment platform).
+# Secrets come from the deployment platform's environment (Coolify's application environment
+# in the beta deployment; a .env beside this file for a local run).
 # The `:?` forms below are deliberate: the stack refuses to start rather than fall back to
 # a development default on a public host.
 services:
@@ -41,9 +50,10 @@ services:
     depends_on:
       - ct-api
       - ct-socket
-    ports:
-      # The only ingress. Front this with the platform's reverse proxy / TLS.
-      - "${BETA_HTTP_PORT:-8001}:80"
+    expose:
+      # The only ingress, and it is never published to the host. Coolify attaches this
+      # service to its own network and points Traefik at container port 80.
+      - "80"
     volumes:
       - object-assets:/var/www/cybertown/spa/assets/object
       - avatar-assets:/var/www/cybertown/spa/assets/avatars

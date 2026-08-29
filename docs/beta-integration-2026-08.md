@@ -238,18 +238,24 @@ debugger), 8000 (socket), 9230 (socket debugger), 3360 (MySQL), 1025 and 8025 (M
 8001 and 443 on nginx. The same limitation applies to `command:` and to the development bind
 mounts.
 
-The file is therefore standalone, and is run on its own:
+The file is therefore standalone. In the beta deployment it is run by Coolify as a normal
+Git-based Docker Compose application; the same file runs by hand for local verification:
 
 ```bash
 docker compose -f docker-compose.beta.yml up -d --build
 docker compose -f docker-compose.beta.yml --profile bootstrap run --rm ct-bootstrap   # first run only
 ```
 
+Nothing is published to the host in either case, so a local run reaches nginx over the compose
+network (`docker compose -f docker-compose.beta.yml exec nginx …`) rather than on a host port.
+
 `docker-compose.yml` is untouched and remains the development stack. What the beta definition now
 guarantees, each verified on the running stack:
 
-- **One published port.** nginx `${BETA_HTTP_PORT:-8001}:80` and nothing else. `ss -ltn` on the
-  host shows no listener on 3000, 9229, 8000, 9230, 3360, 1025, 8025 or 443.
+- **No published port at all.** nginx is the only ingress and it is `expose:`d on container
+  port 80; nothing in the stack binds a host port. `ss -ltn` on the host shows no listener on
+  3000, 9229, 8000, 9230, 3360, 1025, 8025, 8001 or 443 belonging to this stack. Host 80/443
+  belong to Coolify's Traefik, which routes `beta.cybertown.dev` to the nginx container.
 - **No debugger anywhere.** `npm run dev` (API) and `npm run dev-server` (socket) both open an
   inspector on `0.0.0.0`; neither is used. The resolved API command is
   `node -r dotenv/config dist/api.js` and the socket's is `node -r dotenv/config server.js`.
@@ -270,7 +276,7 @@ guarantees, each verified on the running stack:
   nothing sends to is exposure with no function. **Open question for the owner: beta mail
   delivery — password reset currently has no reachable SMTP host.**
 - **Secrets come from the environment** (`DB_USER`, `DB_PASS`, `DB_DATABASE`,
-  `MYSQL_ROOT_PASSWORD`, `JWT_SECRET`, optional `CHAT_WEBHOOK_URL`, `BETA_HTTP_PORT`). The
+  `MYSQL_ROOT_PASSWORD`, `JWT_SECRET`, optional `CHAT_WEBHOOK_URL`). The
   required ones use compose's `:?` form, so the stack refuses to start rather than fall back to a
   development default on a public host.
 
@@ -457,16 +463,40 @@ runs. The host has no firewall of its own (`ufw` inactive, iptables INPUT policy
 the repository's own `ctng-admin-tls.yaml` records that "the firewall only admits Cloudflare
 ranges". Zone SSL mode is `full`.
 
-So the future shape is **Cloudflare proxied DNS → 64.44.177.139**, not a tunnel — the same shape
-the dashboard already uses. Concretely, deploying this branch would mean: a new Coolify
-application in project CTNG / environment `production`, built from `docker-compose.beta.yml`, on
-the `coolify` network; a new proxied DNS record for whichever hostname the owner chooses; and one
-adaptation to this file, because under Coolify the container must **not** publish a host port at
-all — Traefik routes to it by label, so the `ports:` entry on `nginx` is replaced by Traefik
-labels. `BETA_HTTP_PORT` exists so the local stack keeps working either way.
+So the shape is **Cloudflare proxied DNS → 64.44.177.139**, not a tunnel — the same shape the
+dashboard already uses.
 
-**No DNS record, Cloudflare setting, Coolify resource, environment variable or proxy
-configuration was created or altered.**
+### The approved deployment architecture
+
+The beta is deployed as a **normal Coolify Git-based Docker Compose application** (Coolify's
+standard mode, *not* Raw Compose Deployment) in project `CTNG`, environment `production`, built
+from `docker-compose.beta.yml` on this branch. Coolify owns:
+
+- the deployment and redeploy/restart lifecycle, and the logs, all from its dashboard;
+- the resource-specific Docker network the services are attached to;
+- Traefik connectivity and the generated proxy routing;
+- the domain assignment — `beta.cybertown.dev` is mapped to the **nginx** service on **container
+  port 80**;
+- the environment and secrets, which live in the Coolify application environment and are not in
+  this repository.
+
+Two things follow, and they are why this file changed after the pre-deployment gate:
+
+- **nginx does not publish host port 8001, or any host port.** Traefik already owns host 80 and
+  443. A published port would put the stack beside the proxy rather than behind it — outside its
+  TLS and outside the Cloudflare filter that is the only thing keeping the origin private. The
+  `ports:` entry is therefore `expose: ["80"]`, and `BETA_HTTP_PORT` is gone.
+- **No hand-authored Traefik configuration is required or wanted.** No
+  `traefik.http.routers.*` labels in the compose file, no custom `coolify` network declared in
+  it, and no file dropped into `/data/coolify/proxy/dynamic/`. Coolify generates the routing from
+  the configured domain, and hand-written routing would be invisible to the dashboard and would
+  drift the moment Coolify regenerated its own. An earlier draft of this document said the
+  `ports:` entry should be "replaced by Traefik labels"; that was the manual-Traefik path, and it
+  is not the path taken.
+
+nginx remains the sole ingress. The API, the socket server and MySQL are reachable only over the
+application network, by compose service name (`ct-api:3000`, `ct-socket:8000`, `db:3306`), and no
+domain is assigned to any of them.
 
 ## Not done in this lane
 
