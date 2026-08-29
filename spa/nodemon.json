@@ -1,0 +1,13 @@
+{
+  "//": [
+    "The socket service is server.js plus its package manifest - nothing else.",
+    "Left unconfigured, nodemon watches the whole spa/ tree for js/mjs/json, so an SPA",
+    "rebuild (spa/dist/**) restarts the chat server and disconnects every connected client.",
+    "Runtime upload directories are excluded for the same reason: user data changing must",
+    "never restart a live service. This is the DEVELOPMENT watcher only - beta and",
+    "production run `npm start`, which does not watch at all."
+  ],
+  "watch": ["server.js", "package.json"],
+  "ext": "js,json",
+  "ignore": ["assets/**", "dist/**", "src/**", "public/**", "tests/**", "node_modules/**"]
+}

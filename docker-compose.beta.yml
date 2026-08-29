@@ -1,0 +1,57 @@
+# Beta / production-like overrides for the CTR stack.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d
+#
+# docker-compose.yml is deliberately a DEVELOPMENT stack: it mounts the source tree and runs
+# both node services under file watchers. This file changes only what must not be true of a
+# long-running, publicly reachable environment, and leaves the rest of the dev stack alone.
+#
+# 1. The socket service must not run under a watcher.
+#    `npm run dev-server` is nodemon. With no nodemon.json it watched the whole spa/ tree for
+#    js/mjs/json, which meant an SPA rebuild restarted the chat server and disconnected every
+#    connected client at once. spa/nodemon.json now scopes the dev watcher to server.js, and
+#    here the watcher is removed entirely: `npm start` is a plain `node server.js`.
+#
+#    Measured, not assumed - see docs/beta-socket-upload-investigation.md. A Mall object
+#    upload never triggered a restart even before this change (uploads only ever write
+#    .wrl/.jpg/.jpeg/.gif/.png/.webp, none of which nodemon watches); writing a .js under
+#    spa/dist did. Both facts are why the fix is "no watcher in beta", not "reconnect harder".
+#
+# 2. Runtime uploads must survive a redeploy.
+#    Mall objects, avatars, approved home images and pending home images are user data written
+#    at runtime into the container filesystem. Without volumes they are lost on every
+#    container replacement. They are also gitignored, so they can never come back from the
+#    image.
+services:
+  ct-socket:
+    command: bash -c "npm install && npm start"
+    volumes:
+      - ./spa:/usr/src/app
+      - object-assets:/usr/src/app/assets/object
+      - avatar-assets:/usr/src/app/assets/avatars
+      - home-image-assets:/usr/src/app/assets/homes-uploads
+
+  ct-api:
+    volumes:
+      - ./api:/usr/src/app
+      - ./spa:/usr/src/spa
+      - object-assets:/usr/src/spa/assets/object
+      - avatar-assets:/usr/src/spa/assets/avatars
+      - home-image-assets:/usr/src/spa/assets/homes-uploads
+      - private-uploads:/usr/src/app/private-uploads
+
+  nginx:
+    volumes:
+      - ./:/var/www/cybertown
+      - ./docker/nginx/vhost.conf:/etc/nginx/conf.d/cybertown.conf
+      - ./docker/ssl:/etc/ssl
+      - object-assets:/var/www/cybertown/spa/assets/object
+      - avatar-assets:/var/www/cybertown/spa/assets/avatars
+      - home-image-assets:/var/www/cybertown/spa/assets/homes-uploads
+
+volumes:
+  object-assets:
+  avatar-assets:
+  home-image-assets:
+  private-uploads:

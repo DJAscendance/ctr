@@ -8,6 +8,7 @@
     "lint": "vue-cli-service lint",
     "dev": "vue-cli-service build --mode development --watch",
     "dev-server": "nodemon --inspect=0.0.0.0:9230 -r dotenv/config server.js",
+    "start": "node -r dotenv/config server.js",
     "test": "tsc --project tests/tsconfig.json && node tests/run-all.js"
   },
   "dependencies": {
