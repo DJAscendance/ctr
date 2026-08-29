@@ -3,10 +3,11 @@ import { PlaceService, MemberService, HomeService} from '../services';
 import { Container } from 'typedi';
 
 import * as badwords from 'badwords-list';
+import { hasAccess } from '../libs/access-level';
 import { Place } from 'models';
 import { SessionInfo } from 'session-info.interface';
 
-class PlaceController {
+export class PlaceController {
   constructor(
     private placeService: PlaceService, 
     private memberService: MemberService,
@@ -274,44 +275,86 @@ class PlaceController {
     }
   }
 
+  /**
+   * Updates the virtual pet belonging to a place.
+   *
+   * Authorization is unchanged: the home's owner, or a member holding the
+   * 'security' capability. The order below is deliberate -- authenticate,
+   * parse, authorize, validate every behaviour, and only then write once and
+   * answer once. The previous version ran validation, the authorization test,
+   * the write and the response inside the behaviour loop, so a request could
+   * write several times, answer several times, or (with no behaviours) never
+   * answer at all.
+   *
+   * An empty behaviour list is valid: `pet_behaviours` is a free-form JSON blob
+   * and the loop only ever existed to word-filter it, so "no behaviours" has
+   * nothing to reject. Validation failures keep their existing 200-with-`error`
+   * shape because `spa/src/pages/home/HomeVirtualPet.vue` reads the message off
+   * a successful response. Malformed JSON is not reachable from that page and
+   * gets a plain 400 rather than an uncaught parse exception.
+   */
   public async updateVirtualPet(request: Request, response: Response): Promise<void>{
     const session = this.memberService.decryptSession(request, response);
     if(!session) return;
     const placeId = Number.parseInt(request.params.place_id);
-    const name = request.body.name.toLocaleString();
-    const avatar = request.body.avatar.toLocaleString();
-    const active = request.body.active;
-    const voice = Number.parseInt(request.body.voice.toLocaleString());
-    const behaviours = request.body.behaviours.toLocaleString();
+    const body = request.body ?? {};
+    if(
+      body.name === undefined || body.name === null ||
+      body.avatar === undefined || body.avatar === null ||
+      body.voice === undefined || body.voice === null ||
+      body.behaviours === undefined || body.behaviours === null
+    ){
+      response.status(400).json({ error: 'Missing pet name, avatar, voice or behaviours.' });
+      return;
+    }
+    const name = body.name.toLocaleString();
+    const avatar = body.avatar.toLocaleString();
+    const active = body.active;
+    const voice = Number.parseInt(body.voice.toLocaleString());
+    const behaviours = body.behaviours.toLocaleString();
+
     const admin = await this.memberService.getAccessLevel(session.id);
-    const bannedwords = badwords.regex;
-    const testBehaviours = JSON.parse(behaviours);
+    // A member who has not settled a home has no owner record at all, so this must be
+    // optional: reaching for `owner.id` would throw inside the handler and leave the
+    // request with no response, which is the failure mode this refactor exists to remove.
     const owner = await this.homeService.getHome(session.id);
-    //if(!admin.includes('security') || owner.id !== placeId) return;
+    if(!hasAccess(admin, 'security') && owner?.id !== placeId){
+      response.status(200).json({ error: 'You do not have access to update this.' });
+      return;
+    }
+
+    let testBehaviours;
+    try {
+      testBehaviours = JSON.parse(behaviours);
+    } catch (error) {
+      response.status(400).json({ error: 'Pet behaviours are not valid JSON.' });
+      return;
+    }
+    if(!Array.isArray(testBehaviours)){
+      response.status(400).json({ error: 'Pet behaviours must be a list.' });
+      return;
+    }
+
+    const bannedwords = badwords.regex;
     if(name.match(bannedwords)){
       response.status(200).json({ error: 'Pet name cannot contain a banned word.' });
-    } else {
-      for(let i = 0; i < testBehaviours.length; i++){
-        if(
-          testBehaviours[i].input.match(bannedwords) ||
-          testBehaviours[i].output.match(bannedwords)
-        ){
-          response.status(200).json({ error: 'Pet input/output cannot contain a banned word.' });
-        } else {
-          if(admin.includes('security') || owner.id === placeId){
-            try {
-              await this.placeService
-                .updateVirtualPet(placeId, name, avatar, active, voice, behaviours);
-              response.status(200).json({ success: 'success' });
-            } catch (error) {
-              console.error(error);
-              response.status(400).json({ error: error});
-            }
-          } else {
-            response.status(200).json({ error: 'You do not have access to update this.' });
-          }
-        }
-      }
+      return;
+    }
+    const hasBannedBehaviour = testBehaviours.some(behaviour =>
+      String(behaviour?.input ?? '').match(bannedwords) ||
+      String(behaviour?.output ?? '').match(bannedwords));
+    if(hasBannedBehaviour){
+      response.status(200).json({ error: 'Pet input/output cannot contain a banned word.' });
+      return;
+    }
+
+    try {
+      await this.placeService
+        .updateVirtualPet(placeId, name, avatar, active, voice, behaviours);
+      response.status(200).json({ success: 'success' });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ error: error});
     }
   }
 

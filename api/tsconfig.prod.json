@@ -1,9 +1,21 @@
 {
   "extends": "./tsconfig",
   "compilerOptions": {
-    "sourceMap": false
+    "sourceMap": false,
+    // Pinned so the output layout cannot drift. Without it tsc infers the common root of
+    // whatever it compiled: with the specs included that was `api/` and the entry point
+    // landed at dist/src/api.js; with them excluded it would silently become dist/api.js.
+    // A deployment command must not depend on which files happened to be in the build.
+    "rootDir": "src"
   },
   "include": [
     "src/**/*"
+  ],
+  // Specs live beside the code they cover, so `src/**/*` picks them up. They pull in
+  // `spec/` fixtures and jest types that a deployable build has no reason to carry, and
+  // the beta image does not copy `spec/` at all -- without this the production build
+  // fails on the spec files' own imports.
+  "exclude": [
+    "**/*.spec.ts"
   ]
 }

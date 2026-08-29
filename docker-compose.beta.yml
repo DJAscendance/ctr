@@ -1,57 +1,141 @@
-# Beta / production-like overrides for the CTR stack.
+# CTR beta stack -- STANDALONE, not an overlay on docker-compose.yml.
 #
-# Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.beta.yml up -d
+#   docker compose -f docker-compose.beta.yml up -d --build
+#   docker compose -f docker-compose.beta.yml --profile bootstrap run --rm ct-bootstrap
 #
-# docker-compose.yml is deliberately a DEVELOPMENT stack: it mounts the source tree and runs
-# both node services under file watchers. This file changes only what must not be true of a
-# long-running, publicly reachable environment, and leaves the rest of the dev stack alone.
+# It used to be an overlay (`-f docker-compose.yml -f docker-compose.beta.yml`). That could
+# not work for a public beta: compose MERGES the `ports` list rather than replacing it, so
+# the beta inherited every development port the base file publishes and there is no
+# override syntax that takes one away. Measured on the running stack, the beta was
+# publishing the API (3000), its debugger (9229), the socket server (8000), its debugger
+# (9230), MySQL (3360) and MailHog (1025/8025) in addition to the intended ingress. The
+# same applies to `command:` and to the source bind mounts. A file that cannot subtract is
+# the wrong shape for "production-like", so this one stands alone and states everything.
 #
-# 1. The socket service must not run under a watcher.
-#    `npm run dev-server` is nodemon. With no nodemon.json it watched the whole spa/ tree for
-#    js/mjs/json, which meant an SPA rebuild restarted the chat server and disconnected every
-#    connected client at once. spa/nodemon.json now scopes the dev watcher to server.js, and
-#    here the watcher is removed entirely: `npm start` is a plain `node server.js`.
+# What that buys, point by point:
 #
-#    Measured, not assumed - see docs/beta-socket-upload-investigation.md. A Mall object
-#    upload never triggered a restart even before this change (uploads only ever write
-#    .wrl/.jpg/.jpeg/.gif/.png/.webp, none of which nodemon watches); writing a .js under
-#    spa/dist did. Both facts are why the fix is "no watcher in beta", not "reconnect harder".
+#  * nginx is the ONLY service with a published port. Everything else talks over the
+#    compose network by service name.
+#  * no debugger anywhere. `npm run dev` (API) and `npm run dev-server` (socket) both open
+#    an inspector bound to 0.0.0.0; neither is used here.
+#  * the API runs compiled JavaScript (`dist/api.js`), not ts-node.
+#  * no service installs dependencies at start-up; the images do it from the lockfiles.
+#  * no source bind mounts, so a container cannot be changed by editing the checkout, and
+#    nothing running here can write back into the repository.
+#  * MailHog is gone. It was never wired in: `api/src/libs/mail.ts` hard-codes
+#    127.0.0.1:25 and the mailhog host/port lines next to it are commented out. Publishing
+#    a mail UI for a service nothing sends to is pure exposure. Beta mail delivery is an
+#    open question for the owner -- see docs/beta-integration-2026-08.md.
 #
-# 2. Runtime uploads must survive a redeploy.
-#    Mall objects, avatars, approved home images and pending home images are user data written
-#    at runtime into the container filesystem. Without volumes they are lost on every
-#    container replacement. They are also gitignored, so they can never come back from the
-#    image.
+# Secrets come from the environment (a .env beside this file, or the deployment platform).
+# The `:?` forms below are deliberate: the stack refuses to start rather than fall back to
+# a development default on a public host.
 services:
-  ct-socket:
-    command: bash -c "npm install && npm start"
-    volumes:
-      - ./spa:/usr/src/app
-      - object-assets:/usr/src/app/assets/object
-      - avatar-assets:/usr/src/app/assets/avatars
-      - home-image-assets:/usr/src/app/assets/homes-uploads
-
-  ct-api:
-    volumes:
-      - ./api:/usr/src/app
-      - ./spa:/usr/src/spa
-      - object-assets:/usr/src/spa/assets/object
-      - avatar-assets:/usr/src/spa/assets/avatars
-      - home-image-assets:/usr/src/spa/assets/homes-uploads
-      - private-uploads:/usr/src/app/private-uploads
-
   nginx:
+    build:
+      context: .
+      dockerfile: docker/beta/spa.Dockerfile
+      target: web
+    image: ctr-beta-web
+    restart: unless-stopped
+    depends_on:
+      - ct-api
+      - ct-socket
+    ports:
+      # The only ingress. Front this with the platform's reverse proxy / TLS.
+      - "${BETA_HTTP_PORT:-8001}:80"
     volumes:
-      - ./:/var/www/cybertown
-      - ./docker/nginx/vhost.conf:/etc/nginx/conf.d/cybertown.conf
-      - ./docker/ssl:/etc/ssl
       - object-assets:/var/www/cybertown/spa/assets/object
       - avatar-assets:/var/www/cybertown/spa/assets/avatars
       - home-image-assets:/var/www/cybertown/spa/assets/homes-uploads
 
+  ct-api:
+    build:
+      context: .
+      dockerfile: docker/beta/api.Dockerfile
+      target: runtime
+    image: ctr-beta-api
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:?set DB_USER}
+      DB_PASS: ${DB_PASS:?set DB_PASS}
+      DB_DATABASE: ${DB_DATABASE:-cybertown}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      ASSETS_DIR: /usr/src/spa/assets
+      PRIVATE_UPLOADS_DIR: /usr/src/app/private-uploads
+      CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL:-}
+    volumes:
+      - object-assets:/usr/src/spa/assets/object
+      - avatar-assets:/usr/src/spa/assets/avatars
+      - home-image-assets:/usr/src/spa/assets/homes-uploads
+      # Home images awaiting moderation. Deliberately outside ASSETS_DIR and every
+      # nginx-served path, so an unreviewed image cannot be fetched directly.
+      - private-uploads:/usr/src/app/private-uploads
+
+  ct-socket:
+    build:
+      context: .
+      dockerfile: docker/beta/spa.Dockerfile
+      target: socket
+    image: ctr-beta-socket
+    restart: unless-stopped
+    depends_on:
+      - ct-api
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      API_URL: http://ct-api:3000/api
+      WEBSOCKET_PORT: "8000"
+      CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL:-}
+    volumes:
+      - object-assets:/usr/src/app/assets/object
+      - avatar-assets:/usr/src/app/assets/avatars
+      - home-image-assets:/usr/src/app/assets/homes-uploads
+
+  db:
+    image: mysql:5.7
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_DATABASE:-cybertown}
+      # MySQL will not accept "root" here; DB_USER must be an ordinary account.
+      MYSQL_USER: ${DB_USER:?set DB_USER}
+      MYSQL_PASSWORD: ${DB_PASS:?set DB_PASS}
+    volumes:
+      - db-data:/var/lib/mysql
+
+  # First-run only, and only when asked for by profile, so an ordinary `up` can never
+  # start it. See docker/beta/bootstrap-db.sh for why the order it uses is what it is.
+  ct-bootstrap:
+    profiles: ["bootstrap"]
+    build:
+      context: .
+      dockerfile: docker/beta/api.Dockerfile
+      target: tooling
+    image: ctr-beta-tooling
+    restart: "no"
+    depends_on:
+      - db
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:?set DB_USER}
+      DB_PASS: ${DB_PASS:?set DB_PASS}
+      DB_DATABASE: ${DB_DATABASE:-cybertown}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+
 volumes:
+  # Runtime uploads. These outlive container replacement; the tracked defaults underneath
+  # them are re-seeded on every start by docker/beta/seed-assets.sh, which never
+  # overwrites a file that is already there.
   object-assets:
   avatar-assets:
   home-image-assets:
   private-uploads:
+  db-data:

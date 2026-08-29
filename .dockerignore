@@ -1,0 +1,19 @@
+# Build context hygiene for the beta images (docker/beta/*.Dockerfile).
+#
+# node_modules is excluded because dependencies are installed inside the image from the
+# lockfile; copying a host tree in would defeat that and, in this workspace, would copy
+# symlinks that dangle inside a container. dist is excluded so a stale host build can
+# never end up shipped instead of the one the image compiles.
+.git
+**/node_modules
+api/dist
+spa/dist
+api/.env
+spa/tests/.compiled
+qa-artifacts
+**/.playwright-cli
+# QA scratch written into the gitignored asset trees. `git status` cannot see it, so
+# without this it rides into an image unnoticed - which is how five leftover files from
+# the previous QA lane ended up baked into the first build of these images.
+spa/assets/object/qa-*
+spa/assets/avatars/qa-*

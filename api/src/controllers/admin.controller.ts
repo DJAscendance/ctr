@@ -15,8 +15,36 @@ import {
   ClubService,
 } from '../services';
 import * as badwordlist from 'badwords-list';
+import { hasAccess } from '../libs/access-level';
 
-class AdminController {
+/**
+ * Admin-panel endpoints.
+ *
+ * Each gate below is the server-side statement of a capability the admin UI
+ * already expresses, so that hiding a button and refusing the request agree.
+ * The capability tags come from `MemberService.getAccessLevel()`; the UI source
+ * of each rule is `spa/src/pages/admin/`:
+ *
+ * | endpoint                  | capability            | UI rule                     |
+ * | ------------------------- | --------------------- | --------------------------- |
+ * | getBanHistory             | admin/security/leader | Members screen              |
+ * | getRoleList               | admin OR a security-  | roles.vue requires admin;   |
+ * |                           | role manager          | SubMenu shows HIRE to both  |
+ * | searchUsers               | admin/security/leader | Members screen              |
+ * | getTransactions           | security              | Transactions screen         |
+ * | getTransactionsByWalletId | security              | Transactions tab (SubMenu)  |
+ * | searchUserChat            | security              | user/ChatMessages.vue       |
+ * | places / searchAllPlaces  | admin/security/leader | Places screen               |
+ * | findUserPlaces            | security              | Storage/Clubs tabs (SubMenu)|
+ * | placesUpdate              | admin OR security     | Edit in place/search.vue    |
+ * | getObjectInstances        | security              | User Objects screen         |
+ * | getOwnedObjects           | admin                 | Objects tab (SubMenu)       |
+ * | getCommunityData          | security              | Overview screen             |
+ *
+ * `hasAccess` fails closed, so a null, undefined or otherwise malformed access
+ * level denies instead of throwing. See `libs/access-level.ts`.
+ */
+export class AdminController {
   constructor(
     private adminService: AdminService, 
     private memberService: MemberService, 
@@ -83,7 +111,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin) {
+    if (hasAccess(admin, 'admin', 'security', 'leader')) {
       try {
         const banHistory = await this.adminService
           .getBanHistory(Number(request.query.ban_member_id.toString()));
@@ -174,7 +202,9 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin) {
+    const canManageSecurityRoles =
+      await this.memberService.canManageSecurityRoles(session.id);
+    if (hasAccess(admin, 'admin') || canManageSecurityRoles) {
       try {
         const returnRoles = [];
         const roleList = await this.adminService.getRoleList();
@@ -188,6 +218,8 @@ class AdminController {
         console.log(e);
         response.status(500).json({error: 'Internal Server Error'});
       }
+    } else {
+      response.status(403).json({message: 'Access Denied'});
     }
   }
 
@@ -223,7 +255,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin) {
+    if (hasAccess(admin, 'admin', 'security', 'leader')) {
       try {
         const results = await this.adminService.searchUsers(
           request.query.search.toString(),
@@ -246,7 +278,7 @@ class AdminController {
     const admin = await this.memberService.getAccessLevel(session.id);
     const returnResults = [];
     const rebuild = [];
-    if (admin) {
+    if (hasAccess(admin, 'security')) {
       try {
         let results = null;
         let findUsername = null;
@@ -291,7 +323,7 @@ class AdminController {
     const admin = await this.memberService.getAccessLevel(session.id);
     const returnResults = [];
     const rebuild = [];
-    if (admin) {
+    if (hasAccess(admin, 'security')) {
       try {
         let results = null;
         let findUsername = null;
@@ -336,7 +368,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin.includes('security')) {
+    if (hasAccess(admin, 'security')) {
       try {
         let returnResults = [];
         let results = null;
@@ -359,7 +391,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin.includes('admin')) {
+    if (hasAccess(admin, 'admin')) {
       try {
         const id = request.params.id;
         const results = await this.objectInstanceService.getOwnedObjects(
@@ -381,7 +413,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin) {
+    if (hasAccess(admin, 'security')) {
       try {
         const results = await this.adminService.searchUserChat(
           request.query.search.toString(),
@@ -403,7 +435,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin.includes('security')) {
+    if (hasAccess(admin, 'security')) {
       try {
         const results = await this.adminService.getCommunityData();
         response.status(200).json({results});
@@ -478,7 +510,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin) {
+    if (hasAccess(admin, 'admin', 'security', 'leader')) {
       try {
         const results = await this.adminService.searchPlaces(
           [request.query.type.toString()],
@@ -500,7 +532,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin) {
+    if (hasAccess(admin, 'admin', 'security', 'leader')) {
       try {
         const compareValues = ['=', '!=', '>', '<', '>=', '<='];
         const search = request.query.search.toString().replace(/[^0-9a-zA-Z \-[\]/()]/g, '');
@@ -530,7 +562,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (admin) {
+    if (hasAccess(admin, 'security')) {
       const types = ['club', 'storage'];
       const type = request.query.type.toString();
       const id = request.query.id.toString();
@@ -552,7 +584,7 @@ class AdminController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (!admin) {
+    if (!hasAccess(admin, 'admin', 'security')) {
       response.status(403).json({message: 'Access Denied'});
       return;
     }

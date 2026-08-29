@@ -7,8 +7,9 @@ import {
   FleaMarketService, 
   BlackMarketService } from '../services';
 import * as badwords from 'badwords-list';
+import { hasAccess } from '../libs/access-level';
 
-class ObjectInstanceController {
+export class ObjectInstanceController {
   constructor(
     private objectInstanceService: ObjectInstanceService,
     private placeService: PlaceService,
@@ -84,10 +85,14 @@ class ObjectInstanceController {
       const place = await this.placeService.findById(Number.parseInt(request.body.placeId));
       const admin = await this.memberService.getAccessLevel(session.id);
 
+      // Dropping into someone else's place is a moderation action, so it takes
+      // the same capability that lets a member edit a place at all
+      // (`AdminController.placesUpdate`). `hasAccess` fails closed, so a
+      // malformed access level leaves only the owner and the two open markets.
       if (
         place.slug !== 'fleamarket' && 
         place.slug !== 'blackmarket' && 
-        !admin &&
+        !hasAccess(admin, 'admin', 'security') &&
         place.member_id !== session.id) {
         throw new Error('Not the owner of this place');
       }
