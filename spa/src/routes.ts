@@ -28,6 +28,11 @@ import RestrictedAccess from "@/pages/RestrictedAccess.vue";
 import HomeTools from "@/pages/home/HomeTools.vue";
 import HomeUpdatePage from "@/pages/home/HomeUpdatePage.vue";
 import HomeUpdateHomePage from "@/pages/home/HomeUpdateHomePage.vue";
+import HomeChatAccessPage from "@/pages/home/HomeChatAccessPage.vue";
+import HomeUpdateInformationPage from "@/pages/home/HomeUpdateInformationPage.vue";
+import HomeUpdateImagePage from "@/pages/home/HomeUpdateImagePage.vue";
+import HomeResetPage from "@/pages/home/HomeResetPage.vue";
+import HomeImageCheckPage from "@/pages/home/HomeImageCheckPage.vue";
 import HomeVirtualPet from "./pages/home/HomeVirtualPet.vue";
 import HomeVirtualPetHelp from "./pages/home/HomeVirtualPetHelp.vue";
 
@@ -93,6 +98,9 @@ import ClubDirPage from "./pages/club/ClubDir.vue";
 import ClubMemberList from "./pages/club/Members.vue";
 import ClubDoor from "@/pages/club/ClubDoor.vue";
 import ClubUpdate from "@/pages/club/ClubUpdate.vue";
+
+import DirectoryPage from "@/pages/directory/Directory.vue";
+import HowDoIPage from "@/pages/HowDoI.vue";
 
 import MayorElection from '@/pages/MayorElection.vue';
 
@@ -335,6 +343,50 @@ export default [
     },
     name: "home-update-home",
     meta: { wrapper: true },
+  },
+  {
+    path: "/home/update/chat-access",
+    components: {
+      default: HomeChatAccessPage,
+      tools: HomeTools,
+    },
+    name: "home-update-chat-access",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/home/update/information",
+    components: {
+      default: HomeUpdateInformationPage,
+      tools: HomeTools,
+    },
+    name: "home-update-information",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/home/update/image",
+    components: {
+      default: HomeUpdateImagePage,
+      tools: HomeTools,
+    },
+    name: "home-update-image",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/home/update/reset",
+    components: {
+      default: HomeResetPage,
+      tools: HomeTools,
+    },
+    name: "home-update-reset",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/home/image-check",
+    components: {
+      default: HomeImageCheckPage,
+    },
+    name: "home-image-check",
+    meta: { wrapper: false },
   },
   {
     path: "/virtualpet/:place_id",
@@ -824,6 +876,22 @@ export default [
       default: ClubDirPage,
     },
     name: "club-directory",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/directory",
+    components: {
+      default: DirectoryPage,
+    },
+    name: "citizen-directory",
+    meta: { wrapper: true },
+  },
+  {
+    path: "/howdoi",
+    components: {
+      default: HowDoIPage,
+    },
+    name: "how-do-i",
     meta: { wrapper: true },
   },
   {

@@ -61,6 +61,8 @@ memberRoutes.get('/backpack/:username', (request, response) =>
   memberController.getBackpack(request, response));
 memberRoutes.get('/online_users', (request, response) =>
   memberController.getOnlineUsers(request, response));
+memberRoutes.get('/directory', (request, response) =>
+  memberController.getDirectory(request, response));
 memberRoutes.get('/remove_account', (request, response) =>
   memberController.removeAccount(request, response));
 

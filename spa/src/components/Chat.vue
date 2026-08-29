@@ -130,7 +130,12 @@
             {{ this.$store.data.user.username }}
           </li>
           <li class="cursor-default" v-for="(user, key) in users" :key="key" @click="handler($event)" @contextmenu="handler($event)" @mouseup="menu(user.id, user.username)">
-            <img src="/assets/img/av_mute.gif" class="inline" v-if="blockedMembers.includes(user.username) === true" />
+            <img
+              src="/assets/img/av_mute.gif"
+              class="inline"
+              v-if="blockedMembers.includes(user.username) === true
+                || isMutedByChatAccess(user.username)"
+            />
             <img src="/assets/img/av_def.gif" class="inline" v-else-if="worldMembers.includes(user.username) === true" />
             <img src="/assets/img/av_invis.gif" class="inline" v-else />
             {{ user.username }}
@@ -305,6 +310,7 @@ interface ChatData {
   chatIntervalId: any;
   pingIntervalId: any;
   worldMembers: any[];
+  chatAccess: { restricted: boolean; allowedUsernames: string[] };
   chatEnabled: boolean;
   /** Whether the one-time room activation has run for this Chat instance. */
   roomActivated: boolean;
@@ -405,6 +411,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       chatIntervalId: null,
       pingIntervalId: null,
       worldMembers: [],
+      chatAccess: { restricted: false, allowedUsernames: [] },
       chatEnabled: false,
       roomActivated: false,
       unsubscribeLifecycle: null,
@@ -1129,6 +1136,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       this.$socket.on("CHAT", this.onChatMessage);
       this.$socket.on("update-object", this.onUpdateObjectEvent);
       this.$socket.on("moderation_event", this.onModerationEvent);
+      this.$socket.on("CHAT_ACCESS", this.onChatAccessEvent);
       // Chat input liveness is driven by the room-readiness lifecycle, not the
       // raw transport `disconnect` event: a reconnected-but-not-yet-resynced
       // socket must keep input disabled until the authoritative ROOM_STATE
@@ -1140,6 +1148,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       this.$socket.off("CHAT", this.onChatMessage);
       this.$socket.off("update-object", this.onUpdateObjectEvent);
       this.$socket.off("moderation_event", this.onModerationEvent);
+      this.$socket.off("CHAT_ACCESS", this.onChatAccessEvent);
       if (this.unsubscribeLifecycle) {
         this.unsubscribeLifecycle();
         this.unsubscribeLifecycle = null;
@@ -1233,6 +1242,13 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
       if(data.data.event === 'delete-message') {
         this.deleteMessageFromLive(data.data.messageID);
       }
+    },
+    onChatAccessEvent(data): void {
+      this.chatAccess = data;
+    },
+    isMutedByChatAccess(username: string): boolean {
+      return this.chatAccess.restricted &&
+        !this.chatAccess.allowedUsernames.includes(username);
     },
     dropObject() {
       this.$emit("drop-object", this.objectId);

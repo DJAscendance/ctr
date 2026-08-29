@@ -13,6 +13,7 @@ export * from './object-instance.position.model';
 export * from './object-instance.rotation.model';
 export * from './role.model';
 export * from './role-assignment.model';
+export * from './place-role-access.model';
 export * from './place.model';
 export * from './transaction.model';
 export * from './wallet.model';

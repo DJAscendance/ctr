@@ -128,6 +128,22 @@ export class MemberRepository {
   }
 
   /**
+   * Returns the member's primary_role_id, or null.
+   *
+   * Deliberately separate from getPrimaryRoleName, which INNER JOINs role and so returns
+   * an empty set when the column is null -- indistinguishable from "member not found".
+   * Reconciliation needs to tell those apart.
+   */
+  public async getPrimaryRoleId(memberId: number): Promise<number | null> {
+    const row = await this.db.knex
+      .select('primary_role_id')
+      .from('member')
+      .where('id', memberId)
+      .first();
+    return row ? row.primary_role_id : null;
+  }
+
+  /**
    * This is to assist with the pagination of the user search
    * @param search
    * @return number
@@ -157,6 +173,40 @@ export class MemberRepository {
       .from('member')
       .where(this.like('username', search))
       .orderBy('id', 'desc')
+      .limit(limit)
+      .offset(offset);
+  }
+
+  /**
+   * This is to assist with the pagination of the citizen directory
+   * @param search
+   * @return number
+   */
+  public async getDirectoryTotal(search: string): Promise<any> {
+    return knex
+      .count('id as count')
+      .from('member')
+      .where(this.like('username', search));
+  }
+
+  /**
+   * Public-safe citizen directory search - only exposes fields that are
+   * safe to show to anyone, not the admin-only member fields.
+   */
+  public async searchDirectory(search: string, limit: number, offset: number): Promise<any> {
+    return knex
+      .select(
+        'member.id',
+        'member.username',
+        'member.created_at',
+        'member.last_activity',
+        'member.primary_role_id',
+        'role.name as primary_role_name',
+      )
+      .from('member')
+      .leftJoin('role', 'member.primary_role_id', 'role.id')
+      .where(this.like('member.username', search))
+      .orderBy('member.username', 'asc')
       .limit(limit)
       .offset(offset);
   }

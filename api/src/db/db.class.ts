@@ -49,6 +49,9 @@ export class Db {
   get roleAssignment() {
     return this.knex<Models.RoleAssignment, Models.RoleAssignment[]>('role_assignment');
   }
+  get placeRoleAccess() {
+    return this.knex<Models.PlaceRoleAccess, Models.PlaceRoleAccess[]>('place_role_access');
+  }
   get transaction() {
     return this.knex<Models.Transaction, Models.Transaction[]>('transaction');
   }

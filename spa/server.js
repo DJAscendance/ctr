@@ -3,11 +3,12 @@ const app = express();
 const http = require("http").createServer(app);
 const https = require("https");
 const io = require("socket.io")(http, {
-    pingInterval: 10000, 
+    pingInterval: 10000,
     pingTimeout: 30000
     });
 const path = require("path");
 const jwt = require("jsonwebtoken");
+const axios = require("axios");
 const package = require("./package.json");
 const badwords = require("badwords-list");
 const USERS = new Map();
@@ -31,6 +32,36 @@ function roomPresenceSnapshot(room) {
         }
     }
     return snapshot;
+}
+
+const API_URL = process.env.API_URL || "http://ct-api:3000/api";
+/** How long a room's chat access status is cached before re-fetching. */
+const CHAT_ACCESS_CACHE_MS = 15000;
+const ROOM_CHAT_ACCESS = new Map();
+
+/**
+ * Gets whether a room (place) restricts chat to a specific citizen list, and if so, who's
+ * on it. Backed by a short-lived cache per room so this isn't hit on every chat message.
+ * Fails open (unrestricted) if the API can't be reached, so a network hiccup never locks
+ * an entire room out of chat.
+ */
+async function getChatAccessStatus(room) {
+    const cached = ROOM_CHAT_ACCESS.get(room);
+    if (cached && Date.now() - cached.fetchedAt < CHAT_ACCESS_CACHE_MS) {
+        return cached;
+    }
+
+    let status = { restricted: false, allowedUsernames: [] };
+    try {
+        const response = await axios.get(`${API_URL}/home/chat-access/status/${room}`);
+        status = response.data;
+    } catch (err) {
+        console.error(`Failed to fetch chat access status for room ${room}:`, err.message);
+    }
+
+    const entry = { ...status, fetchedAt: Date.now() };
+    ROOM_CHAT_ACCESS.set(room, entry);
+    return entry;
 }
 
 function webhookMessage(from, message) {
@@ -80,7 +111,7 @@ io.on("connection", async function(socket) {
     // inform the client about the server's version number
     socket.emit("VERSION", { version: package.version });
 
-    socket.on("JOIN", (data) => {
+    socket.on("JOIN", async (data) => {
         // Never throw on a malformed or missing payload - a bad client must
         // not be able to crash the socket handler.
         if (!data || typeof data !== "object") {
@@ -217,6 +248,16 @@ io.on("connection", async function(socket) {
             });
         }
 
+        // Let everyone in the room (including the joining socket) know whether it's
+        // chat-restricted, and if so who's allowed to chat. This is awaited last, after
+        // presence and ROOM_STATE have already been settled, so a slow or failing API
+        // lookup can never delay or reorder the authoritative presence handshake.
+        const chatAccess = await getChatAccessStatus(room);
+        io.to(room).emit("CHAT_ACCESS", {
+            restricted: chatAccess.restricted,
+            allowedUsernames: chatAccess.allowedUsernames,
+        });
+
         console.log(`User '${tokenData.username}' entered room ${room}`);
         webhookMessage(
             "System",
@@ -296,7 +337,7 @@ io.on("connection", async function(socket) {
     });
 
     //handle chat messages
-    socket.on("CHAT", (chatData) => {
+    socket.on("CHAT", async (chatData) => {
         console.log("chat message...");
         if (!chatData || !chatData.msg || typeof chatData.msg !== "string")
             return;
@@ -307,6 +348,19 @@ io.on("connection", async function(socket) {
             return;
         } else {
             if (user?.room) {
+                const chatAccess = await getChatAccessStatus(user.room);
+                if (
+                    chatAccess.restricted &&
+                    !chatAccess.allowedUsernames.includes(user.username)
+                ) {
+                    console.log(`${user.username} is muted in room ${user.room}`);
+                    socket.emit("CHAT", {
+                        type: "system",
+                        msg: "You don't have chat access at this home.",
+                    });
+                    return;
+                }
+
                 io.to(user.room).emit("CHAT", {
                     username: user.username,
                     id: chatData.msg_id,

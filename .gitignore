@@ -6,3 +6,5 @@ node_modules
 .idea
 dist/
 spa/assets/object/
+spa/assets/homes-uploads/
+api/private-uploads/

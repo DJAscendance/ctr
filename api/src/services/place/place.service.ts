@@ -16,6 +16,7 @@ import {
   ClubMemberRepository,
 } from '../../repositories';
 import { Place, ObjectInstance } from '../../types/models';
+import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
 
 /** Service for dealing with blocks */
 @Service()
@@ -34,6 +35,7 @@ export class PlaceService {
     private mapLocationRepository: MapLocationRepository,
     private homeRepository: HomeRepository,
     private clubMemberRepository: ClubMemberRepository,
+    private roleAssignmentService: RoleAssignmentService,
   ) { }
 
   public async canAdmin(slug: string, placeId: number, memberId: number):
@@ -236,8 +238,6 @@ export class PlaceService {
     const ownerCode = placeRoleId.owner;
     let oldOwner = null;
     let newOwner = 0;
-    const oldDeputies = [0, 0, 0, 0, 0, 0, 0, 0];
-    const newDeputies = [0, 0, 0, 0, 0, 0, 0, 0];
     const data = await this
       .roleAssignmentRepository
       .getAccessInfoByID(placeId, ownerCode, deputyCode);
@@ -252,74 +252,28 @@ export class PlaceService {
         newOwner = result[0].id;
       }
     }
-    if (newOwner !== 0) {
-      if (oldOwner !== 0) {
-        await this.roleAssignmentRepository.removeIdFromAssignment(placeId, oldOwner, ownerCode);
-        const response: any = await this.memberRepository.getPrimaryRoleName(oldOwner);
-        if (response.length !== 0) {
-          const primaryRoleId = response[0].primary_role_id;
-          if (ownerCode === primaryRoleId) {
-            await this.memberRepository.update(oldOwner, { primary_role_id: null });
-          }
-        }
-      }
-      await this.roleAssignmentRepository.addIdToAssignment(placeId, newOwner, ownerCode);
-    } else {
-      if (oldOwner !== 0) {
-        await this.roleAssignmentRepository.removeIdFromAssignment(placeId, oldOwner, ownerCode);
-        const response: any = await this.memberRepository.getPrimaryRoleName(oldOwner);
-        if (response.length !== 0) {
-          const primaryRoleId = response[0].primary_role_id;
-          if (ownerCode === primaryRoleId) {
-            await this.memberRepository.update(oldOwner, { primary_role_id: null });
-          }
-        }
+    // 'jail' and 'cityhall' have an owner role but no deputy role, so findRoleIdsBySlug
+    // returns deputy: undefined for them. Resolving deputies for such a place is pointless
+    // work, and syncPlaceAccess skips the deputy half when no deputy role is given -- but it
+    // still performs the owner swap and the reconciliation, which those places do need.
+    const hasDeputyRole = deputyCode !== undefined && deputyCode !== null;
+    const oldDeputyIds = hasDeputyRole ? data.deputies.map(deputy => deputy.member_id) : [];
+    const newDeputyIds: number[] = [];
+    if (hasDeputyRole) {
+      for (const givenDeputy of givenDeputies) {
+        newDeputyIds.push(await this.updateDeputyId(givenDeputy));
       }
     }
-    data.deputies.forEach((deputies, index) => {
-      oldDeputies[index] = deputies.member_id;
-    });
-    for (let i = 0; i < givenDeputies.length; i++) {
-      newDeputies[i] = await this.updateDeputyId(givenDeputies[i]);
-    }
-    oldDeputies.forEach((oldDeputies, index) => {
-      if (oldDeputies !== newDeputies[index]) {
-        if (newDeputies[index] === 0) {
-          try {
-            this.roleAssignmentRepository.removeIdFromAssignment(placeId, oldDeputies, deputyCode);
-          } catch (e) {
-            console.log(e);
-          }
-          if (oldDeputies !== 0) {
-            this.memberRepository.getPrimaryRoleName(oldDeputies)
-              .then((response: any) => {
-                if (response.length !== 0) {
-                  const primaryRoleId = response[0].primary_role_id;
-                  if (primaryRoleId && deputyCode === primaryRoleId) {
-                    this.memberRepository.update(oldDeputies, { primary_role_id: null });
-                  }
-                }
-              });
-          }
-        } else {
-          try {
-            this.roleAssignmentRepository.removeIdFromAssignment(placeId, oldDeputies, deputyCode);
-            this.memberRepository.getPrimaryRoleName(oldDeputies)
-              .then((response: any) => {
-                if (response.length !== 0) {
-                  const primaryRoleId = response[0].primary_role_id;
-                  if (deputyCode === primaryRoleId) {
-                    this.memberRepository.update(oldDeputies, { primary_role_id: null });
-                  }
-                }
-              });
-            this.roleAssignmentRepository
-              .addIdToAssignment(placeId, newDeputies[index], deputyCode);
-          } catch (e) {
-            console.log(e);
-          }
-        }
-      }
+    // Owner swap, deputy set and reconciliation are one sequence whose ORDER matters, so it
+    // lives in RoleAssignmentService rather than being re-implemented per place type.
+    await this.roleAssignmentService.syncPlaceAccess({
+      placeId,
+      ownerRoleId: ownerCode,
+      deputyRoleId: deputyCode,
+      oldOwnerId: oldOwner,
+      newOwnerId: newOwner,
+      oldDeputyIds,
+      newDeputyIds,
     });
   }
 
@@ -327,7 +281,18 @@ export class PlaceService {
     return await this.placeRepository.updatePlaces(placeinfo);
   }
 
-  private async findRoleIdsBySlug(slug: string): Promise<{ owner: number, deputy: number }> {
+  /**
+   * `deputy` is optional because it genuinely is: 'jail' and 'cityhall' below have an owner
+   * role and no deputy role. The signature previously promised a number for every slug,
+   * which is how an undefined deputy role reached a role_assignment write.
+   *
+   * roleMap is awaited here because this is the single place every slug's role codes are
+   * resolved -- all four callers get the fix from this one await. Without it the whole table
+   * below is built from an unpopulated map during the startup window, so every owner and
+   * deputy code is undefined.
+   */
+  private async findRoleIdsBySlug(slug: string): Promise<{ owner: number, deputy?: number }> {
+    await this.roleRepository.awaitRoleMap();
     const roleId = {
       bank: {
         owner: this.roleRepository.roleMap.BankManager,
