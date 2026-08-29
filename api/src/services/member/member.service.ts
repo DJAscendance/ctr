@@ -20,6 +20,14 @@ import {
   VoteRepository,
   WalletRepository,
 } from '../../repositories';
+import {
+  DAILY_CC,
+  DAILY_CC_EMPLOYED,
+  DAILY_XP,
+  DAILY_XP_EMPLOYED,
+  FIRST_HOMESTEAD_XP as FIRST_HOMESTEAD_XP_AMOUNT,
+  IMMIGRATION_GRANT_CC as IMMIGRATION_GRANT_AMOUNT,
+} from '../../libs/economy';
 import { Member, ObjectInstance, Place } from '../../types/models';
 import { MemberInfoView, MemberAdminView } from '../../types/views';
 import { SessionInfo } from 'session-info.interface';
@@ -96,14 +104,28 @@ type LegacyAccessLevel = string[] | 'admin' | 'security';
 /** Service for dealing with members */
 @Service()
 export class MemberService {
-  /** Amount of cityccash a member receives each day they log in */
-  public static readonly DAILY_CC_AMOUNT = 50;
-  /** Amount of experience points a member received each day they log in */
-  public static readonly DAILY_XP_AMOUNT = 5;
-  /** Amount of cityccash an employed member receives each day they log in */
-  public static readonly DAILY_CC_EMPLOYED_AMOUNT = 100;
-  /** Amount of experience points an employed member received each day they log in */
-  public static readonly DAILY_XP_EMPLOYED_AMOUNT = 10;
+  /*
+   * Economy amounts live in libs/economy.ts, which carries the full provenance: the two
+   * config files they were read from, their hashes, and the era table explaining why these
+   * differ from the numbers on Cybertown's public help pages. They are re-exposed as static
+   * members here because that is the surface existing callers and specs already use.
+   *
+   * They are NOT declared here directly because MemberRepository needs the immigration
+   * grant too, and a repository importing this service would be a circular import.
+   */
+
+  /** CityCash a member receives each day they log in -- `m_member_daily_login`. */
+  public static readonly DAILY_CC_AMOUNT = DAILY_CC;
+  /** Experience a member receives each day they log in -- `e_member_daily_login`. */
+  public static readonly DAILY_XP_AMOUNT = DAILY_XP;
+  /** Total CityCash an employed member receives each day they log in (80 + 256). */
+  public static readonly DAILY_CC_EMPLOYED_AMOUNT = DAILY_CC_EMPLOYED;
+  /** Total experience an employed member receives each day they log in (5 + 16). */
+  public static readonly DAILY_XP_EMPLOYED_AMOUNT = DAILY_XP_EMPLOYED;
+  /** CityCash a new citizen is granted on immigrating -- `m_immigrate`. */
+  public static readonly IMMIGRATION_GRANT_CC = IMMIGRATION_GRANT_AMOUNT;
+  /** Experience for a citizen's first successful homestead -- `e_propsettle`. */
+  public static readonly FIRST_HOMESTEAD_XP = FIRST_HOMESTEAD_XP_AMOUNT;
   /** Duration in minutes until a password reset attempt expires */
   public static readonly PASSWORD_RESET_EXPIRATION_DURATION = 15;
   /** Number of times to salt member passwords */
@@ -499,6 +521,10 @@ export class MemberService {
     if (!validPassword) throw new Error('Incorrect login details.');
     if (member.status === 0) throw new Error('banned');
     await this.giveDailyCreditsForLogin(member.id);
+    // Pays the settle-a-home award to anyone owed it: a citizen whose award failed at settle
+    // time, or who homesteaded before the award existed. Costs one conditional UPDATE that
+    // matches nothing once they have been paid. Neither call can fail the login.
+    await this.reconcileFirstHomesteadXpForLogin(member.id);
     return this.encodeMemberToken(member);
   }
 
@@ -543,6 +569,44 @@ export class MemberService {
       await this.maybeGiveDailyCredits(memberId);
     } catch (error) {
       console.error(`Failed to give daily credits to member ${memberId}:`, error);
+    }
+  }
+
+  /**
+   * Pays the one-time settle-a-home award to anyone who has earned it and not yet had it.
+   *
+   * Run on every successful login. That sounds wasteful for a once-per-lifetime award, and
+   * it is one indexed conditional UPDATE that matches nothing for everyone who has already
+   * been paid -- which, after the first login following this change, is everyone who ever
+   * homesteaded. The cost is a statement; the alternative is a class of permanently lost
+   * awards.
+   *
+   * It exists because the settle path alone is not enough to make the award reliable. That
+   * path pays once, at settle time; if that write fails, the citizen has a home, a NULL
+   * marker, and no way to ever earn it again, because CTR gives nobody a second first home.
+   * Running the same reconciliation here converts that permanent loss into a delay. It also
+   * pays, with no separate mechanism, every citizen who homesteaded before the award
+   * existed at all.
+   *
+   * The repository decides whether anything is owed -- this method never asks. See
+   * MemberRepository.reconcileFirstHomesteadXp for the three conditions.
+   *
+   * FAILURE POLICY, matching giveDailyCreditsForLogin: awaited, so the XP has landed before
+   * the caller hands out a token; caught, because refusing someone their account over an
+   * optional reward is the worse outcome. Unlike the old settle-only call, swallowing the
+   * error here costs nothing permanent -- the marker stays NULL, which is exactly the
+   * condition that makes the next login try again.
+   * @param memberId id of member being logged in
+   * @returns promise resolving when the award has been applied, was not owed, or has failed
+   */
+  public async reconcileFirstHomesteadXpForLogin(memberId: number): Promise<void> {
+    try {
+      await this.memberRepository.reconcileFirstHomesteadXp(
+        memberId,
+        MemberService.FIRST_HOMESTEAD_XP,
+      );
+    } catch (error) {
+      console.error(`Failed to reconcile first-homestead XP for member ${memberId}:`, error);
     }
   }
 

@@ -1,4 +1,5 @@
 export * from './admin/admin.services';
+export * from './bank/bank.service';
 export * from './avatar/avatar.service';
 export * from './blackmarket/blackmarket.service';
 export * from './block/block.service';

@@ -29,11 +29,25 @@ describeWithDb('daily login credit (real database)', () => {
   const knex = Container.get(Db).knex;
   const service = Container.get(MemberService);
 
-  /** The amounts are economy policy and deliberately hard-coded: B1 must not move them. */
-  const UNEMPLOYED_CC = 50;
+  /*
+   * Cybertown's final deployed daily-login amounts, hard-coded here on purpose: the point
+   * of this suite is to prove what the database ends up holding, and importing the
+   * constants under test would let a wrong constant agree with itself.
+   *
+   * BANK-A1 moved these from CTR's previous 50/5/100/10 -- which was the February-2000
+   * regime -- to the values in the live server's own colonycity/config/money.cfg and
+   * exper.cfg (m_member_daily_login 80, m_job_daily_login 256, e_member_daily_login 5,
+   * e_job_daily_login 16). The employed figures are TOTALS, because giveDailyCredit pays
+   * either the employed amount or the unemployed one, never their sum.
+   *
+   * The previous note here said B1 must not move them; B1 was the lane that hardened the
+   * payout, and BANK-A1 is the lane that restored the amounts. Changing them again needs
+   * historical evidence, not a product preference.
+   */
+  const UNEMPLOYED_CC = 80;
   const UNEMPLOYED_XP = 5;
-  const EMPLOYED_CC = 100;
-  const EMPLOYED_XP = 10;
+  const EMPLOYED_CC = 336;
+  const EMPLOYED_XP = 21;
 
   /** A member who has not been credited today, and so is due the bonus. */
   async function createDueMember(overrides: Record<string, unknown> = {}) {

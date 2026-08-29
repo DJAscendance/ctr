@@ -13,6 +13,7 @@ import {
   RoleRepository,
   MemberRepository,
 } from '../../repositories';
+import { FIRST_HOMESTEAD_XP } from '../../libs/economy';
 import { Place, HomeDesign, Home } from '../../types/models';
 
 /** Maximum number of citizens who can be granted home chat access. */
@@ -123,6 +124,29 @@ export class HomeService {
       place_id: placeId,
       home_design_id: homeDesignId,
     });
+
+    // The historical settle-a-home award: `e_propsettle 50` in colonycity/config/exper.cfg.
+    //
+    // Placed here, after the home row exists, so it is paid for a home that was actually
+    // settled -- not for opening the settle form, not for a lost race on the location, and
+    // not for any later edit. It is the only XP write on the home path; updateHome,
+    // moveHome and the image routes must stay free of one.
+    //
+    // Once per member ever, enforced by the repository's conditional UPDATE rather than by
+    // "do they own a home", which would pay again every time someone moved out and back.
+    //
+    // Still logged rather than thrown, because a settled home must not be undone by a failed
+    // bonus -- but this is no longer the citizen's only chance at it. reconcileFirstHomestead
+    // Xp is a reconciliation, and MemberService runs the same one on every successful login,
+    // so a failure here leaves the marker NULL and the next login pays. That is the whole
+    // difference from the earlier revision, where this call was the only one and a transient
+    // error here lost the award permanently: CTR gives nobody a second first home, so there
+    // was never another opportunity to reach this line.
+    try {
+      await this.memberRepository.reconcileFirstHomesteadXp(memberId, FIRST_HOMESTEAD_XP);
+    } catch (error) {
+      console.error(`Failed to award first-homestead XP to member ${memberId}:`, error);
+    }
   }
 
   public async moveHome(

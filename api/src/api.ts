@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import {
   adminRoutes,
   avatarRoutes,
+  bankRoutes,
   blackmarketRoutes,
   blockRoutes,
   clubRoutes,
@@ -72,6 +73,7 @@ app.use('/api/fleamarket', fleamarketRoutes);
 app.use('/api/club', clubRoutes);
 app.use('/api/vote', voteRoutes);
 app.use('/api/news', newsRoutes);
+app.use('/api/bank', bankRoutes);
 
 app.use((request, response, next) => {
   const error = new Error('Not found');

@@ -105,6 +105,28 @@ export class PlaceRepository {
     return new Set(homes.map((home) => home.member_id));
   }
 
+  /**
+   * Maps each of the given member ids to their home's place id, omitting members who have
+   * no home.
+   *
+   * One query for two questions the Bank has to answer together: whether both parties to a
+   * transfer are homesteaded, and where each party's receipt should be filed. Those are the
+   * same question in CTR, because a member's inbox IS their home place -- `inbox.place_id`
+   * is NOT NULL, so a citizen without a home has nowhere for a receipt to go.
+   *
+   * Sibling of findMemberIdsWithHome, which answers only the first half; use that one where
+   * the place ids are not needed.
+   * @param memberIds member ids to look up
+   */
+  public async findHomePlaceIdsByMemberIds(memberIds: number[]): Promise<Map<number, number>> {
+    if (memberIds.length === 0) return new Map();
+    const homes = await this.db.place
+      .select('id', 'member_id')
+      .where({ type: 'home' })
+      .whereIn('member_id', memberIds);
+    return new Map(homes.map((home) => [home.member_id, home.id]));
+  }
+
   public async findStorageByUserID(memberId: number): Promise<any> {
     return this.db.place
       .select('place.name', 'place.id')
