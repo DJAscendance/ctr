@@ -64,6 +64,11 @@ describe('HomeService image moderation', () => {
     Container.set(MemberRepository, memberRepository);
     service = Container.get(HomeService);
 
+    // Role ids now come from the awaited snapshot rather than a readable property, so the
+    // mock has to resolve one. Empty by default: these tests are about image lifecycle, and
+    // an absent HomeChatGuest is what they previously set roleMap to `{}` to express.
+    roleRepository.awaitRoleMap.mockResolvedValue({});
+
     // runInTransaction simply runs the callback with a dummy transaction handle.
     homeRepository.runInTransaction.mockImplementation((work: any) => work({}));
 
@@ -152,8 +157,6 @@ describe('HomeService image moderation', () => {
       homeRepository.lockHome
         .mockResolvedValueOnce(homeRow('pending', 'A'))
         .mockResolvedValueOnce(homeRow('pending', 'B'));
-      roleRepository.roleMap = {} as any;
-
       await service.removeHomeImage(7);
 
       // Only revision A's private file is deleted; B's file and the public file are untouched.

@@ -36,8 +36,9 @@ export class ColonyService {
     // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
     // NUMBER, which resolves immediately and waits for nothing -- so during the startup
     // window before population these were both undefined and the role codes below
-    // silently addressed no role at all.
-    const roleMap = await this.roleRepository.awaitRoleMap();
+    // silently addressed no role at all. Both codes are named because they become query
+    // bindings, where a missing role throws out of knex instead of denying anything.
+    const roleMap = await this.roleRepository.awaitRoleMap('ColonyDeputy', 'ColonyLeader');
     const deputyCode = roleMap.ColonyDeputy;
     const ownerCode = roleMap.ColonyLeader;
     return await this.roleAssignmentRepository.getAccessInfoByUsername(
@@ -58,8 +59,9 @@ export class ColonyService {
     // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
     // NUMBER, which resolves immediately and waits for nothing -- so during the startup
     // window before population these were both undefined and the role codes below
-    // silently addressed no role at all.
-    const roleMap = await this.roleRepository.awaitRoleMap();
+    // silently addressed no role at all. Both codes are named because they become query
+    // bindings, where a missing role throws out of knex instead of denying anything.
+    const roleMap = await this.roleRepository.awaitRoleMap('ColonyDeputy', 'ColonyLeader');
     const deputyCode = roleMap.ColonyDeputy;
     const ownerCode = roleMap.ColonyLeader;
     let oldOwner = null;
@@ -114,22 +116,27 @@ export class ColonyService {
    * deliberately narrower than canAdmin (Leader, not Deputy), and that difference is the
    * point of the method.
    *
-   * The roleMap read is awaited for the same reason canAdmin no longer reads it directly --
-   * it is populated by an un-awaited constructor call, so for a window after startup every
-   * lookup is undefined and `[undefined].includes(role_id)` denies a real admin.
+   * Role ids come from the awaited snapshot for the same reason canAdmin no longer reads
+   * the repository's map directly -- it is populated by an un-awaited constructor call, so
+   * for a window after startup every lookup is undefined and `[undefined].includes(role_id)`
+   * denies a real admin. Naming the roles also makes a half-seeded snapshot detectable.
    */
   public async canManageAccess(colonyId: number, memberId: number): Promise<boolean> {
-    await this.roleRepository.awaitRoleMap();
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'ColonyRepresentative',
+      'ColonyLeader',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
 
     if (
       roleAssignments.find(assignment => {
         return (
           [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
+            roleMap.Admin,
+            roleMap.ColonyRepresentative,
           ].includes(assignment.role_id) ||
-          ([this.roleRepository.roleMap.ColonyLeader].includes(assignment.role_id) &&
+          ([roleMap.ColonyLeader].includes(assignment.role_id) &&
             assignment.place_id === colonyId)
         );
       })

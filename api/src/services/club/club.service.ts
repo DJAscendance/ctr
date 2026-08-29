@@ -22,24 +22,36 @@ export class ClubService {
   ) {}
 
   public async isOwner(placeId: number, memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'SecurityChief',
+      'DeputySecurityChief',
+      'SecurityCaptain',
+      'SecurityLieutenant',
+      'SecurityOfficer',
+      'SecuritySergeant',
+      'SecurityAdvisor',
+      'SecurityCommissioner',
+      'ClubOwner',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-    
+
     if (
       roleAssignments.find(assignment => {
         return (
           [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.SecurityChief,
-            this.roleRepository.roleMap.DeputySecurityChief,
-            this.roleRepository.roleMap.SecurityCaptain,
-            this.roleRepository.roleMap.SecurityLieutenant,
-            this.roleRepository.roleMap.SecurityOfficer,
-            this.roleRepository.roleMap.SecuritySergeant,
-            this.roleRepository.roleMap.SecurityAdvisor,
-            this.roleRepository.roleMap.SecurityCommissioner,
+            roleMap.Admin,
+            roleMap.SecurityChief,
+            roleMap.DeputySecurityChief,
+            roleMap.SecurityCaptain,
+            roleMap.SecurityLieutenant,
+            roleMap.SecurityOfficer,
+            roleMap.SecuritySergeant,
+            roleMap.SecurityAdvisor,
+            roleMap.SecurityCommissioner,
           ].includes(assignment.role_id) ||
           ([
-            this.roleRepository.roleMap.ClubOwner,
+            roleMap.ClubOwner,
           ].includes(assignment.role_id) &&
           assignment.place_id === placeId)
         );
@@ -107,8 +119,11 @@ export class ClubService {
     //create the club and capture place id
     const placeId = await this.placeRepository.create(params);
     
-    //find the role id for club owner
-    const roleId = this.roleRepository.roleMap.ClubOwner;
+    //find the role id for club owner. Awaited, not read straight off the map: this id is
+    //written into role_assignment, so an unpopulated map would insert a null owner rather
+    //than merely deny something.
+    const roleMap = await this.roleRepository.awaitRoleMap('ClubOwner');
+    const roleId = roleMap.ClubOwner;
     
     //hire the user as the owner of the club
     await this.roleAssignmentRepository.addIdToAssignment(placeId, memberId, roleId);

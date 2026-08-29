@@ -27,13 +27,18 @@ export class MallService {
   ) {}
 
   public async canAdmin(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'MallDeputy',
+      'MallManager',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     if (
       roleAssignments.find(assignment => {
         return [
-          this.roleRepository.roleMap.Admin,
-          this.roleRepository.roleMap.MallDeputy,
-          this.roleRepository.roleMap.MallManager,
+          roleMap.Admin,
+          roleMap.MallDeputy,
+          roleMap.MallManager,
         ].includes(assignment.role_id);
       })
     ) {

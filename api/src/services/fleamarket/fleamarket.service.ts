@@ -14,13 +14,18 @@ export class FleaMarketService {
   ) {}
 
   public async canAdmin(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'FleaMarketDeputy',
+      'FleaMarketChief',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     if (
       roleAssignments.find(assignment => {
         return [
-          this.roleRepository.roleMap.Admin,
-          this.roleRepository.roleMap.FleaMarketDeputy,
-          this.roleRepository.roleMap.FleaMarketChief,
+          roleMap.Admin,
+          roleMap.FleaMarketDeputy,
+          roleMap.FleaMarketChief,
         ].includes(assignment.role_id);
       })
     ) {

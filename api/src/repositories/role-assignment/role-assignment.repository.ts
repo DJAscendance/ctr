@@ -80,6 +80,20 @@ export interface RoleNameAndId {
   place: string | null;
 }
 
+/**
+ * The donor role ids that actually exist, as a `whereIn` list.
+ *
+ * A donor role is absent whenever the role map was resolved before 06-donor.roles ran --
+ * and `whereIn('role_id', [undefined, ...])` is not a query that matches nothing, it is a
+ * query knex refuses to compile ("Undefined binding(s) detected"). Filtering turns a
+ * half-seeded database into the right answer, "this member holds no donor role", instead
+ * of a 500. An empty list compiles to `where 1 = 0`, which is exactly that answer.
+ */
+function definedDonorIds(roleId: DonorRoleIds): number[] {
+  return [roleId.supporter, roleId.advocate, roleId.devotee, roleId.champion]
+    .filter((id): id is number => id !== undefined && id !== null);
+}
+
 @Service()
 export class RoleAssignmentRepository {
   constructor(private db: Db) {}
@@ -88,12 +102,7 @@ export class RoleAssignmentRepository {
     try{
       await this.db.knex('role_assignment')
         .where('member_id', member_id)
-        .whereIn('role_id', [
-          roleId.supporter,
-          roleId.advocate,
-          roleId.devotee,
-          roleId.champion,
-        ])
+        .whereIn('role_id', definedDonorIds(roleId))
         .del();
     } finally {
       if (roleId.donorLevel !== undefined) {
@@ -219,12 +228,7 @@ export class RoleAssignmentRepository {
       .from('role_assignment')
       .innerJoin('role', 'role_assignment.role_id', 'role.id')
       .where('role_assignment.member_id', memberId)
-      .whereIn('role_id', [
-        roleId.supporter,
-        roleId.advocate,
-        roleId.devotee,
-        roleId.champion,
-      ])
+      .whereIn('role_id', definedDonorIds(roleId))
       .limit(1)
       .first();
   }

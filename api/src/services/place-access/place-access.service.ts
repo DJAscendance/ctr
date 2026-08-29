@@ -62,6 +62,18 @@ export class PlaceAccessService {
   private static readonly GLOBAL_OFFICES = ['Admin', 'ColonyRepresentative'];
 
   /**
+   * Every office name this service can resolve, derived from the two tables above so it
+   * cannot drift out of step with them. Passed to awaitRoleMap so that a role map snapshot
+   * taken part-way through the seeds is recognised and re-read, rather than quietly
+   * resolving an office to undefined -- which idsFor below would then filter away, turning
+   * a half-seeded database into a clean-looking denial for a real leader.
+   */
+  private static readonly ALL_OFFICES = [...new Set([
+    ...PlaceAccessService.GLOBAL_OFFICES,
+    ...Object.values(PlaceAccessService.OFFICES_BY_TYPE).flat(),
+  ])];
+
+  /**
    * Place types that participate in the upward walk: home -> block -> hood -> colony,
    * mirroring the original's property -> block -> neighborhood -> district.
    *
@@ -133,7 +145,7 @@ export class PlaceAccessService {
 
     const [assignments, roleIds] = await Promise.all([
       this.roleAssignmentRepository.getByMemberId(memberId),
-      this.roleRepository.awaitRoleMap(),
+      this.roleRepository.awaitRoleMap(...PlaceAccessService.ALL_OFFICES),
     ]);
     if (!assignments.length) return false;
 

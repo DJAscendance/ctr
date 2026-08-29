@@ -161,7 +161,7 @@ export class AdminController {
     const canManageRole =
       accessLevel.includes('admin') ||
       (canManageSecurityRoles &&
-        this.memberService.canSecurityManageRole(roleId));
+        await this.memberService.canSecurityManageRole(roleId));
     if (canManageRole) {
       try {
         await this.adminService.fireRole(
@@ -234,7 +234,7 @@ export class AdminController {
     const canManageRole =
       accessLevel.includes('admin') ||
       (canManageSecurityRoles &&
-        this.memberService.canSecurityManageRole(roleId));
+        await this.memberService.canSecurityManageRole(roleId));
     if (canManageRole) {
       try {
         await this.adminService.hireRole(

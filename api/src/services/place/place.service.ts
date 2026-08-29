@@ -40,6 +40,17 @@ export class PlaceService {
 
   public async canAdmin(slug: string, placeId: number, memberId: number):
     Promise<boolean> {
+    // One awaited barrier for the whole method. The slug-specific branches below each need
+    // a different subset, so they are all named here rather than re-awaiting per branch.
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'PlacesChief',
+      'ClubOwner',
+      'ClubAssistant',
+      'CityCouncil',
+      'SeniorCityGuide',
+      'CityGuide',
+    );
     const placeRoleId = await this.findRoleIdsBySlug(slug);
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
 
@@ -49,11 +60,11 @@ export class PlaceService {
         roleAssignments.find(assignment => {
           return (
             [
-              this.roleRepository.roleMap.Admin,
+              roleMap.Admin,
             ].includes(assignment.role_id) ||
             ([
-              this.roleRepository.roleMap.ClubOwner,
-              this.roleRepository.roleMap.ClubAssistant,
+              roleMap.ClubOwner,
+              roleMap.ClubAssistant,
               placeRoleId.deputy,
             ].includes(assignment.role_id) &&
               assignment.place_id === placeId)
@@ -68,7 +79,7 @@ export class PlaceService {
         roleAssignments.find(assignment => {
           return (
             [
-              this.roleRepository.roleMap.CityCouncil,
+              roleMap.CityCouncil,
             ].includes(assignment.role_id)
           );
         })) {
@@ -80,8 +91,8 @@ export class PlaceService {
         roleAssignments.find(assignment => {
           return (
             [
-              this.roleRepository.roleMap.SeniorCityGuide,
-              this.roleRepository.roleMap.CityGuide,
+              roleMap.SeniorCityGuide,
+              roleMap.CityGuide,
             ].includes(assignment.role_id)
           );
         })) {
@@ -95,7 +106,7 @@ export class PlaceService {
         roleAssignments.find(assignment => {
           return (
             [
-              this.roleRepository.roleMap.Admin,
+              roleMap.Admin,
             ].includes(assignment.role_id)
           );
         })
@@ -110,8 +121,8 @@ export class PlaceService {
         roleAssignments.find(assignment => {
           return (
             [
-              this.roleRepository.roleMap.Admin,
-              this.roleRepository.roleMap.PlacesChief,
+              roleMap.Admin,
+              roleMap.PlacesChief,
             ].includes(assignment.role_id) ||
             ([
               placeRoleId.owner,
@@ -128,6 +139,7 @@ export class PlaceService {
   }
 
   public async canManageAccess(slug: string, placeId: number, memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap('Admin', 'PlacesChief');
     const placeRoleId = await this.findRoleIdsBySlug(slug);
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     //if no roles assignable, access rights is closed to all
@@ -137,8 +149,8 @@ export class PlaceService {
       roleAssignments.find(assignment => {
         return (
           [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.PlacesChief,
+            roleMap.Admin,
+            roleMap.PlacesChief,
           ].includes(assignment.role_id) ||
           ([placeRoleId.owner].includes(assignment.role_id) &&
             assignment.place_id === placeId)
@@ -205,16 +217,22 @@ export class PlaceService {
       { mapName: 'JailGuard', roleName: 'Jail Guard' },
     ];
     try {
-     for (const role of securityRoles) {
-      const roleCode = await this.roleRepository.roleMap[role.mapName];
-      const response = await this.roleAssignmentRepository.getUsernamesByRoleId(roleCode);
-      const users = [];
+      // Every mapName is named as required, so a snapshot taken between the role seeds is
+      // re-read rather than resolving a security office to undefined -- which
+      // getUsernamesByRoleId would then send to knex as an undefined binding.
+      const roleMap = await this.roleRepository.awaitRoleMap(
+        ...securityRoles.map(role => role.mapName),
+      );
+      for (const role of securityRoles) {
+        const roleCode = roleMap[role.mapName];
+        const response = await this.roleAssignmentRepository.getUsernamesByRoleId(roleCode);
+        const users = [];
 
-      response.forEach(row => {
-        users.push(row.username);
-      });
-      SecurityInfo[role.roleName] = users;
-    }
+        response.forEach(row => {
+          users.push(row.username);
+        });
+        SecurityInfo[role.roleName] = users;
+      }
     } catch (error) {
       console.error(error);
     }
@@ -287,94 +305,62 @@ export class PlaceService {
   }
 
   /**
-   * `deputy` is optional because it genuinely is: 'jail' and 'cityhall' below have an owner
-   * role and no deputy role. The signature previously promised a number for every slug,
-   * which is how an undefined deputy role reached a role_assignment write.
+   * The office roles that own and deputise each place slug, as NAMES.
    *
-   * roleMap is awaited here because this is the single place every slug's role codes are
-   * resolved -- all four callers get the fix from this one await. Without it the whole table
-   * below is built from an unpopulated map during the startup window, so every owner and
-   * deputy code is undefined.
+   * Names rather than ids because ids come from auto-increment insert order in
+   * roles_data.json, and because names are what awaitRoleMap needs in order to tell a role
+   * that does not exist from one the seeds have not inserted yet.
+   *
+   * `deputy` is absent, not undefined, where a slug genuinely has no deputy office: 'jail'
+   * and 'cityhall' have an owner role only. The old signature promised a number for every
+   * slug, which is how an undefined deputy role reached a role_assignment write.
    */
-  private async findRoleIdsBySlug(slug: string): Promise<{ owner: number, deputy?: number }> {
-    await this.roleRepository.awaitRoleMap();
-    const roleId = {
-      bank: {
-        owner: this.roleRepository.roleMap.BankManager,
-        deputy: this.roleRepository.roleMap.BankCashier,
-      },
-      clubdir: {
-        owner: this.roleRepository.roleMap.ClubsChief,
-        deputy: this.roleRepository.roleMap.ClubsDeputy,
-      },
-      employment: {
-        owner: this.roleRepository.roleMap.EmploymentChief,
-        deputy: this.roleRepository.roleMap.EmploymentDeputy,
-      },
-      eplex: {
-        owner: this.roleRepository.roleMap.ePlexChief,
-        deputy: this.roleRepository.roleMap.ePlexDeputy,
-      },
-      fleamarket: {
-        owner: this.roleRepository.roleMap.FleaMarketChief,
-        deputy: this.roleRepository.roleMap.FleaMarketDeputy,
-      },
-      mall: {
-        owner: this.roleRepository.roleMap.MallManager,
-        deputy: this.roleRepository.roleMap.MallDeputy,
-      },
-      outlands: {
-        owner: this.roleRepository.roleMap.OutlandsChief,
-        deputy: this.roleRepository.roleMap.OutlandsDeputy,
-      },
-      postoffice: {
-        owner: this.roleRepository.roleMap.PostOfficeManager,
-        deputy: this.roleRepository.roleMap.PostOfficeDeputy,
-      },
-      beach: {
-        owner: this.roleRepository.roleMap.SunsetBeachChief,
-        deputy: this.roleRepository.roleMap.SunsetBeachDeputy,
-      },
-      waterpark: {
-        owner: this.roleRepository.roleMap.WaterParkChief,
-        deputy: this.roleRepository.roleMap.WaterParkDeputy,
-      },
-      themepark: {
-        owner: this.roleRepository.roleMap.ThemeParkChief,
-        deputy: this.roleRepository.roleMap.ThemeParkDeputy,
-      },
-      theatre: {
-        owner: this.roleRepository.roleMap.TheatreChief,
-        deputy: this.roleRepository.roleMap.TheatreDeputy,
-      },
-      pool: {
-        owner: this.roleRepository.roleMap.PoolChief,
-        deputy: this.roleRepository.roleMap.PoolDeputy,
-      },
-      blackmarket: {
-        owner: this.roleRepository.roleMap.BlackMarketChief,
-        deputy: this.roleRepository.roleMap.BlackMarketDeputy,
-      },
-      jail: {
-        owner: this.roleRepository.roleMap.SecurityChief,
-      },
-      personalclub: {
-        owner: this.roleRepository.roleMap.ClubOwner,
-        deputy: this.roleRepository.roleMap.ClubAssistant,
-      },
-      newcomers: {
-        owner: this.roleRepository.roleMap.SeniorCityGuide,
-        deputy: this.roleRepository.roleMap.CityGuide,
-      },
-      funpark: {
-        owner: this.roleRepository.roleMap.FunParkChief,
-        deputy: this.roleRepository.roleMap.FunParkDeputy,
-      },
-      cityhall: {
-        owner: this.roleRepository.roleMap.CityCouncil,
-      },
+  private static readonly OFFICE_NAMES_BY_SLUG:
+    Record<string, { owner: string, deputy?: string }> = {
+      bank: { owner: 'BankManager', deputy: 'BankCashier' },
+      clubdir: { owner: 'ClubsChief', deputy: 'ClubsDeputy' },
+      employment: { owner: 'EmploymentChief', deputy: 'EmploymentDeputy' },
+      eplex: { owner: 'ePlexChief', deputy: 'ePlexDeputy' },
+      fleamarket: { owner: 'FleaMarketChief', deputy: 'FleaMarketDeputy' },
+      mall: { owner: 'MallManager', deputy: 'MallDeputy' },
+      outlands: { owner: 'OutlandsChief', deputy: 'OutlandsDeputy' },
+      postoffice: { owner: 'PostOfficeManager', deputy: 'PostOfficeDeputy' },
+      beach: { owner: 'SunsetBeachChief', deputy: 'SunsetBeachDeputy' },
+      waterpark: { owner: 'WaterParkChief', deputy: 'WaterParkDeputy' },
+      themepark: { owner: 'ThemeParkChief', deputy: 'ThemeParkDeputy' },
+      theatre: { owner: 'TheatreChief', deputy: 'TheatreDeputy' },
+      pool: { owner: 'PoolChief', deputy: 'PoolDeputy' },
+      blackmarket: { owner: 'BlackMarketChief', deputy: 'BlackMarketDeputy' },
+      jail: { owner: 'SecurityChief' },
+      personalclub: { owner: 'ClubOwner', deputy: 'ClubAssistant' },
+      newcomers: { owner: 'SeniorCityGuide', deputy: 'CityGuide' },
+      funpark: { owner: 'FunParkChief', deputy: 'FunParkDeputy' },
+      cityhall: { owner: 'CityCouncil' },
     };
-    return roleId[slug];
+
+  /**
+   * Resolves a slug's office roles to ids, or undefined for a slug with no offices at all.
+   *
+   * Undefined is a real answer here and all four callers already test for it -- `canAdmin`
+   * treats it as "no place-specific roles, global Admin only". It is in the signature so
+   * that stays visible.
+   *
+   * This is the single place every slug's role codes are resolved, so the awaited barrier
+   * here is what keeps all four callers off the unpopulated map. Only the one slug's own
+   * offices are named as required, which is both cheaper and more precise than demanding
+   * the whole table for a lookup that returns one row of it.
+   */
+  private async findRoleIdsBySlug(slug: string):
+    Promise<{ owner: number, deputy?: number } | undefined> {
+    const names = PlaceService.OFFICE_NAMES_BY_SLUG[slug];
+    if (!names) return undefined;
+
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      ...(names.deputy ? [names.owner, names.deputy] : [names.owner]),
+    );
+    return names.deputy
+      ? { owner: roleMap[names.owner], deputy: roleMap[names.deputy] }
+      : { owner: roleMap[names.owner] };
   }
 
   private async updateDeputyId(deputy: any): Promise<number> {

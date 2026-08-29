@@ -35,8 +35,10 @@ export class HoodService {
     // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
     // NUMBER, which resolves immediately and waits for nothing -- so during the startup
     // window before population these were both undefined and the role codes below
-    // silently addressed no role at all.
-    const roleMap = await this.roleRepository.awaitRoleMap();
+    // silently addressed no role at all. Both codes are named because they become query
+    // bindings, where a missing role throws out of knex instead of denying anything.
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'NeighborhoodDeputy', 'NeighborhoodLeader');
     const deputyCode = roleMap.NeighborhoodDeputy;
     const ownerCode = roleMap.NeighborhoodLeader;
     return await this.roleAssignmentRepository.getAccessInfoByUsername(
@@ -57,8 +59,10 @@ export class HoodService {
     // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
     // NUMBER, which resolves immediately and waits for nothing -- so during the startup
     // window before population these were both undefined and the role codes below
-    // silently addressed no role at all.
-    const roleMap = await this.roleRepository.awaitRoleMap();
+    // silently addressed no role at all. Both codes are named because they become query
+    // bindings, where a missing role throws out of knex instead of denying anything.
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'NeighborhoodDeputy', 'NeighborhoodLeader');
     const deputyCode = roleMap.NeighborhoodDeputy;
     const ownerCode = roleMap.NeighborhoodLeader;
     let oldOwner = null;
@@ -122,11 +126,19 @@ export class HoodService {
    * Kept on its own role set rather than delegated to placeAccessService: manage-access is
    * deliberately narrower than canAdmin (Leader, not Deputy).
    *
-   * roleMap is awaited because the constructor populates it without awaiting, so for a
-   * window after startup every lookup is undefined and a real admin is denied.
+   * Role ids come from the awaited snapshot rather than the repository's map, which is
+   * filled in by an un-awaited constructor call and so is empty for a window after startup
+   * -- and for the whole of a bootstrap that seeds roles after the API starts. Naming the
+   * roles also makes a half-seeded snapshot detectable rather than a silent denial.
    */
   public async canManageAccess(hoodId: number, memberId: number): Promise<boolean> {
-    await this.roleRepository.awaitRoleMap();
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'ColonyRepresentative',
+      'ColonyLeader',
+      'ColonyDeputy',
+      'NeighborhoodLeader',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     const colony = await this.getColony(hoodId);
 
@@ -134,15 +146,15 @@ export class HoodService {
       roleAssignments.find(assignment => {
         return (
           [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
+            roleMap.Admin,
+            roleMap.ColonyRepresentative,
           ].includes(assignment.role_id) ||
           ([
-            this.roleRepository.roleMap.ColonyLeader,
-            this.roleRepository.roleMap.ColonyDeputy,
+            roleMap.ColonyLeader,
+            roleMap.ColonyDeputy,
           ].includes(assignment.role_id) &&
             assignment.place_id === colony.id) ||
-          ([this.roleRepository.roleMap.NeighborhoodLeader].includes(assignment.role_id) &&
+          ([roleMap.NeighborhoodLeader].includes(assignment.role_id) &&
             assignment.place_id === hoodId)
         );
       })

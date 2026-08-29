@@ -33,6 +33,10 @@ set -euo pipefail
 # The last migration before 20260309032638_add_voting_tables. Everything through this one
 # can run against an empty database; the voting migration cannot.
 PIVOT_MIGRATION=20250213180535_add_virtual_pet_table.ts
+# The first migration that CANNOT run before the places seed. The pivot is defined by the
+# pair -- pivot applied, this one not yet -- rather than by a migration count, so inserting
+# or reordering earlier migrations cannot silently move the seed point.
+VOTING_MIGRATION=20260309032638_add_voting_tables.ts
 PLACES_SEED=02-places.seed.ts
 
 cd /usr/src/app
@@ -53,17 +57,45 @@ node ./db-helpers.js create
 echo "== checking the database is empty =="
 node ./db-helpers.js assert-empty
 
+# Asks the migrations ledger whether one migration has run. Echoes yes/no and returns the
+# helper's exit code; anything other than applied/not-applied is fatal on the spot, because
+# a loop that cannot tell "not yet" from "cannot connect" will happily spin 200 times and
+# then blame the wrong thing.
+applied() {
+  local status=0
+  node ./db-helpers.js migration-applied "$1" || status=$?
+  case "$status" in
+    0|1) return "$status" ;;
+    *) echo "bootstrap-db: FATAL cannot read the migrations ledger (exit ${status})" >&2
+       exit 1 ;;
+  esac
+}
+
 echo "== migrating up to ${PIVOT_MIGRATION} =="
 # `migrate:up` runs one pending migration at a time, so the pivot is a position in the
 # history rather than a count -- adding migrations later cannot silently move it.
+#
+# The check is the ledger, NOT `knex migrate:list`. migrate:list prints the completed and
+# the pending migrations, so grepping it for the pivot filename matched on the very first
+# iteration and this loop exited after migration #1 -- the places seed then ran ~31
+# migrations earlier than the comments here claim. It only ever appeared to work.
 for _ in $(seq 1 200); do
   knex migrate:up >/dev/null
-  if knex migrate:list 2>/dev/null | grep -q "$PIVOT_MIGRATION"; then
+  if applied "$PIVOT_MIGRATION"; then
     break
   fi
 done
-knex migrate:list | grep -q "$PIVOT_MIGRATION" || {
+
+# Assert the position we actually need, not merely that the loop ended. Both halves matter:
+# the places seed needs the pivot's schema, and it must land BEFORE the voting migration,
+# which inserts a poll referencing place 1.
+applied "$PIVOT_MIGRATION" || {
   echo "bootstrap-db: FATAL never reached ${PIVOT_MIGRATION}" >&2; exit 1; }
+if applied "$VOTING_MIGRATION"; then
+  echo "bootstrap-db: FATAL ${VOTING_MIGRATION} already ran; the places seed is too late" >&2
+  exit 1
+fi
+echo "== pivot proof: ${PIVOT_MIGRATION}=applied ${VOTING_MIGRATION}=not-applied =="
 
 echo "== seeding places so the voting migration has place 1 =="
 knex seed:run --specific="$PLACES_SEED"

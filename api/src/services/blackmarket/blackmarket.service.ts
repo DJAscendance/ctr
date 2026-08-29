@@ -18,13 +18,18 @@ export class BlackMarketService {
   ) {}
 
   public async canAdmin(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'BlackMarketDeputy',
+      'BlackMarketChief',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     if (
       roleAssignments.find(assignment => {
         return [
-          this.roleRepository.roleMap.Admin,
-          this.roleRepository.roleMap.BlackMarketDeputy,
-          this.roleRepository.roleMap.BlackMarketChief,
+          roleMap.Admin,
+          roleMap.BlackMarketDeputy,
+          roleMap.BlackMarketChief,
         ].includes(assignment.role_id);
       })
     ) {

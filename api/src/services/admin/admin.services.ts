@@ -45,12 +45,24 @@ export class AdminService {
   }
   
   public async addDonor(member_id: number, donor: string): Promise<void> {
+    // awaitRoleMap, not a bare roleMap read -- same reason as MemberService.getDonorLevel:
+    // these ids become query bindings, so an unpopulated map throws out of knex instead of
+    // denying anything. `donor` is the caller's chosen level and is required too, so an
+    // early snapshot that missed the donor seed is re-read rather than silently granting
+    // nothing.
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Supporter',
+      'Advocate',
+      'Devotee',
+      'Champion',
+      donor,
+    );
     const donorId = {
-      supporter: await this.roleRepository.roleMap.Supporter,
-      advocate: await this.roleRepository.roleMap.Advocate,
-      devotee: await this.roleRepository.roleMap.Devotee,
-      champion: await this.roleRepository.roleMap.Champion,
-      donorLevel: await this.roleRepository.roleMap[donor],
+      supporter: roleMap.Supporter,
+      advocate: roleMap.Advocate,
+      devotee: roleMap.Devotee,
+      champion: roleMap.Champion,
+      donorLevel: roleMap[donor],
     };
     try {
       await this.roleAssignmentRepository.addDonor(member_id, donorId);
@@ -79,11 +91,22 @@ export class AdminService {
   }
   
   public async getDonor(member_id: number): Promise<RoleNameRow | undefined> {
+    // Same awaited donor barrier as addDonor above. `await someObject.property` awaited a
+    // NUMBER, which resolves immediately and waits for nothing, so on a freshly bootstrapped
+    // database all four of these were undefined and getDonor's `whereIn` reached knex as
+    // `whereIn('role_id', [undefined, undefined, undefined, undefined])` -- a thrown
+    // "Undefined binding(s) detected", not a denial.
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Supporter',
+      'Advocate',
+      'Devotee',
+      'Champion',
+    );
     const donorId = {
-      supporter: await this.roleRepository.roleMap.Supporter,
-      advocate: await this.roleRepository.roleMap.Advocate,
-      devotee: await this.roleRepository.roleMap.Devotee,
-      champion: await this.roleRepository.roleMap.Champion,
+      supporter: roleMap.Supporter,
+      advocate: roleMap.Advocate,
+      devotee: roleMap.Devotee,
+      champion: roleMap.Champion,
     };
     try {
       return await this.roleAssignmentRepository.getDonor(member_id, donorId);

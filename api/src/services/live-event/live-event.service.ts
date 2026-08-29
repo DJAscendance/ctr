@@ -37,13 +37,19 @@ export class LiveEventService {
   }
 
   public async canManage(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'CityMayor',
+      'PlacesChief',
+      'ColonyRepresentative',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
 
     const allowedRoles = [
-      this.roleRepository.roleMap.Admin,
-      this.roleRepository.roleMap.CityMayor,
-      this.roleRepository.roleMap.PlacesChief,
-      this.roleRepository.roleMap.ColonyRepresentative,
+      roleMap.Admin,
+      roleMap.CityMayor,
+      roleMap.PlacesChief,
+      roleMap.ColonyRepresentative,
     ];
 
     return !!roleAssignments.find(

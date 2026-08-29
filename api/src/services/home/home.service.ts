@@ -291,7 +291,8 @@ export class HomeService {
     }
 
     // clear the chat access guest list (unrestricted again)
-    const guestRoleId = this.roleRepository.roleMap.HomeChatGuest;
+    const roleMap = await this.roleRepository.awaitRoleMap('HomeChatGuest');
+    const guestRoleId = roleMap.HomeChatGuest;
     await this.roleAssignmentRepository.removeAllForPlaceAndRole(place.id, guestRoleId);
   }
 
@@ -611,7 +612,8 @@ export class HomeService {
       throw new Error('You don\'t have a home yet.');
     }
 
-    const guestRoleId = this.roleRepository.roleMap.HomeChatGuest;
+    const roleMap = await this.roleRepository.awaitRoleMap('HomeChatGuest');
+    const guestRoleId = roleMap.HomeChatGuest;
     const guests = await this.roleAssignmentRepository.getUsernamesByRoleAndPlace(
       home.id,
       guestRoleId,
@@ -633,7 +635,8 @@ export class HomeService {
       throw new Error('You don\'t have a home yet.');
     }
 
-    const guestRoleId = this.roleRepository.roleMap.HomeChatGuest;
+    const roleMap = await this.roleRepository.awaitRoleMap('HomeChatGuest');
+    const guestRoleId = roleMap.HomeChatGuest;
 
     await this.roleAssignmentRepository.removeAllForPlaceAndRole(home.id, guestRoleId);
 
@@ -668,7 +671,8 @@ export class HomeService {
       return { restricted: false, allowedUsernames: [] };
     }
 
-    const guestRoleId = this.roleRepository.roleMap.HomeChatGuest;
+    const roleMap = await this.roleRepository.awaitRoleMap('HomeChatGuest');
+    const guestRoleId = roleMap.HomeChatGuest;
     const guests = await this.roleAssignmentRepository.getUsernamesByRoleAndPlace(
       place.id,
       guestRoleId,

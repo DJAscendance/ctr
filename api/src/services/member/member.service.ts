@@ -158,79 +158,128 @@ export class MemberService {
   ) { }
 
   public async canAdmin(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'SecurityCaptain',
+      'SecurityChief',
+      'DeputySecurityChief',
+      'SecurityLieutenant',
+      'SecurityOfficer',
+      'SecuritySergeant',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     // Extracted admin roles into a constant for easy management
     const ADMIN_ROLES = [
-      this.roleRepository.roleMap.Admin,
-      this.roleRepository.roleMap.SecurityCaptain,
-      this.roleRepository.roleMap.SecurityChief,
-      this.roleRepository.roleMap.DeputySecurityChief,
-      this.roleRepository.roleMap.SecurityLieutenant,
-      this.roleRepository.roleMap.SecurityOfficer,
-      this.roleRepository.roleMap.SecuritySergeant,
+      roleMap.Admin,
+      roleMap.SecurityCaptain,
+      roleMap.SecurityChief,
+      roleMap.DeputySecurityChief,
+      roleMap.SecurityLieutenant,
+      roleMap.SecurityOfficer,
+      roleMap.SecuritySergeant,
     ];
     return !!roleAssignments.find(assignment => ADMIN_ROLES.includes(assignment.role_id));
   }
 
   public async canManageSecurityRoles(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'SecurityChief',
+      'DeputySecurityChief',
+    );
     const roleAssignments =
       await this.roleAssignmentRepository.getByMemberId(memberId);
     const SECURITY_ROLE_MANAGERS = [
-      this.roleRepository.roleMap.SecurityChief,
-      this.roleRepository.roleMap.DeputySecurityChief,
+      roleMap.SecurityChief,
+      roleMap.DeputySecurityChief,
     ];
-    return !!roleAssignments.find(assignment => SECURITY_ROLE_MANAGERS.includes(assignment.role_id),);
+    return !!roleAssignments.find(
+      assignment => SECURITY_ROLE_MANAGERS.includes(assignment.role_id),
+    );
   }
 
-  public canSecurityManageRole(roleId: number): boolean {
+  /**
+   * Async because role ids are only obtainable through the awaited role map. It used to be
+   * synchronous, which is precisely how it came to compare `roleId` against a list of
+   * `undefined`s during the startup window and refuse a Security Chief the right to manage
+   * their own officers.
+   */
+  public async canSecurityManageRole(roleId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'SecurityCaptain',
+      'SecurityLieutenant',
+      'SecuritySergeant',
+      'SecurityOfficer',
+      'SecurityAdvisor',
+      'JailGuard',
+    );
     const SECURITY_ROLES = [
-      this.roleRepository.roleMap.SecurityCaptain,
-      this.roleRepository.roleMap.SecurityLieutenant,
-      this.roleRepository.roleMap.SecuritySergeant,
-      this.roleRepository.roleMap.SecurityOfficer,
-      this.roleRepository.roleMap.SecurityAdvisor,
-      this.roleRepository.roleMap.JailGuard,
+      roleMap.SecurityCaptain,
+      roleMap.SecurityLieutenant,
+      roleMap.SecuritySergeant,
+      roleMap.SecurityOfficer,
+      roleMap.SecurityAdvisor,
+      roleMap.JailGuard,
     ];
     return SECURITY_ROLES.includes(roleId);
   }
 
   public async canLeader(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'ColonyLeader',
+      'ColonyRepresentative',
+      'PlacesChief',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     // Extracted admin roles into a constant for easy management
     const LEADER_ROLES = [
-      this.roleRepository.roleMap.Admin,
-      this.roleRepository.roleMap.ColonyLeader,
-      this.roleRepository.roleMap.ColonyRepresentative,
-      this.roleRepository.roleMap.PlacesChief,
+      roleMap.Admin,
+      roleMap.ColonyLeader,
+      roleMap.ColonyRepresentative,
+      roleMap.PlacesChief,
     ];
     return !!roleAssignments.find(assignment => LEADER_ROLES.includes(assignment.role_id));
   }
 
   public async canManageLiveEvent(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'CityMayor',
+      'PlacesChief',
+      'ColonyRepresentative',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
 
     const LIVE_EVENT_ROLES = [
-      this.roleRepository.roleMap.Admin,
-      this.roleRepository.roleMap.CityMayor,
-      this.roleRepository.roleMap.PlacesChief,
-      this.roleRepository.roleMap.ColonyRepresentative,
+      roleMap.Admin,
+      roleMap.CityMayor,
+      roleMap.PlacesChief,
+      roleMap.ColonyRepresentative,
     ];
 
     return !!roleAssignments.find(
-    assignment => LIVE_EVENT_ROLES.includes(assignment.role_id),
+      assignment => LIVE_EVENT_ROLES.includes(assignment.role_id),
     );
   }
 
   public async canStaff(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'ColonyLeader',
+      'ColonyDeputy',
+      'NeighborhoodLeader',
+      'NeighborhoodDeputy',
+      'BlockLeader',
+      'BlockDeputy',
+    );
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     // Extracted staff roles into a constant for easy management
     const STAFF_ROLES = [
-      this.roleRepository.roleMap.ColonyLeader,
-      this.roleRepository.roleMap.ColonyDeputy,
-      this.roleRepository.roleMap.NeighborhoodLeader,
-      this.roleRepository.roleMap.NeighborhoodDeputy,
-      this.roleRepository.roleMap.BlockLeader,
-      this.roleRepository.roleMap.BlockDeputy,
+      roleMap.ColonyLeader,
+      roleMap.ColonyDeputy,
+      roleMap.NeighborhoodLeader,
+      roleMap.NeighborhoodDeputy,
+      roleMap.BlockLeader,
+      roleMap.BlockDeputy,
     ];
     return !!roleAssignments.find(assignment => STAFF_ROLES.includes(assignment.role_id));
   }
@@ -245,12 +294,13 @@ export class MemberService {
   }
 
   public async getAccessLevel(memberId: number): Promise<LegacyAccessLevel> {
+    const roleMap = await this.roleRepository.awaitRoleMap('Admin');
     const security = await this.canAdmin(memberId);
     const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
     const leader = await this.canLeader(memberId);
     const liveEvent = await this.canManageLiveEvent(memberId);
     const admin = !!roleAssignments.find(
-      assignment => assignment.role_id === this.roleRepository.roleMap.Admin,
+      assignment => assignment.role_id === roleMap.Admin,
     );
     const accessLevel = [];
     if (admin) {
@@ -263,25 +313,30 @@ export class MemberService {
       accessLevel.push('leader');
     }
     if (liveEvent) {
-        accessLevel.push('live-event');
+      accessLevel.push('live-event');
     }
     return accessLevel;
   }
 
-    public async canEditNews(memberId: number): Promise<boolean> {
-      const roleAssignments = 
-        await this.roleAssignmentRepository.getByMemberId(memberId);
-    
-      const newsRoles = [
-        this.roleRepository.roleMap.Admin,
-        this.roleRepository.roleMap.CityMayor,
-        this.roleRepository.roleMap.CVNEditor,
-   ];
+  public async canEditNews(memberId: number): Promise<boolean> {
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Admin',
+      'CityMayor',
+      'CVNEditor',
+    );
+    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
+
+    const newsRoles = [
+      roleMap.Admin,
+      roleMap.CityMayor,
+      roleMap.CVNEditor,
+    ];
 
     return !!roleAssignments.find(
       assignment => newsRoles.includes(assignment.role_id),
-    );  
-}
+    );
+  }
+
   /**
    * Creates a new member with the given email, username, and password. If successful, distributes
    * daily login bonuses, and returns an encoded member token.
@@ -351,11 +406,24 @@ export class MemberService {
   }
 
   public async getDonorLevel(memberId: number): Promise<RoleNameRow | undefined> {
+    // awaitRoleMap, not a bare roleMap read. These four ids go straight into getDonor's
+    // `whereIn`, so an unpopulated map does not merely deny something -- it builds
+    // `whereIn('role_id', [undefined, undefined, undefined, undefined])` and knex refuses
+    // to compile it ("Undefined binding(s) detected"). That is the error that made
+    // settling a home fail on the freshly bootstrapped beta until the API was restarted:
+    // the controller calls this before it creates the home. Naming the roles also lets the
+    // repository notice a snapshot taken before the donor seed ran.
+    const roleMap = await this.roleRepository.awaitRoleMap(
+      'Supporter',
+      'Advocate',
+      'Devotee',
+      'Champion',
+    );
     const donorId = {
-      supporter: await this.roleRepository.roleMap.Supporter,
-      advocate: await this.roleRepository.roleMap.Advocate,
-      devotee: await this.roleRepository.roleMap.Devotee,
-      champion: await this.roleRepository.roleMap.Champion,
+      supporter: roleMap.Supporter,
+      advocate: roleMap.Advocate,
+      devotee: roleMap.Devotee,
+      champion: roleMap.Champion,
     };
     return await this.roleAssignmentRepository.getDonor(memberId, donorId);
   }
