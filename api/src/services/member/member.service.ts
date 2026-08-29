@@ -11,13 +11,14 @@ import {
   hasReceivedDailyCreditToday,
   MapLocationRepository,
   MemberRepository,
+  ObjectInstanceRepository,
   PlaceRepository,
   RoleAssignmentRepository,
+  RoleNameRow,
   RoleRepository,
   TransactionRepository,
-  WalletRepository,
-  ObjectInstanceRepository,
   VoteRepository,
+  WalletRepository,
 } from '../../repositories';
 import { Member, ObjectInstance, Place } from '../../types/models';
 import { MemberInfoView, MemberAdminView } from '../../types/views';
@@ -271,7 +272,7 @@ export class MemberService {
     return this.memberRepository.findByPasswordResetToken(resetToken);
   }
 
-  public async getDonorLevel(memberId: number): Promise<string> {
+  public async getDonorLevel(memberId: number): Promise<RoleNameRow | undefined> {
     const donorId = {
       supporter: await this.roleRepository.roleMap.Supporter,
       advocate: await this.roleRepository.roleMap.Advocate,
@@ -617,12 +618,16 @@ export class MemberService {
     await this.transactionRepository.createHomeRefundTransaction(member.wallet_id, amount);
   }
 
-  public async getMemberId(username: string): Promise<number> {
+  /**
+   * Rows, not an id, despite the name. Every caller already reads `[0].id`; the
+   * previous `Promise<number>` annotation was never what this returned.
+   */
+  public async getMemberId(username: string): Promise<Pick<Member, 'id'>[]> {
     const userId = await this.memberRepository.findIdByUsername(username);
     return userId;
   }
 
-  public async check3d(username: string): Promise<void> {
+  public async check3d(username: string): Promise<Pick<Member, 'is_3d'>[]> {
     const user = await this.memberRepository.check3d(username);
     return user;
   }

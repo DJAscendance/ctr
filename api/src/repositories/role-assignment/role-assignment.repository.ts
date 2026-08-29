@@ -4,15 +4,6 @@ import { Db } from '../../db/db.class';
 import { RoleAssignment } from '../../types/models';
 import { wherePayingRole } from '../credit/credit.repository';
 
-/** The donor role ids, and which of them the member should end up holding. */
-interface DonorRoleIds {
-  supporter: number;
-  advocate: number;
-  devotee: number;
-  champion: number;
-  donorLevel?: number;
-}
-
 /** A member id, as the access-rights queries select it. */
 interface MemberIdRow {
   member_id: number;
@@ -42,6 +33,53 @@ export interface AssignmentCount {
 }
 
 /** Repository for fetching/interacting with role assignment data in the database. */
+/**
+ * The four donor role ids, plus the level being granted.
+ *
+ * `AdminService.addDonor` resolves these from the role map before calling, so
+ * the repository is handed ids rather than names.
+ */
+export interface DonorRoleIds {
+  supporter: number;
+  advocate: number;
+  devotee: number;
+  champion: number;
+  donorLevel?: number;
+}
+
+/** A username from a place's role assignments. */
+interface PlaceUsernameRow {
+  username: string;
+}
+
+/** A member id from a place's role assignments. */
+interface PlaceMemberRow {
+  member_id: number;
+}
+
+/** A member due their weekly role pay, with the role that pays best. */
+export interface RoleCreditRow {
+  member_id: number;
+  role_id: number;
+  wallet_id: number;
+  xp: number;
+  income_cc: number;
+  income_xp: number;
+}
+
+/** The one column `getDonor` selects: a role's name, or no row at all. */
+export interface RoleNameRow {
+  name: string;
+}
+
+/** A role assignment flattened for display: the role, and where it applies. */
+export interface RoleNameAndId {
+  id: number;
+  place_id: number | null;
+  name: string;
+  place: string | null;
+}
+
 @Service()
 export class RoleAssignmentRepository {
   constructor(private db: Db) {}
@@ -175,7 +213,7 @@ export class RoleAssignmentRepository {
       .orderBy('role_assignment.id', 'desc');
   }
   
-  public async getDonor(memberId: number, roleId: DonorRoleIds): Promise<string> {
+  public async getDonor(memberId: number, roleId: DonorRoleIds): Promise<RoleNameRow | undefined> {
     return this.db.knex
       .select('role.name')
       .from('role_assignment')
