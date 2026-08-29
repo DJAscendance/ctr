@@ -1,6 +1,4 @@
 import { Service } from 'typedi';
-import { CountRow } from '../../repositories/row.types';
-import { RoleCreditRow } from '../../repositories/role-assignment/role-assignment.repository';
 
 import { RoleAssignment } from '../../types/models';
 import {
