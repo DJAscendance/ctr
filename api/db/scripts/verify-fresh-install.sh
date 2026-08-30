@@ -185,6 +185,27 @@ mysql_exec "$DB_NAME" -e "
   WHERE title = 'Mayor Election 2026';"
 expect_seed_fails "poll at the wrong place" "Refusing to move an existing poll"
 
+# vote_list.title carries no unique index, so nothing at the schema level stops a second
+# election from appearing -- a hand-repaired database or two seed runs racing each other
+# can both leave one behind. The seed has to refuse rather than guess which one is real.
+reset_votes
+mysql_exec "$DB_NAME" -e "
+  INSERT INTO vote_list (title, place_id, creator_member_id, description, expires_at)
+  SELECT title, place_id, creator_member_id, description, expires_at
+  FROM vote_list WHERE title = 'Mayor Election 2026' ORDER BY id LIMIT 1;"
+[ "$(polls)" = "2" ] || fail "could not stage the duplicate-poll case"
+BEFORE_DUP="$(mysql_exec "$DB_NAME" -e "
+  SELECT GROUP_CONCAT(CONCAT_WS(':', id, place_id) ORDER BY id) FROM vote_list
+  WHERE title = 'Mayor Election 2026';")"
+expect_seed_fails "two polls with the same title" "expected at most one"
+# Refusing is only half of it -- the seed must not have edited either poll on its way out.
+[ "$(polls)" = "2" ] || fail "the duplicate-poll case changed how many polls exist"
+AFTER_DUP="$(mysql_exec "$DB_NAME" -e "
+  SELECT GROUP_CONCAT(CONCAT_WS(':', id, place_id) ORDER BY id) FROM vote_list
+  WHERE title = 'Mayor Election 2026';")"
+[ "$BEFORE_DUP" = "$AFTER_DUP" ] || fail "the seed modified a poll it had refused to touch"
+[ "$(options)" = "3" ] || fail "the duplicate-poll case changed the option rows"
+
 reset_votes
 echo "    restored -- polls: $(polls), options: $(options)"
 [ "$(polls)" = "1" ] || fail "could not restore the canonical poll"

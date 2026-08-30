@@ -102,13 +102,16 @@ async function assertExistingPollIsUsable(
   const missing = CANDIDATES.filter(candidate => !found.includes(candidate));
 
   // Length is checked as well as membership, so a duplicated candidate row is caught too.
+  // That is why the surplus is reported as "unexpected option rows" rather than as
+  // unrecognised values: a second copy of a candidate we do expect still counts here.
   if (missing.length > 0 || found.length !== CANDIDATES.length) {
     const unexpected = found.length - (CANDIDATES.length - missing.length);
     throw new Error(
       `12-votes.seed: '${VOTE_TITLE}' (vote_list id ${poll.id}) already exists but its ` +
       `options are wrong: expected ${CANDIDATES.length}, found ${found.length}` +
       `${missing.length > 0 ? `, missing ${missing.join(', ')}` : ''}` +
-      `${unexpected > 0 ? `, ${unexpected} unrecognised` : ''}. ` +
+      `${unexpected > 0 ? `, ${unexpected} unexpected ` +
+        `option row${unexpected === 1 ? '' : 's'}` : ''}. ` +
       'Repair the vote_options rows by hand -- this seed will not rewrite existing ' +
       'voting data.',
     );
