@@ -80,8 +80,11 @@ if ! in_node "npm run db:init" >"$INIT_LOG" 2>&1; then
 fi
 
 # Every migration on disk must be recorded, and every seed file must have run.
-MIGRATIONS_ON_DISK="$(find "$REPO_ROOT/api/db/migrations" -maxdepth 1 -name '*.ts' | wc -l)"
-SEEDS_ON_DISK="$(find "$REPO_ROOT/api/db/seed" -maxdepth 1 -name '*.seed.ts' | wc -l)"
+# The counts are compared as strings against MySQL output, and `wc -l` pads its result with
+# leading blanks on some platforms, so strip everything that is not a digit first.
+count_files() { find "$1" -maxdepth 1 -name "$2" | wc -l | tr -cd '0-9'; }
+MIGRATIONS_ON_DISK="$(count_files "$REPO_ROOT/api/db/migrations" '*.ts')"
+SEEDS_ON_DISK="$(count_files "$REPO_ROOT/api/db/seed" '*.seed.ts')"
 MIGRATIONS_RECORDED="$(mysql_exec "$DB_NAME" -e "SELECT COUNT(*) FROM migrations")"
 SEEDS_RAN="$(grep -oE 'Ran [0-9]+ seed files' "$INIT_LOG" | grep -oE '[0-9]+' | tail -1)"
 
@@ -124,7 +127,12 @@ run_votes_seed() {
 }
 
 polls()   { mysql_exec "$DB_NAME" -e "SELECT COUNT(*) FROM vote_list WHERE title = 'Mayor Election 2026'"; }
-options() { mysql_exec "$DB_NAME" -e "SELECT COUNT(*) FROM vote_options"; }
+# Scoped to the Mayor Election by title rather than counting the whole table: an unrelated
+# poll seeded later must not make these assertions fail. The id is looked up, never assumed.
+options() { mysql_exec "$DB_NAME" -e "
+  SELECT COUNT(*) FROM vote_options o
+  JOIN vote_list v ON v.id = o.vote_id
+  WHERE v.title = 'Mayor Election 2026'"; }
 
 # Back to the canonical one-poll/three-option state, whatever the previous case did to it.
 reset_votes() {
