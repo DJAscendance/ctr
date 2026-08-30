@@ -10,6 +10,7 @@ jest.mock('../../db', () => {
   return { db: mockDb, knex: mockDb.knex };
 });
 
+import path from 'path';
 import { Container } from 'typedi';
 import { createSpyObj } from 'jest-createspyobj';
 
@@ -24,9 +25,18 @@ import {
   RoleAssignmentRepository,
   RoleRepository,
 } from '../../repositories';
-import { Place } from '../../types/models';
+import { MapLocation, Place } from '../../types/models';
 
 describe('HoodService - map background selection', () => {
+  /*
+   * `resolveOptions` is delegated to a real MapBackgroundService reading the
+   * repository's own shipped assets, so the stale-index fallback below is
+   * proven against the real pools rather than against a stub that could agree
+   * with a wrong implementation.
+   */
+  const repoAssetsDir = path.resolve(__dirname, '../../../../spa/assets');
+  let originalAssetsDir: string | undefined;
+
   const HOOD_ID = 60;
   const COLONY_ID = 7;
 
@@ -58,13 +68,16 @@ describe('HoodService - map background selection', () => {
     mapLocationRepository.findPlaceIdMapLocation.mockResolvedValue({
       place_id: HOOD_ID,
       parent_place_id: COLONY_ID,
-    } as any);
-    mapBackgroundService.listOptions.mockResolvedValue([
-      { index: 0, url: '/assets/img/map_themes/cyberhood/hood/Pimg2D000.gif' },
-    ]);
+    } as MapLocation);
     mapBackgroundService.isValidIndex.mockResolvedValue(true);
-    mapBackgroundService.getEffectiveUrl
-      .mockResolvedValue('/assets/img/map_themes/cyberhood/hood/Pimg2D000.gif');
+
+    originalAssetsDir = process.env.ASSETS_DIR;
+    process.env.ASSETS_DIR = repoAssetsDir;
+    const realMapBackgroundService = new MapBackgroundService();
+    mapBackgroundService.listOptions
+      .mockImplementation((theme, level) => realMapBackgroundService.listOptions(theme, level));
+    mapBackgroundService.resolveOptions.mockImplementation((theme, level, selectedIndex) =>
+      realMapBackgroundService.resolveOptions(theme, level, selectedIndex));
 
     Container.reset();
     Container.set(ColonyRepository, colonyRepository);
@@ -78,11 +91,20 @@ describe('HoodService - map background selection', () => {
     service = Container.get(HoodService);
   });
 
+  afterEach(() => {
+    if (originalAssetsDir === undefined) {
+      delete process.env.ASSETS_DIR;
+    } else {
+      process.env.ASSETS_DIR = originalAssetsDir;
+    }
+  });
+
   describe('getMapBackgroundOptions', () => {
     it('resolves the theme from the owning colony and returns options', async () => {
       const result = await service.getMapBackgroundOptions(HOOD_ID);
 
-      expect(mapBackgroundService.listOptions).toHaveBeenCalledWith('cyberhood', 'hood');
+      expect(mapBackgroundService.resolveOptions)
+        .toHaveBeenCalledWith('cyberhood', 'hood', null);
       expect(result.options).toEqual([
         { index: 0, url: '/assets/img/map_themes/cyberhood/hood/Pimg2D000.gif' },
       ]);
@@ -92,14 +114,32 @@ describe('HoodService - map background selection', () => {
       colonyRepository.find
         .mockResolvedValue({ id: COLONY_ID, type: 'colony', slug: 'campus' } as Place);
       hoodRepository.find.mockResolvedValue({ ...fakeHood, map_background_index: 26 } as Place);
-      mapBackgroundService.getEffectiveUrl
-        .mockResolvedValue('/assets/img/map_themes/grass/hood/Pimg2D026.gif');
 
       const result = await service.getMapBackgroundOptions(HOOD_ID);
 
-      expect(mapBackgroundService.listOptions).toHaveBeenCalledWith('grass', 'hood');
+      expect(mapBackgroundService.resolveOptions).toHaveBeenCalledWith('grass', 'hood', 26);
       expect(result.selectedIndex).toBe(26);
+      expect(result.effectiveIndex).toBe(26);
       expect(result.effectiveUrl).toBe('/assets/img/map_themes/grass/hood/Pimg2D026.gif');
+    });
+
+    it('falls back to the default index when the stored index left the pool', async () => {
+      // cyberhood/hood ships only index 0, so a stored 26 can no longer render.
+      hoodRepository.find.mockResolvedValue({ ...fakeHood, map_background_index: 26 } as Place);
+
+      const result = await service.getMapBackgroundOptions(HOOD_ID);
+
+      expect(result.selectedIndex).toBe(26);
+      expect(result.effectiveIndex).toBe(0);
+      expect(result.effectiveUrl).toBe('/assets/img/map_themes/cyberhood/hood/Pimg2D000.gif');
+    });
+
+    it('does not write the stale index back to the database while reading', async () => {
+      hoodRepository.find.mockResolvedValue({ ...fakeHood, map_background_index: 26 } as Place);
+
+      await service.getMapBackgroundOptions(HOOD_ID);
+
+      expect(placeRepository.updateMapBackgroundIndex).not.toHaveBeenCalled();
     });
 
     it('returns null when the hood does not exist', async () => {

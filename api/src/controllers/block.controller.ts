@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Container } from 'typedi';
 
 import { MemberService, BlockService, HoodService } from '../services';
-import { INVALID_MAP_BACKGROUND_INDEX, parseMapBackgroundIndex } from '../libs';
+import { INVALID_MAP_BACKGROUND_INDEX, parseMapBackgroundIndex, parseRouteId } from '../libs';
 
 export class BlockController {
   constructor(
@@ -148,8 +148,8 @@ export class BlockController {
    * theme offers. Read-only, so no authorization is required.
    */
   public async getMapBackgroundOptions(request: Request, response: Response): Promise<void> {
-    const blockId = Number.parseInt(request.params.id, 10);
-    if (!Number.isInteger(blockId)) {
+    const blockId = parseRouteId(request.params.id);
+    if (blockId === null) {
       response.status(400).json({ error: 'Invalid block id.' });
       return;
     }
@@ -163,7 +163,10 @@ export class BlockController {
       response.status(200).json(result);
     } catch (error) {
       console.error(error);
-      response.status(400).json({ error: 'Unable to load map background options.' });
+      // Everything the client can get wrong is answered above, so anything
+      // reaching here is a server-side fault. The message is fixed so no
+      // filesystem path from the underlying error reaches the response.
+      response.status(500).json({ error: 'Unable to load map background options.' });
     }
   }
 
@@ -172,8 +175,8 @@ export class BlockController {
    * first, then rejects any index the block's own theme does not offer.
    */
   public async putMapBackgroundSelection(request: Request, response: Response): Promise<void> {
-    const blockId = Number.parseInt(request.params.id, 10);
-    if (!Number.isInteger(blockId)) {
+    const blockId = parseRouteId(request.params.id);
+    if (blockId === null) {
       response.status(400).json({ error: 'Invalid block id.' });
       return;
     }
@@ -218,7 +221,9 @@ export class BlockController {
       response.status(200).json({ selectedIndex: result.selectedIndex });
     } catch (error) {
       console.error(error);
-      response.status(400).json({ error: 'Unable to update map background selection.' });
+      // As above: an invalid index or body already returned 400, so this is a
+      // server-side fault and must not be reported as a bad request.
+      response.status(500).json({ error: 'Unable to update map background selection.' });
     }
   }
 }

@@ -171,17 +171,7 @@ export class HoodService {
     }
 
     const selectedIndex = hood.map_background_index ?? null;
-    const [options, effectiveUrl] = await Promise.all([
-      this.mapBackgroundService.listOptions(theme, 'hood'),
-      this.mapBackgroundService.getEffectiveUrl(theme, 'hood', selectedIndex),
-    ]);
-
-    return {
-      selectedIndex,
-      effectiveIndex: selectedIndex ?? 0,
-      effectiveUrl,
-      options,
-    };
+    return this.mapBackgroundService.resolveOptions(theme, 'hood', selectedIndex);
   }
 
   /**
