@@ -108,6 +108,19 @@ export class PlaceRepository {
     return placeId;
   }
 
+  /**
+   * Persists a place's selected map background index.
+   * The caller must have already authorized the change and validated the
+   * index against the options the place's theme actually offers.
+   * @param placeId id of the place to update
+   * @param index the selected map index, or null to fall back to the default
+   */
+  public async updateMapBackgroundIndex(placeId: number, index: number | null): Promise<void> {
+    await this.db.place
+      .where({ id: placeId })
+      .update({ map_background_index: index });
+  }
+
   public async deleteStorageArea(id: number): Promise<any> {
     return await this.db.place.update({
       status: 0,

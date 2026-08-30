@@ -4,12 +4,19 @@ import {
   MapLocationRepository,
   HoodRepository,
   ColonyRepository,
+  PlaceRepository,
   RoleAssignmentRepository,
   RoleRepository,
   MemberRepository,
 } from '../../repositories';
 import { Place } from '../../types/models';
 import {includes} from 'lodash';
+import {
+  MapBackgroundOptionsResult,
+  MapBackgroundSelectionResult,
+  MapBackgroundService,
+} from '../map-background/map-background.service';
+import { resolveMapTheme } from '../../libs';
 
 /** Service for dealing with blocks */
 @Service()
@@ -18,9 +25,11 @@ export class HoodService {
     private mapLocationRepository: MapLocationRepository,
     private hoodRepository: HoodRepository,
     private colonyRepository: ColonyRepository,
+    private placeRepository: PlaceRepository,
     private roleAssignmentRepository: RoleAssignmentRepository,
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
+    private mapBackgroundService: MapBackgroundService,
   ) {}
   
   public async find(hoodId: number): Promise<Place> {
@@ -142,6 +151,70 @@ export class HoodService {
 
   public async getBlocks(hoodId: number): Promise<any> {
     return await this.hoodRepository.getBlocks(hoodId);
+  }
+
+  /**
+   * Reports the neighborhood's current map background index and every index
+   * its colony's theme offers at hood level.
+   * @param hoodId id of the neighborhood to report on
+   * @returns the report, or null if the hood or its colony theme is unknown
+   */
+  public async getMapBackgroundOptions(hoodId: number): Promise<MapBackgroundOptionsResult | null> {
+    const hood = await this.find(hoodId);
+    if (!hood) {
+      return null;
+    }
+    const colony = await this.getColony(hoodId);
+    const theme = resolveMapTheme(colony?.slug);
+    if (!theme) {
+      return null;
+    }
+
+    const selectedIndex = hood.map_background_index ?? null;
+    const [options, effectiveUrl] = await Promise.all([
+      this.mapBackgroundService.listOptions(theme, 'hood'),
+      this.mapBackgroundService.getEffectiveUrl(theme, 'hood', selectedIndex),
+    ]);
+
+    return {
+      selectedIndex,
+      effectiveIndex: selectedIndex ?? 0,
+      effectiveUrl,
+      options,
+    };
+  }
+
+  /**
+   * Persists a new map background index for the neighborhood, but only if the
+   * hood's own theme actually offers that index at hood level.
+   * The caller is responsible for authorizing the member first.
+   * @param hoodId id of the neighborhood to update
+   * @param index the requested index, or null to reset to the default
+   */
+  public async updateMapBackgroundSelection(
+    hoodId: number,
+    index: number | null,
+  ): Promise<MapBackgroundSelectionResult> {
+    const hood = await this.find(hoodId);
+    if (!hood) {
+      return { status: 'not_found' };
+    }
+    const colony = await this.getColony(hoodId);
+    const theme = resolveMapTheme(colony?.slug);
+    if (!theme) {
+      return { status: 'not_found' };
+    }
+
+    const normalizedIndex = index === 0 ? null : index;
+    if (normalizedIndex !== null) {
+      const valid = await this.mapBackgroundService.isValidIndex(theme, 'hood', normalizedIndex);
+      if (!valid) {
+        return { status: 'invalid' };
+      }
+    }
+
+    await this.placeRepository.updateMapBackgroundIndex(hoodId, normalizedIndex);
+    return { status: 'success', selectedIndex: normalizedIndex };
   }
 
   public async canAdmin(hoodId: number, memberId: number): Promise<boolean> {
