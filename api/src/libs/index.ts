@@ -6,3 +6,4 @@ export * from './mall';
 export * from './vrml';
 export * from './map-background-request';
 export * from './map-theme';
+export * from './route-id';

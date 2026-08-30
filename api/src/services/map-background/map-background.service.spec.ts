@@ -1,10 +1,10 @@
-import { promises as fs } from 'fs';
+import { promises as fs, PathLike } from 'fs';
 import os from 'os';
 import path from 'path';
 import { Container } from 'typedi';
 
 import { MapLevel, MapTheme } from '../../libs';
-import { MapBackgroundService } from './map-background.service';
+import { MapBackgroundConfigurationError, MapBackgroundService } from './map-background.service';
 
 describe('MapBackgroundService', () => {
   let service: MapBackgroundService;
@@ -21,9 +21,53 @@ describe('MapBackgroundService', () => {
   });
 
   afterEach(async () => {
-    process.env.ASSETS_DIR = originalAssetsDir;
+    restoreEnvVar('ASSETS_DIR', originalAssetsDir);
     await fs.rm(assetsDir, { recursive: true, force: true });
   });
+
+  describe('restoreEnvVar', () => {
+    /*
+     * The teardown above uses this helper rather than a plain assignment.
+     * Assigning an undefined original back would store the *string*
+     * "undefined" in the process-wide environment, and later specs sharing
+     * this Jest worker would then resolve asset paths under `undefined/`.
+     */
+    const key = 'CTR_MAP_BACKGROUND_ENV_PROBE';
+
+    afterEach(() => {
+      delete process.env[key];
+    });
+
+    it('deletes the variable when it was originally absent', () => {
+      process.env[key] = 'set-during-a-test';
+
+      restoreEnvVar(key, undefined);
+
+      expect(key in process.env).toBe(false);
+      expect(process.env[key]).toBeUndefined();
+    });
+
+    it('restores the exact original value when one existed', () => {
+      process.env[key] = 'set-during-a-test';
+
+      restoreEnvVar(key, '/original/assets');
+
+      expect(process.env[key]).toBe('/original/assets');
+    });
+  });
+
+  /**
+   * Puts an environment variable back exactly as it was, including having
+   * been absent. `process.env.X = undefined` would store the string
+   * "undefined" instead of removing the variable.
+   */
+  function restoreEnvVar(key: string, original: string | undefined): void {
+    if (original === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = original;
+    }
+  }
 
   async function writeFixture(theme: string, level: string, filename: string): Promise<void> {
     const dir = path.join(assetsDir, 'img', 'map_themes', theme, level);
@@ -75,10 +119,31 @@ describe('MapBackgroundService', () => {
       ]);
     });
 
-    it('returns an empty list when the pool directory does not exist', async () => {
+    it('returns an empty list when the pool directory does not exist (ENOENT)', async () => {
       const options = await service.listOptions('cyberhood', 'hood');
 
       expect(options).toEqual([]);
+    });
+
+    it('propagates a non-ENOENT readdir failure instead of reporting no options', async () => {
+      const readdirSpy = jest.spyOn(fs, 'readdir').mockImplementation(async () => {
+        const error: NodeJS.ErrnoException = new Error('EACCES');
+        error.code = 'EACCES';
+        throw error;
+      });
+
+      await expect(service.listOptions('grass', 'block')).rejects.toThrow('EACCES');
+      readdirSpy.mockRestore();
+    });
+
+    it('fails loudly when ASSETS_DIR is unset rather than reading a relative path', async () => {
+      delete process.env.ASSETS_DIR;
+      const readdirSpy = jest.spyOn(fs, 'readdir');
+
+      await expect(service.listOptions('grass', 'block'))
+        .rejects.toBeInstanceOf(MapBackgroundConfigurationError);
+      expect(readdirSpy).not.toHaveBeenCalled();
+      readdirSpy.mockRestore();
     });
 
     it('ignores an entry removed between readdir and stat (ENOENT)', async () => {
@@ -86,7 +151,7 @@ describe('MapBackgroundService', () => {
       await writeFixture('grass', 'block', 'Pimg2D001.gif');
       const dir = path.join(assetsDir, 'img', 'map_themes', 'grass', 'block');
       const originalStat = fs.stat.bind(fs);
-      const statSpy = jest.spyOn(fs, 'stat').mockImplementation(async (target: any) => {
+      const statSpy = jest.spyOn(fs, 'stat').mockImplementation(async (target: PathLike) => {
         if (target === path.join(dir, 'Pimg2D001.gif')) {
           const error: NodeJS.ErrnoException = new Error('ENOENT');
           error.code = 'ENOENT';
@@ -104,7 +169,7 @@ describe('MapBackgroundService', () => {
     it('propagates a non-ENOENT stat failure instead of silently skipping the entry', async () => {
       await writeFixture('grass', 'block', 'Pimg2D000.gif');
       const dir = path.join(assetsDir, 'img', 'map_themes', 'grass', 'block');
-      const statSpy = jest.spyOn(fs, 'stat').mockImplementation(async (target: any) => {
+      const statSpy = jest.spyOn(fs, 'stat').mockImplementation(async (target: PathLike) => {
         if (target === path.join(dir, 'Pimg2D000.gif')) {
           const error: NodeJS.ErrnoException = new Error('EACCES');
           error.code = 'EACCES';
@@ -202,17 +267,48 @@ describe('MapBackgroundService', () => {
     });
   });
 
-  describe('getEffectiveUrl', () => {
-    it('resolves to index 000 when the selection is null', async () => {
-      const url = await service.getEffectiveUrl('grass', 'block', null);
+  describe('resolveOptions', () => {
+    it('resolves to index 000 when nothing has been selected', async () => {
+      await writeFixture('grass', 'block', 'Pimg2D000.gif');
 
-      expect(url).toBe('/assets/img/map_themes/grass/block/Pimg2D000.gif');
+      const result = await service.resolveOptions('grass', 'block', null);
+
+      expect(result.selectedIndex).toBeNull();
+      expect(result.effectiveIndex).toBe(0);
+      expect(result.effectiveUrl).toBe('/assets/img/map_themes/grass/block/Pimg2D000.gif');
     });
 
-    it('resolves to the selected index when one is provided', async () => {
-      const url = await service.getEffectiveUrl('grass', 'hood', 26);
+    it('honours a stored index the pool still offers', async () => {
+      await writeFixture('grass', 'hood', 'Pimg2D000.gif');
+      await writeFixture('grass', 'hood', 'Pimg2D026.gif');
 
-      expect(url).toBe('/assets/img/map_themes/grass/hood/Pimg2D026.gif');
+      const result = await service.resolveOptions('grass', 'hood', 26);
+
+      expect(result.selectedIndex).toBe(26);
+      expect(result.effectiveIndex).toBe(26);
+      expect(result.effectiveUrl).toBe('/assets/img/map_themes/grass/hood/Pimg2D026.gif');
+    });
+
+    it('falls back to index 000 when the stored index is no longer in the pool', async () => {
+      await writeFixture('grass', 'block', 'Pimg2D000.gif');
+      await writeFixture('grass', 'block', 'Pimg2D001.gif');
+
+      const result = await service.resolveOptions('grass', 'block', 26);
+
+      // The raw stored value stays visible so callers can see the stale row.
+      expect(result.selectedIndex).toBe(26);
+      // But what renders is a file that actually exists.
+      expect(result.effectiveIndex).toBe(0);
+      expect(result.effectiveUrl).toBe('/assets/img/map_themes/grass/block/Pimg2D000.gif');
+    });
+
+    it('reports the full option list alongside the effective selection', async () => {
+      await writeFixture('desert', 'hood', 'Pimg2D000.gif');
+      await writeFixture('desert', 'hood', 'Pimg2D001.gif');
+
+      const result = await service.resolveOptions('desert', 'hood', 1);
+
+      expect(result.options.map(option => option.index)).toEqual([0, 1]);
     });
   });
 });

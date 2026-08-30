@@ -28,10 +28,19 @@ export const COLONY_THEME_MAP: Record<string, MapTheme> = {
   cyberhood: 'cyberhood',
 };
 
-/** Resolves a colony slug to its map theme, or null if the slug is unrecognized. */
+/**
+ * Resolves a colony slug to its map theme, or null if the slug is unrecognized.
+ *
+ * The lookup is restricted to the map's own keys. A plain index lookup would
+ * also reach inherited `Object.prototype` members, so a colony slug of
+ * `toString` or `constructor` would resolve to a function rather than to null.
+ */
 export function resolveMapTheme(colonySlug: string | undefined | null): MapTheme | null {
   if (!colonySlug) {
     return null;
   }
-  return COLONY_THEME_MAP[colonySlug] ?? null;
+  if (!Object.prototype.hasOwnProperty.call(COLONY_THEME_MAP, colonySlug)) {
+    return null;
+  }
+  return COLONY_THEME_MAP[colonySlug];
 }

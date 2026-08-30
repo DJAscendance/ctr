@@ -6,6 +6,21 @@ import { MapLevel, MapTheme } from '../../libs';
 
 const INDEX_FILENAME_PATTERN = /^Pimg2D(\d{3})\.gif$/;
 
+/** The index every shipped pool provides, used whenever a selection cannot be honoured. */
+export const DEFAULT_MAP_BACKGROUND_INDEX = 0;
+
+/**
+ * Raised when the server cannot look up map backgrounds at all because
+ * `ASSETS_DIR` is unset. This is a deployment fault, never a client fault, so
+ * callers must surface it as a server error rather than as an empty pool.
+ */
+export class MapBackgroundConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MapBackgroundConfigurationError';
+  }
+}
+
 export interface MapBackgroundOption {
   index: number;
   url: string;
@@ -15,7 +30,10 @@ export interface MapBackgroundOption {
 export interface MapBackgroundOptionsResult {
   /** The index stored on the place, or null when it has never been set. */
   selectedIndex: number | null;
-  /** The index that actually renders - the stored one, or 0 as the default. */
+  /**
+   * The index that actually renders: the stored one when the current pool
+   * still offers it, otherwise the default index 0.
+   */
   effectiveIndex: number;
   /** The asset URL for the effective index. */
   effectiveUrl: string;
@@ -41,8 +59,19 @@ export type MapBackgroundSelectionResult =
 @Service()
 export class MapBackgroundService {
 
+  /**
+   * @returns the configured asset root
+   * @throws MapBackgroundConfigurationError when ASSETS_DIR is unset, rather
+   *   than falling back to an empty string and reading a relative path
+   */
   private getAssetsRoot(): string {
-    return process.env.ASSETS_DIR || '';
+    const root = process.env.ASSETS_DIR;
+    if (!root) {
+      throw new MapBackgroundConfigurationError(
+        'ASSETS_DIR is not configured, so map background options cannot be resolved.',
+      );
+    }
+    return root;
   }
 
   private getPoolDirectory(theme: MapTheme, level: MapLevel): string {
@@ -68,7 +97,13 @@ export class MapBackgroundService {
     try {
       entries = await fs.readdir(dir);
     } catch (error) {
-      return [];
+      // A pool a theme simply does not ship is an empty option list. Anything
+      // else - a permission fault, a broken mount - is a real server failure
+      // and must not be reported to the caller as "no options available".
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return [];
+      }
+      throw error;
     }
 
     const indexes = new Set<number>();
@@ -102,12 +137,36 @@ export class MapBackgroundService {
     return options.some(option => option.index === index);
   }
 
-  /** Resolves the URL that should actually render, given a stored selection. */
-  public async getEffectiveUrl(
+  /**
+   * Builds the full read report for one place's map background.
+   *
+   * `selectedIndex` reports the raw stored value untouched, so a stale row
+   * stays visible to callers. `effectiveIndex` is what actually renders, and
+   * is only ever an index the current pool really offers - a stored index that
+   * the shipped assets no longer contain falls back to the default rather than
+   * naming a file that would 404. Reads never write the stale value back.
+   *
+   * @param theme the place's theme
+   * @param level whether the place is a block or a hood
+   * @param selectedIndex the index stored on the place, or null if never set
+   */
+  public async resolveOptions(
     theme: MapTheme,
     level: MapLevel,
     selectedIndex: number | null,
-  ): Promise<string> {
-    return this.buildUrl(theme, level, selectedIndex ?? 0);
+  ): Promise<MapBackgroundOptionsResult> {
+    const options = await this.listOptions(theme, level);
+    const stillAvailable =
+      selectedIndex !== null && options.some(option => option.index === selectedIndex);
+    const effectiveIndex = stillAvailable
+      ? (selectedIndex as number)
+      : DEFAULT_MAP_BACKGROUND_INDEX;
+
+    return {
+      selectedIndex,
+      effectiveIndex,
+      effectiveUrl: this.buildUrl(theme, level, effectiveIndex),
+      options,
+    };
   }
 }

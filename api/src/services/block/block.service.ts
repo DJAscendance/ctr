@@ -77,17 +77,7 @@ export class BlockService {
     }
 
     const selectedIndex = block.map_background_index ?? null;
-    const [options, effectiveUrl] = await Promise.all([
-      this.mapBackgroundService.listOptions(theme, 'block'),
-      this.mapBackgroundService.getEffectiveUrl(theme, 'block', selectedIndex),
-    ]);
-
-    return {
-      selectedIndex,
-      effectiveIndex: selectedIndex ?? 0,
-      effectiveUrl,
-      options,
-    };
+    return this.mapBackgroundService.resolveOptions(theme, 'block', selectedIndex);
   }
 
   /**
