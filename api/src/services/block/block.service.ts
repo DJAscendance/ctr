@@ -2,8 +2,10 @@ import { Service } from 'typedi';
 
 import {
   BlockRepository,
+  ColonyRepository,
   MapLocationRepository,
   HoodRepository,
+  PlaceRepository,
   RoleAssignmentRepository,
   RoleRepository,
   MemberRepository,
@@ -12,19 +14,28 @@ import {Member, Place} from '../../types/models';
 import {includes} from 'lodash';
 import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
 import { PlaceAccessService } from '../place-access/place-access.service';
+import {
+  MapBackgroundOptionsResult,
+  MapBackgroundSelectionResult,
+  MapBackgroundService,
+} from '../map-background/map-background.service';
+import { resolveMapTheme } from '../../libs';
 
 /** Service for dealing with blocks */
 @Service()
 export class BlockService {
   constructor(
     private blockRepository: BlockRepository,
+    private colonyRepository: ColonyRepository,
     private mapLocationRepository: MapLocationRepository,
     private hoodRepository: HoodRepository,
+    private placeRepository: PlaceRepository,
     private roleAssignmentRepository: RoleAssignmentRepository,
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
     private roleAssignmentService: RoleAssignmentService,
     private placeAccessService: PlaceAccessService,
+    private mapBackgroundService: MapBackgroundService,
   ) {}
   
   public async find(blockId: number): Promise<Place> {
@@ -36,6 +47,82 @@ export class BlockService {
     return await this.hoodRepository.find(blockMapLocation.parent_place_id);
   }
   
+  /** Walks block -> hood -> colony, because the map theme is a colony-level trait. */
+  public async getColony(blockId: number): Promise<Place | undefined> {
+    const hood = await this.getHood(blockId);
+    if (!hood) {
+      return undefined;
+    }
+    const hoodMapLocation = await this.mapLocationRepository.findPlaceIdMapLocation(hood.id);
+    return await this.colonyRepository.find(hoodMapLocation.parent_place_id);
+  }
+
+  /**
+   * Reports the block's current map background index and every index its
+   * colony's theme offers at block level.
+   * @param blockId id of the block to report on
+   * @returns the report, or null if the block or its colony theme is unknown
+   */
+  public async getMapBackgroundOptions(
+    blockId: number,
+  ): Promise<MapBackgroundOptionsResult | null> {
+    const block = await this.find(blockId);
+    if (!block) {
+      return null;
+    }
+    const colony = await this.getColony(blockId);
+    const theme = resolveMapTheme(colony?.slug);
+    if (!theme) {
+      return null;
+    }
+
+    const selectedIndex = block.map_background_index ?? null;
+    const [options, effectiveUrl] = await Promise.all([
+      this.mapBackgroundService.listOptions(theme, 'block'),
+      this.mapBackgroundService.getEffectiveUrl(theme, 'block', selectedIndex),
+    ]);
+
+    return {
+      selectedIndex,
+      effectiveIndex: selectedIndex ?? 0,
+      effectiveUrl,
+      options,
+    };
+  }
+
+  /**
+   * Persists a new map background index for the block, but only if the
+   * block's own theme actually offers that index at block level.
+   * The caller is responsible for authorizing the member first.
+   * @param blockId id of the block to update
+   * @param index the requested index, or null to reset to the default
+   */
+  public async updateMapBackgroundSelection(
+    blockId: number,
+    index: number | null,
+  ): Promise<MapBackgroundSelectionResult> {
+    const block = await this.find(blockId);
+    if (!block) {
+      return { status: 'not_found' };
+    }
+    const colony = await this.getColony(blockId);
+    const theme = resolveMapTheme(colony?.slug);
+    if (!theme) {
+      return { status: 'not_found' };
+    }
+
+    const normalizedIndex = index === 0 ? null : index;
+    if (normalizedIndex !== null) {
+      const valid = await this.mapBackgroundService.isValidIndex(theme, 'block', normalizedIndex);
+      if (!valid) {
+        return { status: 'invalid' };
+      }
+    }
+
+    await this.placeRepository.updateMapBackgroundIndex(blockId, normalizedIndex);
+    return { status: 'success', selectedIndex: normalizedIndex };
+  }
+
   public async getAccessInfoByUsername(blockId: number): Promise<object> {
     // awaitRoleMap, not a bare roleMap read. The previous `await roleMap.X` awaited a
     // NUMBER, which resolves immediately and waits for nothing -- so during the startup

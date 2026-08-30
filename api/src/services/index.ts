@@ -11,6 +11,7 @@ export * from './hood/hood.service';
 export * from './mall/mall.service';
 export * from './mall-export/mall-export.service';
 export * from './mall-inspection/mall-inspection.service';
+export * from './map-background/map-background.service';
 export * from './member/member.service';
 export * from './member-data/member-data.service';
 export * from './roster/roster.service';

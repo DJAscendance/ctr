@@ -23,4 +23,10 @@ blockRoutes.get('/:id/getAccessInfo', (request, response) =>
 blockRoutes.post('/:id/postAccessInfo', (request, response) =>
   blockController.postAccessInfo(request, response),
 );
+blockRoutes.get('/:id/map-background-options', (request, response) =>
+  blockController.getMapBackgroundOptions(request, response),
+);
+blockRoutes.put('/:id/map-background-selection', (request, response) =>
+  blockController.putMapBackgroundSelection(request, response),
+);
 export { blockRoutes };
