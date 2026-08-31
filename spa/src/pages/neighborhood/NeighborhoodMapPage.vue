@@ -54,7 +54,7 @@ import { mapBackgroundOptionsPath } from "@/helpers/map-background.helper";
 export default Vue.extend({
   name: "NeighborhoodMapPage",
   components: { Chat },
-  data: (): NeighborhoodData => {
+  data: (): NeighborhoodData & { routeLoadId: number } => {
     return {
       loaded: false,
       hood: undefined,
@@ -63,9 +63,26 @@ export default Vue.extend({
       // The server-resolved background. Empty until the read returns, so the
       // colony default below covers the loading window and a failed read.
       effectiveUrl: "",
+      // Which load currently owns the page. It is page machinery rather than
+      // neighborhood data, so it is added here instead of to NeighborhoodData.
+      routeLoadId: 0,
     };
   },
   methods: {
+    /**
+     * True while `loadId` is still the load that owns the page.
+     *
+     * Both halves are needed. The id half rejects an answer for a neighborhood
+     * the viewer has already left. The token half rejects an answer from a
+     * SUPERSEDED load of the neighborhood the viewer is STILL on, which the id
+     * cannot see: after A -> B -> A the first A request finds "A" in the URL
+     * again, so on the id alone it looks current and would be adopted over the
+     * newer A load - or, on its failure path, would clear it.
+     */
+    isCurrentLoad(hoodId: string, loadId: number): boolean {
+      return this.$route.params.id === hoodId && this.routeLoadId === loadId;
+    },
+
     /**
      * Drops everything on this page that belongs to one neighborhood.
      *
@@ -88,18 +105,19 @@ export default Vue.extend({
     /**
      * Reads the neighborhood and its blocks for one specific id.
      *
-     * The id is captured by the caller and re-checked on both the success and
-     * the failure path. A slow answer for a neighborhood the viewer has already
-     * left must not paint over the one now in the URL, and a slow failure for
-     * it must not wipe a neighborhood that has already loaded.
+     * The id and the load token are captured by the caller and re-checked on
+     * both the success and the failure path. A slow answer for a neighborhood
+     * the viewer has already left must not paint over the one now in the URL, a
+     * slow answer from a superseded load of the SAME neighborhood must not
+     * paint over the newer one, and neither failure must wipe what has loaded.
      */
-    getPlace(hoodId: string): Promise<void> {
+    getPlace(hoodId: string, loadId: number): Promise<void> {
       return Promise.all([
         this.$http.get(`/hood/${hoodId}`),
         this.$http.get(`/hood/${hoodId}/blocks`),
       ])
         .then(response => {
-          if (this.$route.params.id !== hoodId) {
+          if (!this.isCurrentLoad(hoodId, loadId)) {
             return;
           }
           const hood = response[0].data.hood;
@@ -115,11 +133,13 @@ export default Vue.extend({
           document.title = `${hood.name} - Cybertown`;
         })
         .catch(() => {
-          if (this.$route.params.id !== hoodId) {
+          if (!this.isCurrentLoad(hoodId, loadId)) {
             return;
           }
-          // A failed read for the neighborhood now in the URL leaves the page
-          // empty rather than showing the previous neighborhood's blocks.
+          // A failed read for the load that still owns the page leaves it empty
+          // rather than showing the previous neighborhood's blocks. A failure
+          // from a superseded load is dropped above, so it cannot clear state a
+          // newer load has already drawn.
           this.clearRouteState();
         });
     },
@@ -134,14 +154,18 @@ export default Vue.extend({
      */
     async loadRouteHood(): Promise<void> {
       const hoodId = this.$route.params.id;
+      // Minted before anything is awaited, so every read this load starts is
+      // stamped with it and every earlier load is stale from this point on.
+      const loadId = this.routeLoadId + 1;
+      this.routeLoadId = loadId;
       await this.unloadPlace();
       this.clearRouteState();
-      this.getMapBackground(hoodId);
-      await this.getPlace(hoodId);
+      this.getMapBackground(hoodId, loadId);
+      await this.getPlace(hoodId, loadId);
       // The colony is required, not merely expected: both background computeds
       // read `colony.slug`, and the server returns an undefined colony for a
       // hood with no parent. Drawing without it would throw in the template.
-      if (this.$route.params.id !== hoodId || !this.hood || !this.colony) {
+      if (!this.isCurrentLoad(hoodId, loadId) || !this.hood || !this.colony) {
         return;
       }
       this.loaded = true;
@@ -157,22 +181,22 @@ export default Vue.extend({
     // called. This is the read half of MAP-3: it is what makes a saved
     // selection visible on the neighborhood map at all.
     //
-    // The id is passed in by the route-safe load and re-checked after the
-    // request, on both paths. A slow answer for a neighborhood the viewer has
-    // already left must not paint over the one now in the URL, and a slow
-    // FAILURE for it must not wipe a background the new neighborhood already
-    // loaded.
-    getMapBackground(hoodId: string): void {
+    // The id and the load token are passed in by the route-safe load and
+    // re-checked after the request, on both paths. A slow answer for a
+    // neighborhood the viewer has left, or from a superseded load of the one
+    // they are on, must not paint over the current background, and neither
+    // slow FAILURE must wipe a background that is already correct.
+    getMapBackground(hoodId: string, loadId: number): void {
       this.$http
         .get(mapBackgroundOptionsPath("hood", hoodId))
         .then(response => {
-          if (this.$route.params.id !== hoodId) {
+          if (!this.isCurrentLoad(hoodId, loadId)) {
             return;
           }
           this.effectiveUrl = response.data.effectiveUrl;
         })
         .catch(() => {
-          if (this.$route.params.id !== hoodId) {
+          if (!this.isCurrentLoad(hoodId, loadId)) {
             return;
           }
           this.effectiveUrl = "";

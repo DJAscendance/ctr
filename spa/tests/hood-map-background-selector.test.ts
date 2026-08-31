@@ -599,15 +599,19 @@ test("the neighborhood map clears and reloads EVERYTHING on a route change", () 
   const flow = between(source, "async loadRouteHood()", "async unloadPlace()");
   const dropped = at(flow, "this.clearRouteState();");
   assert.ok(
-    dropped < at(flow, "this.getMapBackground(hoodId)"),
+    dropped < at(flow, "this.getMapBackground(hoodId, loadId)"),
     "the old hood is dropped before the new background read",
   );
   assert.ok(
-    dropped < at(flow, "this.getPlace(hoodId)"),
+    dropped < at(flow, "await this.getPlace(hoodId, loadId)"),
     "the old hood is dropped before the new hood read",
   );
 
-  const clear = between(source, "clearRouteState(): void", "getPlace(hoodId: string)");
+  const clear = between(
+    source,
+    "clearRouteState(): void",
+    "getPlace(hoodId: string, loadId: number)",
+  );
   for (const dropped of [
     "this.loaded = false;",
     "this.hood = undefined;",
@@ -622,11 +626,11 @@ test("the neighborhood map clears and reloads EVERYTHING on a route change", () 
 
 test("a stale neighborhood map read cannot overwrite the newer hood", () => {
   const source = read(HOOD_MAP_PAGE);
-  const guard = "if (this.$route.params.id !== hoodId) {";
+  const guard = "if (!this.isCurrentLoad(hoodId, loadId)) {";
 
   const background = between(
     source,
-    "getMapBackground(hoodId: string): void",
+    "getMapBackground(hoodId: string, loadId: number): void",
     "async joinPlace()",
   );
   assert.strictEqual(
@@ -635,7 +639,11 @@ test("a stale neighborhood map read cannot overwrite the newer hood", () => {
     "the background read guards both its success and its failure path",
   );
 
-  const place = between(source, "getPlace(hoodId: string)", "async loadRouteHood()");
+  const place = between(
+    source,
+    "getPlace(hoodId: string, loadId: number)",
+    "async loadRouteHood()",
+  );
   assert.strictEqual(
     place.split(guard).length - 1,
     2,
@@ -644,9 +652,28 @@ test("a stale neighborhood map read cannot overwrite the newer hood", () => {
 
   const flow = between(source, "async loadRouteHood()", "async unloadPlace()");
   assert.ok(
-    flow.includes("if (this.$route.params.id !== hoodId || !this.hood || !this.colony) {"),
+    flow.includes("if (!this.isCurrentLoad(hoodId, loadId) || !this.hood || !this.colony) {"),
     "the map is only drawn when the route is still on the hood that answered",
   );
+});
+
+test("the guard weighs the load token as well as the hood id", () => {
+  const source = read(HOOD_MAP_PAGE);
+  const check = between(source, "isCurrentLoad(hoodId: string, loadId: number)", "clearRouteState");
+  assert.ok(
+    check.includes("this.$route.params.id === hoodId"),
+    "it still rejects an answer for a hood the viewer has left",
+  );
+  assert.ok(
+    check.includes("this.routeLoadId === loadId"),
+    "and it also rejects an answer from a superseded load of the SAME hood",
+  );
+
+  const flow = between(source, "async loadRouteHood()", "async unloadPlace()");
+  const minted = at(flow, "this.routeLoadId = loadId;");
+  assert.ok(minted < at(flow, "await this.unloadPlace();"), "the token is minted before any await");
+  assert.ok(minted < at(flow, "this.getMapBackground(hoodId, loadId)"));
+  assert.ok(minted < at(flow, "await this.getPlace(hoodId, loadId)"));
 });
 
 test("MAP-3 leaves the block page alone", () => {
@@ -755,26 +782,57 @@ const HOOD_B_BLOCKS = [{ id: "b1", name: "Bravo", location: 5 }];
 const HOOD_A_BACKGROUND = `${GRASS_HOOD}Pimg2D002.gif`;
 const HOOD_B_BACKGROUND = `${GRASS_HOOD}Pimg2D007.gif`;
 
-/** A `$http` double whose every reply is a promise the test controls. */
+/**
+ * A `$http` double whose every reply is a promise the test controls.
+ *
+ * Requests are queued PER URL rather than kept one-deep. The same-hood race
+ * needs two live requests for the identical URL - one from the superseded load
+ * of hood A and one from the newer load of hood A - and a one-deep map would
+ * silently drop the first, which is the very thing under test.
+ */
 function routeHttp() {
-  const pending = new Map<string, any>();
+  const pending = new Map<string, any[]>();
+  const queue = (url: string): any[] => {
+    const existing = pending.get(url);
+    if (existing) {
+      return existing;
+    }
+    const fresh: any[] = [];
+    pending.set(url, fresh);
+    return fresh;
+  };
   return {
     calls: [] as string[],
     get(url: string): Promise<any> {
       this.calls.push(url);
       const slot = deferred();
-      pending.set(url, slot);
+      queue(url).push(slot);
       return slot.promise;
     },
+    /** How many requests for this url have not been answered yet. */
+    outstanding(url: string): number {
+      return queue(url).filter((slot: any) => !slot.answered).length;
+    },
+    /** The oldest or newest unanswered request for one url. */
+    take(url: string, which: "oldest" | "newest"): any {
+      const open = queue(url).filter((slot: any) => !slot.answered);
+      assert.ok(open.length > 0, `nothing outstanding for ${url}`);
+      const slot = which === "oldest" ? open[0] : open[open.length - 1];
+      slot.answered = true;
+      return slot;
+    },
     settle(url: string, value: any): void {
-      const slot = pending.get(url);
-      assert.ok(slot, `nothing asked for ${url}`);
-      slot.resolve(value);
+      this.take(url, "oldest").resolve(value);
     },
     fail(url: string, error: unknown): void {
-      const slot = pending.get(url);
-      assert.ok(slot, `nothing asked for ${url}`);
-      slot.reject(error);
+      this.take(url, "oldest").reject(error);
+    },
+    /** Answers the most recent request, leaving an older one still in flight. */
+    settleNewest(url: string, value: any): void {
+      this.take(url, "newest").resolve(value);
+    },
+    failNewest(url: string, error: unknown): void {
+      this.take(url, "newest").reject(error);
     },
     asked(url: string): boolean {
       return this.calls.indexOf(url) !== -1;
@@ -826,7 +884,7 @@ function mapPageVm(routeId: string) {
   return vm;
 }
 
-/** Answers every read one hood's mount asks for. */
+/** Answers every read one hood's load asks for, oldest request first. */
 function settleHood(
   vm: any,
   id: string,
@@ -837,6 +895,59 @@ function settleHood(
   vm.http.settle(`/hood/${id}`, hoodPayload(id, name));
   vm.http.settle(`/hood/${id}/blocks`, blocksPayload(blocks));
   vm.http.settle(`/hood/${id}/map-background-options`, { data: { effectiveUrl: background } });
+}
+
+/** Answers the NEWEST load of one hood, leaving an older one still in flight. */
+function settleNewestHood(
+  vm: any,
+  id: string,
+  name: string,
+  blocks: any[],
+  background: string,
+): void {
+  vm.http.settleNewest(`/hood/${id}`, hoodPayload(id, name));
+  vm.http.settleNewest(`/hood/${id}/blocks`, blocksPayload(blocks));
+  vm.http.settleNewest(
+    `/hood/${id}/map-background-options`,
+    { data: { effectiveUrl: background } },
+  );
+}
+
+/** Two distinguishable snapshots of the SAME hood, an older and a newer one. */
+const HOOD_A_OLD_BLOCKS = [{ id: "a1", name: "Alpha", location: 1 }];
+const HOOD_A_NEW_BLOCKS = [
+  { id: "a2", name: "Alpha renamed", location: 1 },
+  { id: "a3", name: "Annex", location: 4 },
+];
+const HOOD_A_OLD_BACKGROUND = `${GRASS_HOOD}Pimg2D002.gif`;
+const HOOD_A_NEW_BACKGROUND = `${GRASS_HOOD}Pimg2D026.gif`;
+
+/**
+ * Drives A -> B -> A and leaves BOTH hood-A loads in flight, with the newer one
+ * already answered. Hood B is deliberately left unanswered: the token must hold
+ * even when the intermediate hood never arrives.
+ */
+async function racedBackToHoodA(): Promise<any> {
+  const vm = mapPageVm(HOOD_A_ID);
+  vm.loadRouteHood();
+  await flush();
+  assert.strictEqual(vm.http.outstanding(`/hood/${HOOD_A_ID}`), 1, "the first A load is out");
+
+  vm.goTo(HOOD_B_ID);
+  await flush();
+  vm.goTo(HOOD_A_ID);
+  await flush();
+  assert.strictEqual(
+    vm.http.outstanding(`/hood/${HOOD_A_ID}`),
+    2,
+    "both A loads are in flight at once",
+  );
+
+  settleNewestHood(vm, HOOD_A_ID, "Shadows now", HOOD_A_NEW_BLOCKS, HOOD_A_NEW_BACKGROUND);
+  await flush();
+  assert.strictEqual(vm.loaded, true, "the newer A load drew the map");
+  assert.deepStrictEqual(vm.blocks, HOOD_A_NEW_BLOCKS);
+  return vm;
 }
 
 /** A page sitting on a fully loaded hood A. */
@@ -998,6 +1109,88 @@ test("the store never holds one hood beside another hood's map", async () => {
   await flush();
   assert.strictEqual(vm.storePlace.id, HOOD_B_ID, "the store follows the route");
   assert.strictEqual(vm.storePlace.hood.id, vm.hood.id, "the store and the map agree");
+});
+
+// --------------------------------------------- superseded loads of ONE hood
+//
+// The hood id alone cannot separate two loads of the SAME hood. On A -> B -> A
+// the first A request finds "A" in the URL again when it finally answers, so an
+// id-only guard adopts it over the newer A load, or - on its failure path -
+// clears what that newer load already drew. The load token is what makes the
+// older load inert.
+
+test("a superseded load of the same hood cannot overwrite the newer one", async () => {
+  const vm = await racedBackToHoodA();
+
+  // The FIRST hood-A load now answers, last, with an older snapshot.
+  settleHood(vm, HOOD_A_ID, "Shadows then", HOOD_A_OLD_BLOCKS, HOOD_A_OLD_BACKGROUND);
+  await flush();
+
+  assert.strictEqual(vm.loaded, true, "the map is still drawn");
+  assert.strictEqual(vm.hood.name, "Shadows now", "the newer name survived");
+  assert.deepStrictEqual(vm.blocks, HOOD_A_NEW_BLOCKS, "the newer blocks survived");
+  assert.strictEqual(
+    vm.blocks.some((block: any) => block.id === "a1"),
+    false,
+    "no block from the superseded load appeared",
+  );
+  assert.strictEqual(vm.doc.title, "Shadows now - Cybertown", "the newer title survived");
+  assert.strictEqual(vm.effectiveUrl, HOOD_A_NEW_BACKGROUND, "the newer background survived");
+});
+
+test("a superseded load of the same hood cannot clear the newer one when it fails", async () => {
+  const vm = await racedBackToHoodA();
+
+  // The FIRST hood-A load now FAILS, last. Its failure path clears the page,
+  // so without the token it would empty a correctly loaded hood A.
+  vm.http.fail(`/hood/${HOOD_A_ID}`, new Error("too late"));
+  vm.http.fail(`/hood/${HOOD_A_ID}/map-background-options`, new Error("too late"));
+  await flush();
+
+  assert.strictEqual(vm.loaded, true, "the map stayed drawn");
+  assert.strictEqual(vm.hood.name, "Shadows now", "the hood was not cleared");
+  assert.ok(vm.colony, "the colony was not cleared");
+  assert.deepStrictEqual(vm.blocks, HOOD_A_NEW_BLOCKS, "the blocks were not cleared");
+  assert.strictEqual(vm.doc.title, "Shadows now - Cybertown", "the title was not cleared");
+  assert.strictEqual(vm.effectiveUrl, HOOD_A_NEW_BACKGROUND, "the background was not cleared");
+});
+
+test("a superseded background reply cannot repaint the newer load", async () => {
+  const vm = await racedBackToHoodA();
+  vm.http.settle(
+    `/hood/${HOOD_A_ID}/map-background-options`,
+    { data: { effectiveUrl: HOOD_A_OLD_BACKGROUND } },
+  );
+  await flush();
+  assert.strictEqual(vm.effectiveUrl, HOOD_A_NEW_BACKGROUND, "the newer background held");
+  assert.strictEqual(
+    vm.mapBackground(),
+    `url('${HOOD_A_NEW_BACKGROUND}')`,
+    "and it is what the map draws",
+  );
+});
+
+test("a superseded background failure cannot blank the newer load", async () => {
+  const vm = await racedBackToHoodA();
+  vm.http.fail(`/hood/${HOOD_A_ID}/map-background-options`, new Error("too late"));
+  await flush();
+  assert.strictEqual(vm.effectiveUrl, HOOD_A_NEW_BACKGROUND, "it was not reset to the default");
+});
+
+test("a superseded load never joins a socket room behind the newer one", async () => {
+  const vm = await racedBackToHoodA();
+  assert.deepStrictEqual(
+    vm.joinedRooms,
+    [HOOD_A_ID],
+    "only the load that owns the page joined",
+  );
+  settleHood(vm, HOOD_A_ID, "Shadows then", HOOD_A_OLD_BLOCKS, HOOD_A_OLD_BACKGROUND);
+  await flush();
+  assert.deepStrictEqual(
+    vm.joinedRooms,
+    [HOOD_A_ID],
+    "the superseded load answering last joined nothing",
+  );
 });
 
 // ------------------------------------------------- the guards guard themselves
