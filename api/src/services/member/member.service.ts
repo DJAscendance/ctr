@@ -360,7 +360,20 @@ export class MemberService {
     const validPassword = await bcrypt.compare(password, member.password);
     if (!validPassword) throw new Error('Incorrect login details.');
     if (member.status === 0) throw new Error('banned');
-    this.maybeGiveDailyCredits(member.id);
+    // Awaited, so the credit has actually landed before the token goes back. Unawaited,
+    // this raced the response: the caller could read its own balance and not see it yet,
+    // two quick logins could both observe "not credited today" and pay twice, and a
+    // request that finished first left the write in flight with nothing keeping the
+    // process around to finish it.
+    //
+    // Caught rather than propagated, because a failure to hand out a daily bonus is not a
+    // reason to refuse someone their account. Before, errors here surfaced as an
+    // unhandled rejection instead of anything anyone would see.
+    try {
+      await this.maybeGiveDailyCredits(member.id);
+    } catch (error) {
+      console.error(`Failed to give daily credits to member ${member.id}:`, error);
+    }
     return this.encodeMemberToken(member);
   }
 
