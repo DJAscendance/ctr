@@ -92,6 +92,28 @@ function test(name: string, run: () => void | Promise<void>): void {
 
 const read = (file: string): string => fs.readFileSync(file, "utf8");
 
+/**
+ * The offset of `token`, having first PROVED that the token is present.
+ *
+ * `String.indexOf` returns -1 for a token that is not there, and -1 is smaller
+ * than every real offset. A bare `a.indexOf(x) < a.indexOf(y)` therefore passes
+ * when `x` has been deleted, which is the exact regression these ordering tests
+ * exist to catch. Every position below goes through here instead.
+ */
+function at(haystack: string, token: string): number {
+  const offset = haystack.indexOf(token);
+  assert.notStrictEqual(offset, -1, `expected to find: ${token}`);
+  return offset;
+}
+
+/** The text between two markers, proving both markers exist and are in order. */
+function between(source: string, start: string, end: string): string {
+  const from = at(source, start);
+  const to = at(source, end);
+  assert.ok(from < to, `expected ${start} before ${end}`);
+  return source.slice(from, to);
+}
+
 const GRASS_HOOD = "/assets/img/map_themes/grass/hood/";
 
 /**
@@ -435,13 +457,20 @@ test("the hood page re-authorizes when the route hood id changes", () => {
 
 test("the hood page drops the previous hood's state before it asks again", () => {
   const source = read(HOOD_BACKGROUND_PAGE);
-  const body = source.slice(source.indexOf("async authorize()"));
-  const cleared = body.indexOf("this.hoodName = \"\";");
-  const asked = body.indexOf("await this.checkAdmin(hoodId)");
-  assert.ok(cleared !== -1 && asked !== -1);
-  assert.ok(cleared < asked, "the old name is cleared before the new read");
-  assert.ok(body.indexOf("this.checked = false;") < asked);
-  assert.ok(body.indexOf("this.canEdit = false;") < asked);
+  const body = source.slice(at(source, "async authorize()"));
+  const asked = at(body, "await this.checkAdmin(hoodId)");
+  assert.ok(
+    at(body, "this.hoodName = \"\";") < asked,
+    "the old name is cleared before the new read",
+  );
+  assert.ok(
+    at(body, "this.checked = false;") < asked,
+    "the old choice is cleared before the new read",
+  );
+  assert.ok(
+    at(body, "this.canEdit = false;") < asked,
+    "the old authority is dropped before the new read",
+  );
 });
 
 test("a stale hood reply cannot change the newer hood", () => {
@@ -475,10 +504,10 @@ test("the hood name is read from the route hood, or omitted", () => {
 test("the document title also follows the route, not a parent prop", () => {
   const source = read(HOOD_BACKGROUND_PAGE);
   assert.ok(source.includes("${hoodName} Background - Cybertown"));
-  const body = source.slice(source.indexOf("async authorize()"));
+  const body = source.slice(at(source, "async authorize()"));
   assert.ok(
-    body.indexOf("document.title = \"Background - Cybertown\";") <
-      body.indexOf("await this.checkAdmin(hoodId)"),
+    at(body, "document.title = \"Background - Cybertown\";") <
+      at(body, "await this.checkAdmin(hoodId)"),
     "the previous hood's title is dropped before the new read",
   );
 });
@@ -495,10 +524,7 @@ test("the neighborhood route exists and renders the neighborhood page", () => {
 
 test("the neighborhood route lives under the neighborhood path", () => {
   const source = read(ROUTES);
-  const hoodBlock = source.slice(
-    source.indexOf("path: \"/neighborhood/:id\""),
-    source.indexOf("path: \"/block/:id\""),
-  );
+  const hoodBlock = between(source, "path: \"/neighborhood/:id\"", "path: \"/block/:id\"");
   assert.ok(
     hoodBlock.includes("name: \"neighborhoodmapbackground\""),
     "the route is a child of /neighborhood/:id",
@@ -509,14 +535,45 @@ test("the neighborhood route lives under the neighborhood path", () => {
 test("the Update control reaches the restored step from the route id", () => {
   const source = read(HOOD_TOOLS);
   assert.ok(
-    source.includes("'/neighborhood/' + $route.params.id + '/wizard/background'"),
-    "the link is built from the id in the URL",
+    source.includes("name: 'neighborhoodmapbackground'"),
+    "the link targets the named route, like its siblings in this panel",
+  );
+  assert.ok(
+    source.includes("params: { id: $route.params.id }"),
+    "the hood it opens is the id in the URL, not a parent-supplied prop",
+  );
+  assert.ok(
+    !source.includes("'/wizard/background'"),
+    "the hard-coded path string is gone, so a route path change cannot orphan it",
   );
   assert.ok(
     !source.includes("<span href=\"\" class=\"btn-ui\">Update</span>"),
     "the dead Update control is gone",
   );
   assert.ok(source.includes("canAdmin"), "it stays behind the admin check");
+});
+
+test("the named Update route is the one the router actually registers", () => {
+  const tools = read(HOOD_TOOLS);
+  const routes = read(ROUTES);
+  const name = "neighborhoodmapbackground";
+  assert.ok(tools.includes(`name: '${name}'`), "the panel names this route");
+  assert.ok(routes.includes(`name: "${name}"`), "the router defines that same name");
+  const hoodBlock = between(routes, "path: \"/neighborhood/:id\"", "path: \"/block/:id\"");
+  assert.ok(hoodBlock.includes(`name: "${name}"`), "and it lives under /neighborhood/:id");
+});
+
+test("every touched neighborhood template line fits the lint limit", () => {
+  const limit = 100;
+  const tooLong = read(HOOD_TOOLS)
+    .split("\n")
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter(entry => entry.line.length > limit);
+  assert.deepStrictEqual(
+    tooLong.map(entry => `${entry.number}:${entry.line.length}`),
+    [],
+    "max-len is an error at 100 in spa/package.json, and this file is touched",
+  );
 });
 
 test("the neighborhood map renders the server-resolved background", () => {
@@ -533,29 +590,24 @@ test("the neighborhood map renders the server-resolved background", () => {
 
 test("the neighborhood map clears and reloads EVERYTHING on a route change", () => {
   const source = read(HOOD_MAP_PAGE);
-  const watcher = source.slice(source.indexOf("\"$route.params.id\"()"));
+  const watcher = source.slice(at(source, "\"$route.params.id\"()"));
   assert.ok(
     watcher.indexOf("this.loadRouteHood();") !== -1,
     "the watcher runs the one route-safe load, not a background-only reload",
   );
 
-  const flow = source.slice(
-    source.indexOf("async loadRouteHood()"),
-    source.indexOf("async unloadPlace()"),
-  );
+  const flow = between(source, "async loadRouteHood()", "async unloadPlace()");
+  const dropped = at(flow, "this.clearRouteState();");
   assert.ok(
-    flow.indexOf("this.clearRouteState();") < flow.indexOf("this.getMapBackground(hoodId)"),
+    dropped < at(flow, "this.getMapBackground(hoodId)"),
     "the old hood is dropped before the new background read",
   );
   assert.ok(
-    flow.indexOf("this.clearRouteState();") < flow.indexOf("this.getPlace(hoodId)"),
+    dropped < at(flow, "this.getPlace(hoodId)"),
     "the old hood is dropped before the new hood read",
   );
 
-  const clear = source.slice(
-    source.indexOf("clearRouteState(): void"),
-    source.indexOf("getPlace(hoodId: string)"),
-  );
+  const clear = between(source, "clearRouteState(): void", "getPlace(hoodId: string)");
   for (const dropped of [
     "this.loaded = false;",
     "this.hood = undefined;",
@@ -572,9 +624,10 @@ test("a stale neighborhood map read cannot overwrite the newer hood", () => {
   const source = read(HOOD_MAP_PAGE);
   const guard = "if (this.$route.params.id !== hoodId) {";
 
-  const background = source.slice(
-    source.indexOf("getMapBackground(hoodId: string): void"),
-    source.indexOf("async joinPlace()"),
+  const background = between(
+    source,
+    "getMapBackground(hoodId: string): void",
+    "async joinPlace()",
   );
   assert.strictEqual(
     background.split(guard).length - 1,
@@ -582,22 +635,16 @@ test("a stale neighborhood map read cannot overwrite the newer hood", () => {
     "the background read guards both its success and its failure path",
   );
 
-  const place = source.slice(
-    source.indexOf("getPlace(hoodId: string)"),
-    source.indexOf("async loadRouteHood()"),
-  );
+  const place = between(source, "getPlace(hoodId: string)", "async loadRouteHood()");
   assert.strictEqual(
     place.split(guard).length - 1,
     2,
     "the hood read guards both its success and its failure path",
   );
 
-  const flow = source.slice(
-    source.indexOf("async loadRouteHood()"),
-    source.indexOf("async unloadPlace()"),
-  );
+  const flow = between(source, "async loadRouteHood()", "async unloadPlace()");
   assert.ok(
-    flow.includes("if (this.$route.params.id !== hoodId || !this.hood) {"),
+    flow.includes("if (this.$route.params.id !== hoodId || !this.hood || !this.colony) {"),
     "the map is only drawn when the route is still on the hood that answered",
   );
 });
@@ -951,6 +998,36 @@ test("the store never holds one hood beside another hood's map", async () => {
   await flush();
   assert.strictEqual(vm.storePlace.id, HOOD_B_ID, "the store follows the route");
   assert.strictEqual(vm.storePlace.hood.id, vm.hood.id, "the store and the map agree");
+});
+
+// ------------------------------------------------- the guards guard themselves
+//
+// `at` and `between` exist so that a deleted token fails an ordering test
+// instead of quietly satisfying it. That is only true if they really throw, so
+// they are exercised directly here.
+
+test("a missing token fails instead of reporting offset -1", () => {
+  assert.throws(() => at("alpha beta", "gamma"), /expected to find: gamma/);
+  assert.strictEqual(at("alpha beta", "beta"), 6, "a present token still reports its offset");
+});
+
+test("an order assertion cannot pass because the first token vanished", () => {
+  const good = "clear();\nread();";
+  const dropped = "read();";
+  assert.ok(at(good, "clear();") < at(good, "read();"), "the real order still passes");
+  assert.throws(() => at(dropped, "clear();") < at(dropped, "read();"), /expected to find/);
+  assert.ok(
+    dropped.indexOf("clear();") < dropped.indexOf("read();"),
+    "the OLD bare-indexOf form would have passed on this same input",
+  );
+});
+
+test("a region cannot be sliced from a marker that is not there", () => {
+  const source = "start\nmiddle\nend";
+  assert.strictEqual(between(source, "start", "end"), "start\nmiddle\n");
+  assert.throws(() => between(source, "start", "nowhere"), /expected to find: nowhere/);
+  assert.throws(() => between(source, "nowhere", "end"), /expected to find: nowhere/);
+  assert.throws(() => between(source, "end", "start"), /expected end before start/);
 });
 
 // --------------------------------------------------------------------- runner

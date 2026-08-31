@@ -26,11 +26,12 @@
       <router-link :to="{ name: 'neighborhoodInboxToAll'}" class="btn-ui">
         Inbox to All</router-link>
       <router-link
-        :to="'/neighborhood/' + $route.params.id + '/wizard/background'"
+        :to="{ name: 'neighborhoodmapbackground', params: { id: $route.params.id } }"
         class="btn-ui"
       >
         Update</router-link>
-      <router-link :to="{ name: 'neighborhoodAccessRights' }" class="btn-ui">Access Rights</router-link>
+      <router-link :to="{ name: 'neighborhoodAccessRights' }" class="btn-ui">
+        Access Rights</router-link>
 		</div>
 		<br />
 	</div>
