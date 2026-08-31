@@ -2,8 +2,11 @@
  * Pure state and URL logic for the classic map background selector.
  *
  * The selector restores the blaxxun-era "Multimedia Wizard" background step
- * (`colonycity/templates/block/wizard/image.tmpl`), which offered one radio per
- * candidate image, marked the current choice, and saved on "Ok".
+ * (`colonycity/templates/block/wizard/image.tmpl` for blocks,
+ * `colonycity/templates/neighbor/wizard/image.tmpl` for neighborhoods), which
+ * offered one radio per candidate image, marked the current choice, and saved
+ * on "Ok". The two historical templates are the same form: they differ only in
+ * the heading variable, the asset directory, and the thumbnail size.
  *
  * Everything here is deliberately free of Vue and of the DOM so the SPA's
  * dependency-free test harness can exercise the real behaviour rather than a
@@ -29,7 +32,7 @@ export interface MapBackgroundOptionsResponse {
   options: MapBackgroundOption[];
 }
 
-/** Which place kind the selector is editing. MAP-2 only wires up "block". */
+/** Which place kind the selector is editing. Both kinds are wired up. */
 export type MapBackgroundPlaceType = "block" | "hood";
 
 export type MapBackgroundStatus =
@@ -59,11 +62,43 @@ export interface MapBackgroundState {
 }
 
 /**
- * The historical wizard drew each candidate at 160x80
- * (`image.tmpl`: `width=160 height=80`).
+ * The historical block wizard drew each candidate at 160x80
+ * (`block/wizard/image.tmpl`: `width=160 height=80`).
  */
 export const MAP_BACKGROUND_THUMBNAIL_WIDTH = 160;
 export const MAP_BACKGROUND_THUMBNAIL_HEIGHT = 80;
+
+/**
+ * The historical neighborhood wizard drew its candidates larger, at 180x100
+ * (`neighbor/wizard/image.tmpl`: `width=180 height=100`). Apart from the
+ * heading variable and the asset directory that is the ONLY difference between
+ * the two templates, so the size travels with the place type rather than
+ * justifying a second component.
+ */
+export const HOOD_MAP_BACKGROUND_THUMBNAIL_WIDTH = 180;
+export const HOOD_MAP_BACKGROUND_THUMBNAIL_HEIGHT = 100;
+
+/** The thumbnail box one place kind's historical wizard drew. */
+export interface MapBackgroundThumbnailSize {
+  width: number;
+  height: number;
+}
+
+/** The historical thumbnail size for one place kind. */
+export function mapBackgroundThumbnailSize(
+  placeType: MapBackgroundPlaceType,
+): MapBackgroundThumbnailSize {
+  if (placeType === "hood") {
+    return {
+      width: HOOD_MAP_BACKGROUND_THUMBNAIL_WIDTH,
+      height: HOOD_MAP_BACKGROUND_THUMBNAIL_HEIGHT,
+    };
+  }
+  return {
+    width: MAP_BACKGROUND_THUMBNAIL_WIDTH,
+    height: MAP_BACKGROUND_THUMBNAIL_HEIGHT,
+  };
+}
 
 /** Proven historical strings, kept verbatim. */
 export const MAP_BACKGROUND_PROMPT = "Choose a background image";

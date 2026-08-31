@@ -8,6 +8,7 @@ const path = require("path");
 
 const SUITES = [
   "tests/.compiled/tests/map-background-selector.test.js",
+  "tests/.compiled/tests/hood-map-background-selector.test.js",
 ];
 
 let failed = false;

@@ -16,6 +16,7 @@ import CityMapPage from "./pages/CityMapPage.vue";
 import InformationPage from "./pages/Information.vue";
 import NeighborhoodPage from "./pages/neighborhood/NeighborhoodPage.vue";
 import NeighborhoodMapPage from "./pages/neighborhood/NeighborhoodMapPage.vue";
+import NeighborhoodMapBackgroundPage from "./pages/neighborhood/NeighborhoodMapBackgroundPage.vue";
 import NeighborhoodTools from "@/pages/neighborhood/NeighborhoodTools.vue";
 
 import BlockPage from "./pages/block/BlockPage.vue";
@@ -258,6 +259,12 @@ export default [
         path: "",
         component: NeighborhoodMapPage,
         name: "neighborhoodpage",
+        meta: { wrapper: true },
+      },
+      {
+        path: "wizard/background",
+        component: NeighborhoodMapBackgroundPage,
+        name: "neighborhoodmapbackground",
         meta: { wrapper: true },
       },
       {

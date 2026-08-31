@@ -434,13 +434,35 @@ test("the wizard link points at the restored route, not the dead CGI action", ()
   assert.ok(source.includes("blockmapbackground"), "it points at the new route");
 });
 
-test("the block background route exists and no hood route was added", () => {
+/**
+ * MAP-2's original form of this test also asserted that no neighborhood route
+ * existed yet. MAP-3 added that route, so the negative is now carried by MAP-3's
+ * own suite as a positive; what MAP-2 still guards is that the BLOCK route keeps
+ * its own name and path and is not merged into the neighborhood one.
+ */
+test("the block background route keeps its own name and path", () => {
   const source = read(ROUTES);
-  assert.ok(source.includes("name: \"blockmapbackground\""));
-  assert.ok(source.includes("path: \"wizard/background\""));
+
+  // Scoped to the /block/:id section on purpose. Both place kinds now use the
+  // child path "wizard/background", so a whole-file `includes` would be
+  // satisfied by MAP-3's neighborhood route alone and would still pass if the
+  // block route were deleted.
+  const start = source.indexOf("path: \"/block/:id\"");
+  const end = source.indexOf("path: \"/home/update\"");
+  assert.notStrictEqual(start, -1, "the /block/:id route section exists");
+  assert.notStrictEqual(end, -1, "the section after it exists");
+  assert.ok(start < end, "the block section comes first");
+  const blockRoutes = source.slice(start, end);
+
+  assert.ok(blockRoutes.includes("name: \"blockmapbackground\""));
+  assert.ok(blockRoutes.includes("path: \"wizard/background\""));
   assert.ok(
-    !source.includes("neighborhoodmapbackground"),
-    "the neighborhood selector belongs to MAP-3",
+    blockRoutes.includes("component: BlockMapBackgroundPage"),
+    "the block route still renders the block page",
+  );
+  assert.ok(
+    !blockRoutes.includes("neighborhoodmapbackground"),
+    "the neighborhood route is not what satisfied this test",
   );
 });
 
