@@ -31,6 +31,9 @@ export class Db {
   get member() {
     return this.knex<Models.Member, Models.Member[]>('member');
   }
+  get memberData() {
+    return this.knex<Models.MemberData, Models.MemberData[]>('member_data');
+  }
   get message() {
     return this.knex<Models.Message, Models.Message[]>('message');
   }
