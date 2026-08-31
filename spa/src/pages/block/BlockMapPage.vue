@@ -46,6 +46,7 @@
 import Vue from "vue";
 
 import { colonyDataHelper } from '@/helpers';
+import { mapBackgroundOptionsPath } from "@/helpers/map-background.helper";
 
 export default Vue.extend({
   name: "BlockMapPage",
@@ -58,6 +59,9 @@ export default Vue.extend({
     return {
       loaded: false,
       locations: [],
+      // The server-resolved background. Empty until the read returns, so the
+      // colony default below covers the loading window and a failed read.
+      effectiveUrl: "",
     };
   },
   methods: {
@@ -69,6 +73,18 @@ export default Vue.extend({
         this.loaded = true;
       });
 
+    },
+    // The chosen background is whatever MAP-1 reports as effective. The client
+    // never derives the index or the filename itself.
+    getMapBackground(): void {
+      this.$http
+        .get(mapBackgroundOptionsPath("block", this.$route.params.id))
+        .then((response) => {
+          this.effectiveUrl = response.data.effectiveUrl;
+        })
+        .catch(() => {
+          this.effectiveUrl = "";
+        });
     },
     mapIconImage (index): string {
       if(
@@ -85,6 +101,9 @@ export default Vue.extend({
   },
   computed: {
     mapBackground(): string {
+      if (this.effectiveUrl) {
+        return `url('${this.effectiveUrl}')`;
+      }
       return "url('/assets/img/map_themes/" + colonyDataHelper[this.colony.slug].map_theme +
         "/block/Pimg2D000.gif')";
     },
@@ -95,6 +114,7 @@ export default Vue.extend({
   },
   mounted() {
     this.getData();
+    this.getMapBackground();
   },
 });
 </script>
