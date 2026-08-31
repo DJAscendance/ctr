@@ -138,7 +138,10 @@ export default Vue.extend({
       this.clearRouteState();
       this.getMapBackground(hoodId);
       await this.getPlace(hoodId);
-      if (this.$route.params.id !== hoodId || !this.hood) {
+      // The colony is required, not merely expected: both background computeds
+      // read `colony.slug`, and the server returns an undefined colony for a
+      // hood with no parent. Drawing without it would throw in the template.
+      if (this.$route.params.id !== hoodId || !this.hood || !this.colony) {
         return;
       }
       this.loaded = true;
