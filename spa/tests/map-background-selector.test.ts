@@ -448,6 +448,272 @@ test("the shared client can send the PUT the save needs", () => {
   assert.ok(read(API_CLIENT).includes("put:"), "MAP-1's write endpoint uses PUT");
 });
 
+// --------------------------------------------------- route change (MAP-2)
+
+/**
+ * A block-B pool that shares no index with `serverResponse()`'s block-A pool,
+ * so "the block A choice is gone" can be asserted rather than assumed.
+ */
+function blockBResponse(): MapBackgroundOptionsResponse {
+  return {
+    selectedIndex: null,
+    effectiveIndex: 5,
+    effectiveUrl: `${GRASS}Pimg2D005.gif`,
+    options: [
+      { index: 5, url: `${GRASS}Pimg2D005.gif` },
+      { index: 6, url: `${GRASS}Pimg2D006.gif` },
+      { index: 7, url: `${GRASS}Pimg2D007.gif` },
+    ],
+  };
+}
+
+test("a route change starts the selector from a clean state", () => {
+  // Block A: authorized, loaded, with an UNSAVED choice of 1 over an
+  // effective 3.
+  const blockA = chooseIndex(readyState(), 1);
+  assert.strictEqual(blockA.pendingIndex, 1);
+  assert.ok(canSaveMapBackground(blockA), "block A has an unsaved choice");
+
+  // The `:key` on the selector destroys the instance, so block B begins at the
+  // initial state rather than inheriting anything from block A.
+  const fresh = initialMapBackgroundState();
+  assert.strictEqual(fresh.status, "loading");
+  assert.strictEqual(fresh.canEdit, false, "authority is not carried over");
+  assert.deepStrictEqual(fresh.options, [], "block A options are gone");
+  assert.strictEqual(fresh.pendingIndex, 0, "the block A choice is gone");
+  assert.strictEqual(fresh.selectedIndex, null);
+  assert.strictEqual(fresh.effectiveUrl, "", "the block A image is gone");
+  assert.strictEqual(fresh.message, "", "a block A message cannot follow");
+  assert.strictEqual(fresh.messageKind, "");
+});
+
+test("after a route change only the new block's options are offered", () => {
+  const blockB = applyLoaded(
+    applyEditAuthority(initialMapBackgroundState(), true),
+    blockBResponse(),
+  );
+  assert.deepStrictEqual(
+    blockB.options.map(option => option.index),
+    [5, 6, 7],
+  );
+  assert.strictEqual(
+    blockB.pendingIndex,
+    5,
+    "the radio starts on what block B actually renders",
+  );
+});
+
+test("a pending choice from the previous block cannot be re-applied", () => {
+  const blockB = applyLoaded(
+    applyEditAuthority(initialMapBackgroundState(), true),
+    blockBResponse(),
+  );
+  // 1 was block A's unsaved choice. It is not in block B's pool, so the
+  // helper refuses it outright.
+  const attempted = chooseIndex(blockB, 1);
+  assert.strictEqual(attempted, blockB, "the block A index is refused");
+  assert.strictEqual(attempted.pendingIndex, 5);
+});
+
+test("a save after a route change targets the new block and its own choice", () => {
+  const blockB = chooseIndex(
+    applyLoaded(applyEditAuthority(initialMapBackgroundState(), true), blockBResponse()),
+    6,
+  );
+  const saving = beginSave(blockB);
+  assert.notStrictEqual(saving, blockB, "the save is allowed");
+  assert.strictEqual(
+    mapBackgroundSelectionPath("block", "36"),
+    "/block/36/map-background-selection",
+    "the PUT goes to the block now in the URL",
+  );
+  assert.deepStrictEqual(
+    mapBackgroundSelectionPayload(saving.pendingIndex),
+    { index: 6 },
+    "the PUT carries a block B index, not the block A choice of 1",
+  );
+});
+
+test("an unauthorized new block offers no active control", () => {
+  const blockB = applyLoaded(
+    applyEditAuthority(initialMapBackgroundState(), false),
+    blockBResponse(),
+  );
+  assert.ok(mapBackgroundControlsDisabled(blockB), "the radios stay disabled");
+  assert.strictEqual(canSaveMapBackground(blockB), false, "Ok cannot be pressed");
+  assert.strictEqual(chooseIndex(blockB, 6), blockB, "no choice may be made");
+});
+
+// --------------------------------------------- route change wiring (MAP-2)
+//
+// These are source assertions, not a rendered run: the harness has no DOM and
+// no router. They pin the wiring that the browser QA pass exercises for real.
+// Neither kind of check is sufficient alone.
+
+test("the background page re-authorizes when the route block id changes", () => {
+  // Vue Router reuses the page instance when only `/block/:id` changes, so
+  // mounted() alone would leave the previous block's answer in place.
+  const source = read(BACKGROUND_PAGE);
+  assert.ok(
+    /watch:\s*\{\s*blockId\(/.test(source),
+    "the route block id must be watched",
+  );
+  assert.ok(
+    /blockId\(\)[^}]*this\.authorize\(\)/.test(source),
+    "the watcher must re-run authorization",
+  );
+  assert.ok(
+    source.includes("this.checked = false"),
+    "the step must be hidden while the new block is authorized",
+  );
+  assert.ok(
+    source.includes("this.canEdit = false"),
+    "the previous block's authority must be withdrawn first",
+  );
+});
+
+test("the selector is destroyed and rebuilt for the new block", () => {
+  const source = read(BACKGROUND_PAGE);
+  assert.ok(
+    /<place-map-background-selector[^>]*:key="blockId"/.test(source),
+    "keying the selector on the block id resets its options and pending radio",
+  );
+});
+
+test("the block map clears and reloads its background on a route id change", () => {
+  const source = read(BLOCK_MAP_PAGE);
+  assert.ok(
+    /watch:[\s\S]*"\$route\.params\.id"\(/.test(source),
+    "the route block id must be watched",
+  );
+  assert.ok(
+    /"\$route\.params\.id"\(\)[^}]*this\.effectiveUrl = ""/.test(source),
+    "the previous block's background must not stay on screen",
+  );
+  assert.ok(
+    /"\$route\.params\.id"\(\)[\s\S]{0,200}this\.getMapBackground\(\)/.test(source),
+    "the new block's background must be read",
+  );
+});
+
+test("a failed read leaves no background from the previous block", () => {
+  // The catch clears rather than keeps, so the colony default renders instead
+  // of the block the viewer just left.
+  const source = read(BLOCK_MAP_PAGE);
+  assert.ok(
+    /\.catch\(\(\) => \{[\s\S]*?this\.effectiveUrl = "";/.test(source),
+    "a failed read must clear the effective URL",
+  );
+  assert.ok(
+    source.includes("if (this.effectiveUrl)"),
+    "an empty effective URL must fall back to the colony default",
+  );
+});
+
+// ------------------------------------------------ stale response guards
+
+test("a stale block map read cannot overwrite the newer block", () => {
+  const source = read(BLOCK_MAP_PAGE);
+  const guards = source.match(/if \(this\.\$route\.params\.id !== blockId\)/g) || [];
+  assert.strictEqual(
+    guards.length,
+    2,
+    "both the success and the failure path must check the id first",
+  );
+});
+
+test("a stale authorization or name reply cannot change the newer block", () => {
+  // One guard after the can_admin reply, one after the block name reply.
+  const source = read(BACKGROUND_PAGE);
+  const guards = source.match(/if \(this\.blockId !== blockId\) \{/g) || [];
+  assert.strictEqual(guards.length, 2, "both replies must check the id first");
+  assert.ok(
+    /const blockId = this\.blockId;/.test(source),
+    "the id must be captured before the requests are sent",
+  );
+});
+
+// --------------------------------------------------------- wizard heading
+
+test("the wizard heading names the block from the route, not the parent prop", () => {
+  // BlockPage fetches its place once in mounted(), so its `block` prop still
+  // describes the previous block after a move between two block ids. Reading
+  // the name from it would title block B's editor with block A's name.
+  const source = read(BACKGROUND_PAGE);
+  assert.ok(
+    !source.includes("this.block.name"),
+    "the heading must not come from the stale parent prop",
+  );
+  assert.ok(
+    /this\.\$http\.get\(`\/block\/\$\{blockId\}`\)/.test(source),
+    "the name must be read for the route id",
+  );
+  assert.ok(
+    source.includes("{{ heading }}"),
+    "the heading must render the route-specific value",
+  );
+});
+
+test("the historical wizard title is preserved", () => {
+  const source = read(BACKGROUND_PAGE);
+  assert.ok(
+    source.includes("\"Multimedia Wizard\""),
+    "the classic title is kept verbatim",
+  );
+  assert.ok(
+    /`\$\{WIZARD_TITLE\} - \$\{this\.blockName\}`/.test(source),
+    "the classic 'Multimedia Wizard - <block>' form is kept",
+  );
+});
+
+test("the old block name is cleared before the new one is read", () => {
+  // Order matters: the name has to go before either request is awaited, or
+  // the previous block's name is on screen while block B is being resolved.
+  const source = read(BACKGROUND_PAGE);
+  const cleared = source.indexOf("this.blockName = \"\";");
+  const authAwait = source.indexOf("await this.checkAdmin(blockId)");
+  const nameAwait = source.indexOf("await this.loadBlockName(blockId)");
+  const applied = source.indexOf("this.blockName = blockName;");
+  assert.ok(cleared !== -1, "the old name must be cleared");
+  assert.ok(nameAwait !== -1, "the new name must be read");
+  assert.ok(cleared < authAwait, "the name is cleared before authorization");
+  assert.ok(authAwait < nameAwait, "an unauthorized block is never named");
+  assert.ok(nameAwait < applied, "the new name is applied only after it arrives");
+});
+
+test("the step stays hidden until the new block is authorized and named", () => {
+  const source = read(BACKGROUND_PAGE);
+  const nameAwait = source.indexOf("await this.loadBlockName(blockId)");
+  const shown = source.indexOf("this.checked = true;");
+  assert.ok(nameAwait !== -1, "the name must be read before the step is shown");
+  assert.ok(shown > nameAwait, "nothing is revealed before the name arrives");
+  assert.ok(
+    source.includes("v-if=\"checked\""),
+    "the whole step is hidden while it is unresolved",
+  );
+});
+
+test("a failed block name read shows no name rather than the previous one", () => {
+  const source = read(BACKGROUND_PAGE);
+  assert.ok(
+    /loadBlockName[\s\S]*?catch \(error\) \{\s*return "";/.test(source),
+    "a failed name read must yield an empty name",
+  );
+  assert.ok(
+    /this\.blockName \? `\$\{WIZARD_TITLE\} - \$\{this\.blockName\}` : WIZARD_TITLE/
+      .test(source),
+    "an empty name drops the name from the heading instead of guessing one",
+  );
+});
+
+test("the document title also follows the route, not the parent prop", () => {
+  const source = read(BACKGROUND_PAGE);
+  assert.ok(
+    /document\.title = blockName/.test(source),
+    "the tab title must use the route-specific name",
+  );
+});
+
 // ------------------------------------------------------------------- run
 
 let failed = 0;

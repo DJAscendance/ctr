@@ -76,13 +76,25 @@ export default Vue.extend({
     },
     // The chosen background is whatever MAP-1 reports as effective. The client
     // never derives the index or the filename itself.
+    //
+    // The id is captured before the request and re-checked after it, on both
+    // paths. A slow answer for a block the viewer has already left must not
+    // paint over the block now in the URL, and a slow FAILURE for that block
+    // must not wipe a background the new block already loaded.
     getMapBackground(): void {
+      const blockId = this.$route.params.id;
       this.$http
-        .get(mapBackgroundOptionsPath("block", this.$route.params.id))
+        .get(mapBackgroundOptionsPath("block", blockId))
         .then((response) => {
+          if (this.$route.params.id !== blockId) {
+            return;
+          }
           this.effectiveUrl = response.data.effectiveUrl;
         })
         .catch(() => {
+          if (this.$route.params.id !== blockId) {
+            return;
+          }
           this.effectiveUrl = "";
         });
     },
@@ -110,6 +122,18 @@ export default Vue.extend({
     freeImage(): string {
       return "/assets/img/map_themes/" + colonyDataHelper[this.colony.slug].map_theme +
         "/block/Ficon2D000.gif";
+    },
+  },
+  watch: {
+    /**
+     * Vue Router reuses this page when only `/block/:id` changes, so
+     * `mounted()` does not run again. The previous block's background is
+     * dropped at once - the colony default covers the gap - and MAP-1 is asked
+     * again for the block now in the URL.
+     */
+    "$route.params.id"(): void {
+      this.effectiveUrl = "";
+      this.getMapBackground();
     },
   },
   mounted() {
