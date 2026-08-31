@@ -21,6 +21,7 @@ import NeighborhoodTools from "@/pages/neighborhood/NeighborhoodTools.vue";
 
 import BlockPage from "./pages/block/BlockPage.vue";
 import BlockMapPage from "./pages/block/BlockMapPage.vue";
+import BlockMapBackgroundPage from "./pages/block/BlockMapBackgroundPage.vue";
 import BlockMovePage from "./pages/block/BlockMovePage.vue";
 import BlockTools from "@/pages/block/BlockTools.vue";
 import BlockWizardPage from "./pages/block/BlockWizardPage.vue";
@@ -316,6 +317,12 @@ export default [
         path: "wizard",
         component: BlockWizardPage,
         name: "blockwizard",
+        meta: { wrapper: true },
+      },
+      {
+        path: "wizard/background",
+        component: BlockMapBackgroundPage,
+        name: "blockmapbackground",
         meta: { wrapper: true },
       },
       {
