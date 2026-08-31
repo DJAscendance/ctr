@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import { HoodService, MemberService } from '../services';
 import { Container } from 'typedi';
+import { INVALID_MAP_BACKGROUND_INDEX, parseMapBackgroundIndex, parseRouteId } from '../libs';
 
-class HoodController {
+export class HoodController {
   constructor(private hoodService: HoodService, private memberService: MemberService) {}
 
   public async getHood(request: Request, response: Response): Promise<void> {
@@ -107,6 +108,90 @@ class HoodController {
     } catch (error) {
       console.error(error);
       response.status(400).json({ error });
+    }
+  }
+
+  /**
+   * Reports the hood's current map background index plus every index its
+   * theme offers. Read-only, so no authorization is required.
+   */
+  public async getMapBackgroundOptions(request: Request, response: Response): Promise<void> {
+    const hoodId = parseRouteId(request.params.id);
+    if (hoodId === null) {
+      response.status(400).json({ error: 'Invalid hood id.' });
+      return;
+    }
+
+    try {
+      const result = await this.hoodService.getMapBackgroundOptions(hoodId);
+      if (!result) {
+        response.status(404).json({ error: 'Hood or its owning colony was not found.' });
+        return;
+      }
+      response.status(200).json(result);
+    } catch (error) {
+      console.error(error);
+      // Everything the client can get wrong is answered above, so anything
+      // reaching here is a server-side fault. The message is fixed so no
+      // filesystem path from the underlying error reaches the response.
+      response.status(500).json({ error: 'Unable to load map background options.' });
+    }
+  }
+
+  /**
+   * Sets the hood's map background index. The server authorizes the member
+   * first, then rejects any index the hood's own theme does not offer.
+   */
+  public async putMapBackgroundSelection(request: Request, response: Response): Promise<void> {
+    const hoodId = parseRouteId(request.params.id);
+    if (hoodId === null) {
+      response.status(400).json({ error: 'Invalid hood id.' });
+      return;
+    }
+
+    const { apitoken } = request.headers;
+    let session;
+    try {
+      session = this.memberService.decodeMemberToken(<string>apitoken);
+    } catch (error) {
+      session = undefined;
+    }
+    if (!session) {
+      response.status(401).json({ error: 'Invalid or missing token.' });
+      return;
+    }
+
+    try {
+      if (!(await this.hoodService.canAdmin(hoodId, session.id))) {
+        response.status(403).json({ error: 'Access denied.' });
+        return;
+      }
+
+      const index = parseMapBackgroundIndex(request.body);
+      if (index === INVALID_MAP_BACKGROUND_INDEX) {
+        response.status(400).json({
+          error: 'index must be a non-negative integer, or null to reset.',
+        });
+        return;
+      }
+
+      const result = await this.hoodService.updateMapBackgroundSelection(hoodId, index);
+      if (result.status === 'not_found') {
+        response.status(404).json({ error: 'Hood or its owning colony was not found.' });
+        return;
+      }
+      if (result.status === 'invalid') {
+        response.status(400).json({
+          error: 'Selected index is not available for this hood.',
+        });
+        return;
+      }
+      response.status(200).json({ selectedIndex: result.selectedIndex });
+    } catch (error) {
+      console.error(error);
+      // As above: an invalid index or body already returned 400, so this is a
+      // server-side fault and must not be reported as a bad request.
+      response.status(500).json({ error: 'Unable to update map background selection.' });
     }
   }
 }

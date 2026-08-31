@@ -2,8 +2,9 @@ import { Request, Response } from 'express';
 import { Container } from 'typedi';
 
 import { MemberService, BlockService, HoodService } from '../services';
+import { INVALID_MAP_BACKGROUND_INDEX, parseMapBackgroundIndex, parseRouteId } from '../libs';
 
-class BlockController {
+export class BlockController {
   constructor(
     private memberService: MemberService,
     private blockService: BlockService,
@@ -139,6 +140,90 @@ class BlockController {
     } catch (error) {
       console.error(error);
       response.status(400).json({ error });
+    }
+  }
+
+  /**
+   * Reports the block's current map background index plus every index its
+   * theme offers. Read-only, so no authorization is required.
+   */
+  public async getMapBackgroundOptions(request: Request, response: Response): Promise<void> {
+    const blockId = parseRouteId(request.params.id);
+    if (blockId === null) {
+      response.status(400).json({ error: 'Invalid block id.' });
+      return;
+    }
+
+    try {
+      const result = await this.blockService.getMapBackgroundOptions(blockId);
+      if (!result) {
+        response.status(404).json({ error: 'Block or its owning colony was not found.' });
+        return;
+      }
+      response.status(200).json(result);
+    } catch (error) {
+      console.error(error);
+      // Everything the client can get wrong is answered above, so anything
+      // reaching here is a server-side fault. The message is fixed so no
+      // filesystem path from the underlying error reaches the response.
+      response.status(500).json({ error: 'Unable to load map background options.' });
+    }
+  }
+
+  /**
+   * Sets the block's map background index. The server authorizes the member
+   * first, then rejects any index the block's own theme does not offer.
+   */
+  public async putMapBackgroundSelection(request: Request, response: Response): Promise<void> {
+    const blockId = parseRouteId(request.params.id);
+    if (blockId === null) {
+      response.status(400).json({ error: 'Invalid block id.' });
+      return;
+    }
+
+    const { apitoken } = request.headers;
+    let session;
+    try {
+      session = this.memberService.decodeMemberToken(<string>apitoken);
+    } catch (error) {
+      session = undefined;
+    }
+    if (!session) {
+      response.status(401).json({ error: 'Invalid or missing token.' });
+      return;
+    }
+
+    try {
+      if (!(await this.blockService.canAdmin(blockId, session.id))) {
+        response.status(403).json({ error: 'Access denied.' });
+        return;
+      }
+
+      const index = parseMapBackgroundIndex(request.body);
+      if (index === INVALID_MAP_BACKGROUND_INDEX) {
+        response.status(400).json({
+          error: 'index must be a non-negative integer, or null to reset.',
+        });
+        return;
+      }
+
+      const result = await this.blockService.updateMapBackgroundSelection(blockId, index);
+      if (result.status === 'not_found') {
+        response.status(404).json({ error: 'Block or its owning colony was not found.' });
+        return;
+      }
+      if (result.status === 'invalid') {
+        response.status(400).json({
+          error: 'Selected index is not available for this block.',
+        });
+        return;
+      }
+      response.status(200).json({ selectedIndex: result.selectedIndex });
+    } catch (error) {
+      console.error(error);
+      // As above: an invalid index or body already returned 400, so this is a
+      // server-side fault and must not be reported as a bad request.
+      response.status(500).json({ error: 'Unable to update map background selection.' });
     }
   }
 }

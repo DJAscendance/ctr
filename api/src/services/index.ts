@@ -8,6 +8,7 @@ export * from './fleamarket/fleamarket.service';
 export * from './home/home.service';
 export * from './hood/hood.service';
 export * from './mall/mall.service';
+export * from './map-background/map-background.service';
 export * from './member/member.service';
 export * from './message/message.service';
 export * from './object/object.service';
