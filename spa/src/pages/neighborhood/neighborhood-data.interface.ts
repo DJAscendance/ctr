@@ -14,5 +14,7 @@ export interface NeighborhoodData {
     world_filename: string,
     slug: string
   },
-  blocks?: []
+  blocks?: [],
+  /** The MAP-1 resolved background URL for this hood. Empty until it loads. */
+  effectiveUrl?: string
 }
