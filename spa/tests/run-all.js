@@ -11,6 +11,7 @@ const SUITES = [
   "tests/.compiled/tests/reconnect-coordinator.test.js",
   "tests/.compiled/tests/server-presence.test.js",
   "tests/.compiled/tests/map-background-selector.test.js",
+  "tests/.compiled/tests/hood-map-background-selector.test.js",
 ];
 
 let failed = false;

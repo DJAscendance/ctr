@@ -61,8 +61,6 @@ import {
   MAP_BACKGROUND_EMPTY_MESSAGE,
   MAP_BACKGROUND_PROMPT,
   MAP_BACKGROUND_SUBMIT_LABEL,
-  MAP_BACKGROUND_THUMBNAIL_HEIGHT,
-  MAP_BACKGROUND_THUMBNAIL_WIDTH,
   MapBackgroundPlaceType,
   MapBackgroundState,
   applyEditAuthority,
@@ -80,10 +78,12 @@ import {
   mapBackgroundOptionsPath,
   mapBackgroundSelectionPath,
   mapBackgroundSelectionPayload,
+  mapBackgroundThumbnailSize,
 } from "@/helpers/map-background.helper";
 
 /**
- * The classic background step of the block "Multimedia Wizard".
+ * The classic background step of the "Multimedia Wizard", for a block or a
+ * neighborhood.
  *
  * All decisions live in `map-background.helper`; this component only renders
  * the state and forwards the two MAP-1 requests. It never derives a theme, an
@@ -121,20 +121,22 @@ export default Vue.extend({
     submitLabel(): string {
       return MAP_BACKGROUND_SUBMIT_LABEL;
     },
+    /** 160x80 for a block, 180x100 for a hood - both historical. */
     thumbnailWidth(): number {
-      return MAP_BACKGROUND_THUMBNAIL_WIDTH;
+      return mapBackgroundThumbnailSize(this.placeKind).width;
     },
     thumbnailHeight(): number {
-      return MAP_BACKGROUND_THUMBNAIL_HEIGHT;
+      return mapBackgroundThumbnailSize(this.placeKind).height;
     },
     /**
-     * The historical 160x80 size must be an inline style: the app stylesheet
-     * sizes `img` and would otherwise beat the width/height attributes.
+     * The historical size must be an inline style: the app stylesheet sizes
+     * `img` and would otherwise beat the width/height attributes.
      */
     thumbnailStyle(): Record<string, string> {
+      const size = mapBackgroundThumbnailSize(this.placeKind);
       return {
-        width: `${MAP_BACKGROUND_THUMBNAIL_WIDTH}px`,
-        height: `${MAP_BACKGROUND_THUMBNAIL_HEIGHT}px`,
+        width: `${size.width}px`,
+        height: `${size.height}px`,
       };
     },
     canSave(): boolean {

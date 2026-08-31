@@ -434,13 +434,19 @@ test("the wizard link points at the restored route, not the dead CGI action", ()
   assert.ok(source.includes("blockmapbackground"), "it points at the new route");
 });
 
-test("the block background route exists and no hood route was added", () => {
+/**
+ * MAP-2's original form of this test also asserted that no neighborhood route
+ * existed yet. MAP-3 added that route, so the negative is now carried by MAP-3's
+ * own suite as a positive; what MAP-2 still guards is that the BLOCK route keeps
+ * its own name and path and is not merged into the neighborhood one.
+ */
+test("the block background route keeps its own name and path", () => {
   const source = read(ROUTES);
   assert.ok(source.includes("name: \"blockmapbackground\""));
   assert.ok(source.includes("path: \"wizard/background\""));
   assert.ok(
-    !source.includes("neighborhoodmapbackground"),
-    "the neighborhood selector belongs to MAP-3",
+    source.includes("component: BlockMapBackgroundPage"),
+    "the block route still renders the block page",
   );
 });
 
