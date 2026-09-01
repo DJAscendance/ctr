@@ -18,6 +18,7 @@ import {
   MapBackgroundService,
 } from '../map-background/map-background.service';
 import { resolveMapTheme } from '../../libs';
+import { PlaceCapabilityService } from '../place/place-capability.service';
 
 /** Service for dealing with blocks */
 @Service()
@@ -32,6 +33,7 @@ export class BlockService {
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
     private mapBackgroundService: MapBackgroundService,
+    private placeCapabilityService: PlaceCapabilityService,
   ) {}
   
   public async find(blockId: number): Promise<Place> {
@@ -231,73 +233,26 @@ export class BlockService {
     return await this.mapLocationRepository.createAvailableLocation(blockId, location);
   }
 
+  /**
+   * Reports whether a member may administer a block.
+   * @param blockId id of the block
+   * @param memberId id of the member acting
+   * @returns true when the member holds the classic owner capability at this block
+   */
   public async canAdmin(blockId: number, memberId: number): Promise<boolean> {
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-    const hood = await this.getHood(blockId);
-    const hoodMapLocation = await this.mapLocationRepository.findPlaceIdMapLocation(hood.id);
-    const colonyId = hoodMapLocation.parent_place_id;
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([
-            this.roleRepository.roleMap.ColonyLeader,
-            this.roleRepository.roleMap.ColonyDeputy,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === colonyId) ||
-          ([
-            this.roleRepository.roleMap.NeighborhoodDeputy,
-            this.roleRepository.roleMap.NeighborhoodLeader,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === hood.id) ||
-          ([
-            this.roleRepository.roleMap.BlockDeputy,
-            this.roleRepository.roleMap.BlockLeader,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === blockId)
-        );
-      })
-    ) {
-      return true;
-    }
-    return false;
+    const { canAdmin } = await this.placeCapabilityService.resolve(blockId, memberId);
+    return canAdmin;
   }
 
+  /**
+   * Reports whether a member may change a block's access rights.
+   * @param blockId id of the block
+   * @param memberId id of the member acting
+   * @returns true when the member holds the classic rights capability at this block
+   */
   public async canManageAccess(blockId: number, memberId: number): Promise<boolean> {
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-    const hood = await this.getHood(blockId);
-    const hoodMapLocation = await this.mapLocationRepository.findPlaceIdMapLocation(hood.id);
-    const colonyId = hoodMapLocation.parent_place_id;
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([
-            this.roleRepository.roleMap.ColonyLeader,
-            this.roleRepository.roleMap.ColonyDeputy,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === colonyId) ||
-          ([
-            this.roleRepository.roleMap.NeighborhoodDeputy,
-            this.roleRepository.roleMap.NeighborhoodLeader,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === hood.id) ||
-          ([this.roleRepository.roleMap.BlockLeader].includes(assignment.role_id) &&
-            assignment.place_id === blockId)
-        );
-      })
-    ) {
-      return true;
-    }
-    return false;
+    const { canManageAccess } = await this.placeCapabilityService.resolve(blockId, memberId);
+    return canManageAccess;
   }
 
   private async updateDeputyId(deputy: any): Promise<number> {
