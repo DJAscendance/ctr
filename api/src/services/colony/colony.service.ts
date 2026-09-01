@@ -7,6 +7,7 @@ import {
   MemberRepository,
 } from '../../repositories';
 import { Place } from '../../types/models';
+import { PlaceCapabilityService } from '../place/place-capability.service';
 import * as console from 'console';
 import { includes } from 'lodash';
 import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
@@ -22,6 +23,7 @@ export class ColonyService {
     private memberRepository: MemberRepository,
     private roleAssignmentService: RoleAssignmentService,
     private placeAccessService: PlaceAccessService,
+    private placeCapabilityService: PlaceCapabilityService,
   ) { }
 
   public async find(colonyId: number): Promise<Place> {
@@ -99,51 +101,25 @@ export class ColonyService {
   }
 
   /**
-   * Delegates to the shared hierarchy walk. Previously open-coded here, in HoodService and
-   * in BlockService as three copies of the same logic at depths 1, 2 and 3.
-   *
-   * Behaviour is unchanged: global Admin / Colony Representative, or Colony Leader /
-   * Colony Deputy held at this colony. It also picks up a fix -- the old version read
-   * roleRepository.roleMap directly, which is populated by an un-awaited constructor call
-   * and so is empty for a window after startup, quietly denying real admins.
+   * Reports whether a member may administer a colony.
+   * @param colonyId id of the colony
+   * @param memberId id of the member acting
+   * @returns true when the member holds the classic owner capability at this colony
    */
   public async canAdmin(colonyId: number, memberId: number): Promise<boolean> {
-    return this.placeAccessService.hasGeographicAuthority(colonyId, memberId);
+    const { canAdmin } = await this.placeCapabilityService.resolve(colonyId, memberId);
+    return canAdmin;
   }
 
   /**
-   * Left with its own role set rather than delegated to placeAccessService: manage-access is
-   * deliberately narrower than canAdmin (Leader, not Deputy), and that difference is the
-   * point of the method.
-   *
-   * Role ids come from the awaited snapshot for the same reason canAdmin no longer reads
-   * the repository's map directly -- it is populated by an un-awaited constructor call, so
-   * for a window after startup every lookup is undefined and `[undefined].includes(role_id)`
-   * denies a real admin. Naming the roles also makes a half-seeded snapshot detectable.
+   * Reports whether a member may change a colony's access rights.
+   * @param colonyId id of the colony
+   * @param memberId id of the member acting
+   * @returns true when the member holds the classic rights capability at this colony
    */
   public async canManageAccess(colonyId: number, memberId: number): Promise<boolean> {
-    const roleMap = await this.roleRepository.awaitRoleMap(
-      'Admin',
-      'ColonyRepresentative',
-      'ColonyLeader',
-    );
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            roleMap.Admin,
-            roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([roleMap.ColonyLeader].includes(assignment.role_id) &&
-            assignment.place_id === colonyId)
-        );
-      })
-    ) {
-      return true;
-    }
-    return false;
+    const { canManageAccess } = await this.placeCapabilityService.resolve(colonyId, memberId);
+    return canManageAccess;
   }
 
   private async updateDeputyId(deputy: any): Promise<number> {

@@ -20,6 +20,7 @@ import {
   MapBackgroundService,
 } from '../map-background/map-background.service';
 import { resolveMapTheme } from '../../libs';
+import { PlaceCapabilityService } from '../place/place-capability.service';
 
 /** Service for dealing with blocks */
 @Service()
@@ -36,6 +37,7 @@ export class BlockService {
     private roleAssignmentService: RoleAssignmentService,
     private placeAccessService: PlaceAccessService,
     private mapBackgroundService: MapBackgroundService,
+    private placeCapabilityService: PlaceCapabilityService,
   ) {}
   
   public async find(blockId: number): Promise<Place> {
@@ -192,67 +194,25 @@ export class BlockService {
   }
 
   /**
-   * Delegates to the shared hierarchy walk, which resolves block -> hood -> colony from
-   * map_location instead of the two hand-written lookups this used to do.
-   *
-   * Behaviour is unchanged: global Admin / Colony Representative, or the Leader/Deputy pair
-   * for any level at that level's place. It also picks up a fix -- the old version read
-   * roleRepository.roleMap directly, which is populated by an un-awaited constructor call
-   * and so is empty for a window after startup, quietly denying real admins.
+   * Reports whether a member may administer a block.
+   * @param blockId id of the block
+   * @param memberId id of the member acting
+   * @returns true when the member holds the classic owner capability at this block
    */
   public async canAdmin(blockId: number, memberId: number): Promise<boolean> {
-    return this.placeAccessService.hasGeographicAuthority(blockId, memberId);
+    const { canAdmin } = await this.placeCapabilityService.resolve(blockId, memberId);
+    return canAdmin;
   }
 
   /**
-   * Kept on its own role set rather than delegated to placeAccessService: manage-access is
-   * deliberately narrower than canAdmin (Leader, not Deputy).
-   *
-   * Role ids come from the awaited snapshot rather than the repository's map, which is
-   * filled in by an un-awaited constructor call and so is empty for a window after startup
-   * -- and for the whole of a bootstrap that seeds roles after the API starts. Naming the
-   * roles also makes a half-seeded snapshot detectable rather than a silent denial.
+   * Reports whether a member may change a block's access rights.
+   * @param blockId id of the block
+   * @param memberId id of the member acting
+   * @returns true when the member holds the classic rights capability at this block
    */
   public async canManageAccess(blockId: number, memberId: number): Promise<boolean> {
-    const roleMap = await this.roleRepository.awaitRoleMap(
-      'Admin',
-      'ColonyRepresentative',
-      'ColonyLeader',
-      'ColonyDeputy',
-      'NeighborhoodDeputy',
-      'NeighborhoodLeader',
-      'BlockLeader',
-    );
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-    const hood = await this.getHood(blockId);
-    const hoodMapLocation = await this.mapLocationRepository.findPlaceIdMapLocation(hood.id);
-    const colonyId = hoodMapLocation.parent_place_id;
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            roleMap.Admin,
-            roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([
-            roleMap.ColonyLeader,
-            roleMap.ColonyDeputy,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === colonyId) ||
-          ([
-            roleMap.NeighborhoodDeputy,
-            roleMap.NeighborhoodLeader,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === hood.id) ||
-          ([roleMap.BlockLeader].includes(assignment.role_id) &&
-            assignment.place_id === blockId)
-        );
-      })
-    ) {
-      return true;
-    }
-    return false;
+    const { canManageAccess } = await this.placeCapabilityService.resolve(blockId, memberId);
+    return canManageAccess;
   }
 
   private async updateDeputyId(deputy: any): Promise<number> {
