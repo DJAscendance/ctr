@@ -17,6 +17,7 @@ import {
   MapBackgroundService,
 } from '../map-background/map-background.service';
 import { resolveMapTheme } from '../../libs';
+import { PlaceCapabilityService } from '../place/place-capability.service';
 
 /** Service for dealing with blocks */
 @Service()
@@ -30,6 +31,7 @@ export class HoodService {
     private roleRepository: RoleRepository,
     private memberRepository: MemberRepository,
     private mapBackgroundService: MapBackgroundService,
+    private placeCapabilityService: PlaceCapabilityService,
   ) {}
   
   public async find(hoodId: number): Promise<Place> {
@@ -207,59 +209,26 @@ export class HoodService {
     return { status: 'success', selectedIndex: normalizedIndex };
   }
 
+  /**
+   * Reports whether a member may administer a neighborhood.
+   * @param hoodId id of the neighborhood
+   * @param memberId id of the member acting
+   * @returns true when the member holds the classic owner capability at this neighborhood
+   */
   public async canAdmin(hoodId: number, memberId: number): Promise<boolean> {
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-    const colony = await this.getColony(hoodId);
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([
-            this.roleRepository.roleMap.ColonyLeader,
-            this.roleRepository.roleMap.ColonyDeputy,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === colony.id) ||
-          ([
-            this.roleRepository.roleMap.NeighborhoodDeputy,
-            this.roleRepository.roleMap.NeighborhoodLeader,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === hoodId)
-        );
-      })
-    ) {
-      return true;
-    }
-    return false;
+    const { canAdmin } = await this.placeCapabilityService.resolve(hoodId, memberId);
+    return canAdmin;
   }
 
+  /**
+   * Reports whether a member may change a neighborhood's access rights.
+   * @param hoodId id of the neighborhood
+   * @param memberId id of the member acting
+   * @returns true when the member holds the classic rights capability at this neighborhood
+   */
   public async canManageAccess(hoodId: number, memberId: number): Promise<boolean> {
-    const roleAssignments = await this.roleAssignmentRepository.getByMemberId(memberId);
-    const colony = await this.getColony(hoodId);
-
-    if (
-      roleAssignments.find(assignment => {
-        return (
-          [
-            this.roleRepository.roleMap.Admin,
-            this.roleRepository.roleMap.ColonyRepresentative,
-          ].includes(assignment.role_id) ||
-          ([
-            this.roleRepository.roleMap.ColonyLeader,
-            this.roleRepository.roleMap.ColonyDeputy,
-          ].includes(assignment.role_id) &&
-            assignment.place_id === colony.id) ||
-          ([this.roleRepository.roleMap.NeighborhoodLeader].includes(assignment.role_id) &&
-            assignment.place_id === hoodId)
-        );
-      })
-    ) {
-      return true;
-    }
-    return false;
+    const { canManageAccess } = await this.placeCapabilityService.resolve(hoodId, memberId);
+    return canManageAccess;
   }
 
   private async updateDeputyId(deputy: any): Promise<number> {

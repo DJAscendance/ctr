@@ -15,6 +15,7 @@ export * from './object/object.service';
 export * from './object-instance/object-instance.service';
 export * from './role/role.service';
 export * from './role-assignment/role-assignment.service';
+export * from './place/place-capability.service';
 export * from './place/place.service';
 export * from './wallet/wallet.service';
 export * from './messageboard/messageboard.service';
