@@ -4,6 +4,7 @@ import {
   MapLocationRepository,
   PlaceRepository,
   RoleAssignmentRepository,
+  RoleMap,
   RoleRepository,
 } from '../../repositories';
 import { Place, RoleAssignment } from '../../types/models';
@@ -58,6 +59,20 @@ const GLOBAL_ADMIN_ROLES = ['Admin'];
  * clearly below a true global administrator.
  */
 const GLOBAL_COLONY_DEPUTY_ROLES = ['ColonyRepresentative'];
+
+/**
+ * Every role name this resolver reads out of the role map.
+ *
+ * awaitRoleMap uses these to tell "this role does not exist" apart from "this role has not
+ * been seeded yet", which is the difference between a correct denial and an outage during
+ * the bootstrap window.
+ */
+const REQUIRED_ROLE_NAMES: string[] = [
+  ...GLOBAL_ADMIN_ROLES,
+  ...GLOBAL_COLONY_DEPUTY_ROLES,
+  ...Object.keys(PLACE_ROLES).map(type => PLACE_ROLES[type as ScopedPlaceType].leader),
+  ...Object.keys(PLACE_ROLES).map(type => PLACE_ROLES[type as ScopedPlaceType].deputy),
+];
 
 /** Depth guard, so malformed map_location rows cannot make the walk loop forever. */
 const MAX_ANCESTOR_DEPTH = 8;
@@ -122,7 +137,12 @@ export class PlaceCapabilityService {
       return denied;
     }
 
-    if (this.holdsAnyRoleOf(assignments, GLOBAL_ADMIN_ROLES)) {
+    // One awaited snapshot for the whole resolution. Reading the repository's map directly
+    // is not possible here by design: it is populated after construction, so a synchronous
+    // read during the startup or bootstrap window silently denies real admins.
+    const roleMap = await this.roleRepository.awaitRoleMap(...REQUIRED_ROLE_NAMES);
+
+    if (this.holdsAnyRoleOf(roleMap, assignments, GLOBAL_ADMIN_ROLES)) {
       return { canAdmin: true, canManageAccess: true };
     }
 
@@ -131,15 +151,15 @@ export class PlaceCapabilityService {
     // A colony-wide deputy carries the inherited capability, and only that, to every place
     // on the tree. Authority held at the place itself is added below, so a member who holds
     // both sources ends up with the union of the two.
-    if (this.holdsAnyRoleOf(assignments, GLOBAL_COLONY_DEPUTY_ROLES)) {
+    if (this.holdsAnyRoleOf(roleMap, assignments, GLOBAL_COLONY_DEPUTY_ROLES)) {
       capabilities.canManageAccess = true;
     }
 
     const own = PLACE_ROLES[place.type];
-    if (this.holdsRoleAt(assignments, own.leader, place.id)) {
+    if (this.holdsRoleAt(roleMap, assignments, own.leader, place.id)) {
       capabilities.canAdmin = true;
       capabilities.canManageAccess = true;
-    } else if (this.holdsRoleAt(assignments, own.deputy, place.id)) {
+    } else if (this.holdsRoleAt(roleMap, assignments, own.deputy, place.id)) {
       capabilities.canAdmin = true;
     }
 
@@ -150,8 +170,8 @@ export class PlaceCapabilityService {
       for (const ancestor of ancestors) {
         const roles = PLACE_ROLES[ancestor.type as ScopedPlaceType];
         if (
-          this.holdsRoleAt(assignments, roles.leader, ancestor.id) ||
-          this.holdsRoleAt(assignments, roles.deputy, ancestor.id)
+          this.holdsRoleAt(roleMap, assignments, roles.leader, ancestor.id) ||
+          this.holdsRoleAt(roleMap, assignments, roles.deputy, ancestor.id)
         ) {
           capabilities.canManageAccess = true;
           break;
@@ -202,17 +222,19 @@ export class PlaceCapabilityService {
 
   /**
    * Reports whether the member holds a named role at one specific place.
+   * @param roleMap the awaited role-id snapshot
    * @param assignments the member's role assignments
    * @param roleName role name as it appears in the role map, without spaces
    * @param placeId the place the role must be held at
    * @returns true only when a matching, place-scoped assignment exists
    */
   private holdsRoleAt(
+    roleMap: RoleMap,
     assignments: RoleAssignment[],
     roleName: string,
     placeId: number,
   ): boolean {
-    const roleId = this.roleId(roleName);
+    const roleId = this.roleId(roleMap, roleName);
     if (!isPositiveInteger(roleId)) {
       return false;
     }
@@ -226,13 +248,18 @@ export class PlaceCapabilityService {
    *
    * The place an assignment names is deliberately ignored here. These roles are city-wide
    * offices, and the admin panel stores them with no place at all.
+   * @param roleMap the awaited role-id snapshot
    * @param assignments the member's role assignments
    * @param roleNames role names as they appear in the role map, without spaces
    * @returns true when at least one of the named roles is held
    */
-  private holdsAnyRoleOf(assignments: RoleAssignment[], roleNames: string[]): boolean {
+  private holdsAnyRoleOf(
+    roleMap: RoleMap,
+    assignments: RoleAssignment[],
+    roleNames: string[],
+  ): boolean {
     const roleIds = roleNames
-      .map(name => this.roleId(name))
+      .map(name => this.roleId(roleMap, name))
       .filter(isPositiveInteger);
     if (roleIds.length === 0) {
       return false;
@@ -241,15 +268,16 @@ export class PlaceCapabilityService {
   }
 
   /**
-   * Looks a role name up in the role map.
+   * Looks a role name up in an awaited role-map snapshot.
    *
-   * The role map is filled from the database after construction, so a lookup before it is
-   * ready must resolve to nothing rather than throw. An unknown role is then denied by
-   * `holdsRoleAt` and `holdsAnyRoleOf`, which is the safe direction.
+   * A name still absent after awaitRoleMap has re-read the table resolves to nothing rather
+   * than throwing. An unknown role is then denied by `holdsRoleAt` and `holdsAnyRoleOf`,
+   * which is the safe direction.
+   * @param roleMap the awaited role-id snapshot
    * @param roleName role name as it appears in the role map, without spaces
    * @returns the role id, or undefined when the name is not mapped
    */
-  private roleId(roleName: string): number | undefined {
-    return this.roleRepository.roleMap?.[roleName];
+  private roleId(roleMap: RoleMap, roleName: string): number | undefined {
+    return roleMap[roleName];
   }
 }

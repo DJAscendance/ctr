@@ -98,7 +98,7 @@ describe('PlaceCapabilityService', () => {
     roleAssignmentRepository = createSpyObj(RoleAssignmentRepository);
     roleRepository = createSpyObj(RoleRepository);
 
-    roleRepository.roleMap = { ...roleMap };
+    roleRepository.awaitRoleMap.mockResolvedValue({ ...roleMap });
 
     placeRepository.findById.mockImplementation(
       async (placeId: number) => places[placeId] as Place,
@@ -498,7 +498,7 @@ describe('PlaceCapabilityService', () => {
     });
 
     it('denies when the role map has not been populated yet', async () => {
-      roleRepository.roleMap = {};
+      roleRepository.awaitRoleMap.mockResolvedValue({});
       givenAssignments([assignment(roleMap.BlockLeader, BLOCK_ID)]);
       expect(await service.resolve(BLOCK_ID, MEMBER_ID)).toEqual({
         canAdmin: false,
