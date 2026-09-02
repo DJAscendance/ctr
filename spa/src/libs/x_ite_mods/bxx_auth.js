@@ -5,9 +5,25 @@
         let b = Browser.prototype;
 
         // Time
+    // `wst` was never assigned - the only line that would have set it is
+    // the commented-out one below - so this returned undefined on every
+    // call. The Outlands world seeds three timers from it, so undefined
+    // poisoned all of them. The stamp is now taken once per loaded world
+    // and stays stable until the next load.
         //var wst = X3D.getBrowser().getCurrentTime();
-        b.getWorldStartTime = function () { return wst }
+    b.getWorldStartTime = function () {
+      if (typeof this._bxxWorldStartTime !== "number") {
+        this._bxxWorldStartTime = this.getCurrentTime();
+      }
+      return this._bxxWorldStartTime;
+    };
         b.getTime = b.getCurrentTime;
+
+    const originalLoadURLForTime = b.loadURL;
+    b.loadURL = function () {
+      this._bxxWorldStartTime = undefined;
+      return originalLoadURLForTime.apply(this, arguments);
+    };
         //Browser.prototype.getTime = function () { console.log('called gettime!'); return X3D.getBrowser.getCurrentTime() }
 
         // Avatar
@@ -20,14 +36,62 @@
         b.getSoundEnabled = function () { return this.mute_ }
 
         // Navigation
-        b.setNavigationMode = function (mode) {
-            if (this.viewer_ != mode) { // Added due to Jail calling this constantly
-                this.viewer_ = mode
-            }
-        }
+    //
+    // Blaxxun modes seen in the Outlands world are WALK, PAN and NONE.
+    // X_ITE offers EXAMINE, WALK, FLY, LOOKAT and NONE - there is no PAN
+    // viewer, so PAN maps to FLY, the nearest free-look mode. That is an
+    // approximation and is recorded as such; OUTLANDS-4 judges whether it
+    // is close enough for the turret and beam-out cases.
+    const BXX_NAVIGATION_MODES = {
+      WALK: "WALK",
+      PAN: "FLY",
+      NONE: "NONE",
+      FLY: "FLY",
+      EXAMINE: "EXAMINE",
+    };
+    b.setNavigationMode = function (mode) {
+      const requested = String(mode).toUpperCase();
+      // Added due to Jail calling this constantly
+      if (this._bxxNavigationMode === requested) { return; }
+      this._bxxNavigationMode = requested;
+      this.viewer_ = mode;
+      const mapped = BXX_NAVIGATION_MODES[requested];
+      if (!mapped) { return; }
+      try {
+        this.activeNavigationInfo_.type = [mapped];
+      } catch (error) {
+        console.warn(`setNavigationMode: could not apply ${requested}`, error);
+      }
+    };
         b.getNavigationMode = function () { return this.activeNavigationInfo_.type }
-        b.setCollisionDetection = function (flag) { throw Error('UnimplementedBXXMethod'); }
-        b.getCollisionDetection = function () { throw Error('UnimplementedBXXMethod'); }
+    // X_ITE has no independent collision toggle. The closest faithful lever
+    // is the NavigationInfo collision distance - avatarSize[0] - which is
+    // what actually stops the viewer entering geometry. Setting it to 0
+    // lets the avatar pass through; restoring the remembered value turns
+    // collision back on. LIMITATION: this changes the collision *distance*
+    // rather than disabling the collision system, so a zero-distance avatar
+    // can still be stopped by a coincident surface. It is a real behaviour
+    // change, not a no-op, but it is not full Blaxxun fidelity.
+    b.setCollisionDetection = function (flag) {
+      const enabled = !!flag;
+      try {
+        const size = this.activeNavigationInfo_.avatarSize;
+        if (enabled) {
+          if (typeof this._bxxCollisionDistance === "number") {
+            size[0] = this._bxxCollisionDistance;
+          }
+        } else {
+          if (size[0] !== 0) { this._bxxCollisionDistance = size[0]; }
+          size[0] = 0;
+        }
+        this._bxxCollisionDetection = enabled;
+      } catch (error) {
+        console.warn(`setCollisionDetection: could not apply ${enabled}`, error);
+      }
+    };
+    b.getCollisionDetection = function () {
+      return this._bxxCollisionDetection !== false;
+    };
         b.setGravity = function (flag) { (flag) ? this.browserOptions.Gravity_ = 15 : this.browserOptions.Gravity_ = 0 }
         b.getGravity = function () { return (this.browserOptions.Gravity_ == 0) ? false : true }
         //b.setHeadlight = function(flag) { this.activeNavigationInfo_.headlight = flag }
