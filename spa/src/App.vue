@@ -462,6 +462,9 @@ export default Vue.extend({
     require("./libs/x_ite_mods/bxx_node.js");
     require("./libs/x_ite_mods/bxx_events.js");
     require("./libs/x_ite_mods/bxx_identity.js");
+    // Must stay last of the loadURL wrappers: bxx_auth.js and bxx_events.js both
+    // wrap loadURL, and a suppressed legacy call must not reach either of them.
+    require("./libs/x_ite_mods/bxx_url.js");
     //require('./libs/x_ite_mods/fix_stairs.js');
   },
   computed: {
