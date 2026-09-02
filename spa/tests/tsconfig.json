@@ -11,6 +11,8 @@
   "include": [
     "*.ts",
     "../src/presence.ts",
-    "../src/helpers/map-background.helper.ts"
+    "../src/helpers/map-background.helper.ts",
+    "../src/helpers/bxx-ray.helper.ts",
+    "../src/helpers/bxx-key.helper.ts"
   ]
 }

@@ -12,6 +12,8 @@ const SUITES = [
   "tests/.compiled/tests/server-presence.test.js",
   "tests/.compiled/tests/map-background-selector.test.js",
   "tests/.compiled/tests/hood-map-background-selector.test.js",
+  "tests/.compiled/tests/bxx-ray.test.js",
+  "tests/.compiled/tests/bxx-keyboard.test.js",
 ];
 
 let failed = false;
