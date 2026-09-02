@@ -12,6 +12,7 @@ const SUITES = [
   "tests/.compiled/tests/bxx-ray.test.js",
   "tests/.compiled/tests/bxx-keyboard.test.js",
   "tests/.compiled/tests/bxx-hud.test.js",
+  "tests/.compiled/tests/bxx-script.test.js",
 ];
 
 let failed = false;
