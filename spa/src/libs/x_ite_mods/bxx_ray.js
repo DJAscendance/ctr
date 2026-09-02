@@ -15,6 +15,7 @@
   // unit tested without a browser. This file is the X_ITE binding only.
 
   const helper = require("../../helpers/bxx-ray.helper");
+  const hud = require("../../helpers/bxx-hud.helper");
 
   // Registration seam for later lanes. OUTLANDS-2 pushes an adapter here to
   // make remote players answer getType() === "Avatar" and carry a nickname.
@@ -153,12 +154,17 @@
       const node = unwrap(candidate);
       if (!node || depth > 64) { return; }
 
+      // A view-relative node - today only the Blaxxun `HUD` of `bxx_hud.js` -
+      // reports a camera-space matrix that REPLACES everything above it instead
+      // of composing with it. `ne_game.wrl` depends on that: its turret HUD sits
+      // under a Transform, inside a Switch, and blaxxun still kept it on the
+      // camera. Ordinary Transforms keep composing exactly as before.
       const local = matrixOf(node);
       let matrix = modelMatrix;
       if (local) {
         matrix = new Matrix4();
         matrix.assign(local);
-        matrix.multRight(modelMatrix);
+        if (!hud.isViewRelative(node)) { matrix.multRight(modelMatrix); }
       }
 
       const nextChain = chain.concat([node]);
