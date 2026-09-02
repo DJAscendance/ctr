@@ -456,6 +456,9 @@ export default Vue.extend({
     require("./libs/x_ite_mods/default_gravity.js");
     require("./libs/x_ite_mods/extend_context_menu.js");
     require("./libs/x_ite_mods/bxx_auth.js");
+    require("./libs/x_ite_mods/bxx_ray.js");
+    require("./libs/x_ite_mods/bxx_events.js");
+    require("./libs/x_ite_mods/bxx_identity.js");
     //require('./libs/x_ite_mods/fix_stairs.js');
   },
   computed: {
