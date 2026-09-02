@@ -13,6 +13,7 @@
     "../src/helpers/map-background.helper.ts",
     "../src/helpers/bxx-ray.helper.ts",
     "../src/helpers/bxx-key.helper.ts",
-    "../src/helpers/bxx-hud.helper.ts"
+    "../src/helpers/bxx-hud.helper.ts",
+    "../src/helpers/bxx-script.helper.ts"
   ]
 }
