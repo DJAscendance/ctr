@@ -15,6 +15,7 @@
     "../src/helpers/bxx-key.helper.ts",
     "../src/helpers/bxx-hud.helper.ts",
     "../src/helpers/bxx-script.helper.ts",
-    "../src/helpers/bxx-node.helper.ts"
+    "../src/helpers/bxx-node.helper.ts",
+    "../src/helpers/shared-event.helper.ts"
   ]
 }

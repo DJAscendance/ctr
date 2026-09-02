@@ -42,6 +42,7 @@ import {
   debugMsg,
   environment,
 } from "@/helpers";
+import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -604,63 +605,7 @@ export default Vue.extend({
     },
     startSharedEvents(): void {
       let sharedZone;
-      this.TYPES = {
-        bool: {
-          toJSON: (e) => e,
-          fromJSON: (e) => e,
-        },
-        color: {
-          toJSON: (color) => ({
-            r: color.r,
-            g: color.g,
-            b: color.b,
-          }),
-          fromJSON: (color) => new X3D.SFColor(color.r, color.g, color.b),
-        },
-        float: {
-          toJSON: (e) => e,
-          fromJSON: (e) => e,
-        },
-        int32: {
-          toJSON: (e) => e,
-          fromJSON: (e) => e,
-        },
-        rotation: {
-          toJSON: (rotation) => ({
-            x: rotation.x,
-            y: rotation.y,
-            z: rotation.z,
-            angle: rotation.angle,
-          }),
-          fromJSON: (rotation) =>
-            new X3D.SFRotation(
-              rotation.x,
-              rotation.y,
-              rotation.z,
-              rotation.angle,
-            ),
-        },
-        string: {
-          toJSON: (e) => e,
-          fromJSON: (e) => e,
-        },
-        time: {
-          toJSON: (e) => e,
-          fromJSON: (e) => e,
-        },
-        vec2f: {
-          toJSON: (vec2f) => ({ x: vec2f.x, y: vec2f.y }),
-          fromJSON: (vec2f) => new X3D.SFVec2f(vec2f.x, vec2f.y),
-        },
-        vec3f: {
-          toJSON: (vec3f) => ({
-            x: vec3f.x,
-            y: vec3f.y,
-            z: vec3f.z,
-          }),
-          fromJSON: (vec3f) => new X3D.SFVec2f(vec3f.x, vec3f.y, vec3f.z),
-        },
-      };
+      this.TYPES = createSharedEventCodecs(X3D);
       try {
         sharedZone = X3D.getBrowser().currentScene.getNamedNode("SharedZone");
       } catch (e) {
