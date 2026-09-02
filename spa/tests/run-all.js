@@ -11,6 +11,7 @@ const SUITES = [
   "tests/.compiled/tests/hood-map-background-selector.test.js",
   "tests/.compiled/tests/bxx-ray.test.js",
   "tests/.compiled/tests/bxx-keyboard.test.js",
+  "tests/.compiled/tests/bxx-hud.test.js",
 ];
 
 let failed = false;
