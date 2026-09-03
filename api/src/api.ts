@@ -21,6 +21,7 @@ import {
   messageboardRoutes,
   objectInstanceRoutes,
   objectRoutes,
+  outlandsRoutes,
   placeRoutes,
   voteRoutes,
 } from './routes';
@@ -51,6 +52,7 @@ app.use((request, response, next) => {
 });
 
 app.use('/api/member', memberRoutes);
+app.use('/api/outlands', outlandsRoutes);
 app.use('/api/place', placeRoutes);
 app.use('/api/message', messageRoutes);
 app.use('/api/object_instance', objectInstanceRoutes);

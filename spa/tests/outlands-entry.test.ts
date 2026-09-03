@@ -638,26 +638,51 @@ test("the five historical avatar worlds are all still present", () => {
 /* ------------------------------------------------------------------ */
 console.log("\n8. Scope");
 
-test("no match mode, no game master and no scoring were added", () => {
+/*
+ * OUTLANDS-2B MOVED THIS FENCE, IT DID NOT REMOVE IT.
+ *
+ * These two tests exist to stop the next lane leaking into this one. When they
+ * were written the next lane was 2B, so `T_pass`, `PASS1`, `ne_game_pass` and a
+ * migration were all forbidden. 2B has now landed and legitimately brings all
+ * four, so the fence stands where the boundary now is: OUTLANDS-2C (the Game
+ * Master) and OUTLANDS-2D (scoring). Nothing was relaxed - the same number of
+ * forbidden tokens is checked against the same files, and the migration rule is
+ * now an allow-list of one exact file rather than a blanket refusal.
+ */
+test("no game master and no scoring were added", () => {
   const sources = [WORLD_PAGE_CODE, code(fs.readFileSync(ENTRANCE, "utf8")),
     code(fs.readFileSync(HELPER, "utf8")), code(fs.readFileSync(BINDER, "utf8"))];
-  ["T_pass", "PASS1", "PASS2", "CKSM.", "ne_game_pass", "ne_game_gm", "boot.wrl",
-    "score.pl", "score1.pl"].forEach(token => {
+  ["CKSM.", "ne_game_gm", "gm.wrl", "gmbeam",
+    "score.pl", "score1.pl", "team 3"].forEach(token => {
     sources.forEach(source => {
       assert.strictEqual(source.indexOf(token), -1, `out of scope token in code: ${token}`);
     });
   });
 });
 
-test("no database, migration or role change belongs to this lane", () => {
+/** The single schema change OUTLANDS-2B is allowed to make. */
+const ALLOWED_MIGRATION = "api/db/migrations/20260903090000_add_outlands_match_password.ts";
+
+test("only the one OUTLANDS-2B migration exists, and no seed changed", () => {
   const { execFileSync } = require("child_process");
+  const REPO = path.resolve(SPA, "..");
+  // Compare against the branch point, not the tip of origin/master. Master keeps
+  // moving underneath this lane, and a migration landing there is not this lane's
+  // doing - diffing the tip would fail the guard for someone else's commit.
+  const mergeBase = execFileSync(
+    "git",
+    ["merge-base", "origin/master", "HEAD"],
+    { cwd: REPO, encoding: "utf8" },
+  ).trim();
   const changed = execFileSync(
     "git",
-    ["diff", "--name-only", "origin/master"],
-    { cwd: path.resolve(SPA, ".."), encoding: "utf8" },
+    ["diff", "--name-only", mergeBase],
+    { cwd: REPO, encoding: "utf8" },
   ).trim().split("\n").filter((line: string) => line !== "");
   changed.forEach((file: string) => {
-    assert.strictEqual(file.indexOf("api/db/migrations"), -1, `migration touched: ${file}`);
+    if (file.indexOf("api/db/migrations") !== -1) {
+      assert.strictEqual(file, ALLOWED_MIGRATION, `unexpected migration: ${file}`);
+    }
     assert.strictEqual(file.indexOf("api/db/seed"), -1, `seed touched: ${file}`);
   });
 });

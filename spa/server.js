@@ -31,6 +31,12 @@ async function getChatAccessStatus(room) {
     }
 
     let status = { restricted: false, allowedUsernames: [] };
+
+  // OUTLANDS-2B. A scheduled match joins "<placeId>:outlands-match-1", which is
+  // not a place id, so this endpoint would 400 on every join and every message.
+  // A match session is never chat restricted; answer without the round trip.
+  if (!/^\d+$/.test(String(room))) return { ...status, fetchedAt: Date.now() };
+
     try {
         const response = await axios.get(`${API_URL}/home/chat-access/status/${room}`);
         status = response.data;

@@ -49,9 +49,14 @@
  * browser. `libs/outlands-identity.ts` is the one place that binds the real
  * `X3D.bxx.setIdentityProvider` seam.
  *
- * OUT OF SCOPE, each its own later lane: match mode and `T_pass` (OUTLANDS-2B),
- * the Game Master, `gm.wrl` and team 3 (OUTLANDS-2C), scoring (OUTLANDS-2D).
- * `gm.wrl` is deliberately absent from the table below.
+ * OUTLANDS-2B ADDS SCHEDULED MATCH MODE below the free-play contract. It does
+ * not change one line of it. The two paths differ in four values and in nothing
+ * else: which world mounts, which socket session is joined, how the team is
+ * decided, and whether the identity carries `?pass=`.
+ *
+ * OUT OF SCOPE, each its own later lane: the Game Master, `gm.wrl` and team 3
+ * (OUTLANDS-2C), scoring (OUTLANDS-2D). `gm.wrl` is deliberately absent from the
+ * table below, and `T_style=CKSM.` appears nowhere in this module.
  */
 
 /** The CTR place slug, from `api/db/seed/02-places.seed.ts`. */
@@ -134,6 +139,176 @@ export const OUTLANDS_IDENTITY_URLS: readonly string[] = Object.freeze(
   OUTLANDS_AVATARS.map(entry => entry.identityUrl),
 );
 
+/* ------------------------------------------------------------------------ *
+ * OUTLANDS-2B - the scheduled match contract.
+ *
+ * THE EVIDENCE, all of it recovered and none of it inferred:
+ *
+ *   the box        `ne_game/enter.tmpl` line 65,
+ *                  `<INPUT TYPE="textfield" NAME="T_pass" SIZE="10" VALUE="">`,
+ *                  under the label reproduced in `OUTLANDS_MATCH_PROMPT`
+ *   the collapse   the same file's `setStyle(v)`. With `T_pass` non-empty it
+ *                  runs `if(v == 3){v = 1;} if(v == 4){v = 2;}` before
+ *                  submitting, so `T_style` can only ever be 1 or 2 in a match.
+ *                  The colour the member clicked is DISCARDED
+ *   the mapping    `ne_game/enter3Dpass.tmpl`. `T_pass == PASS1` gives Blue and
+ *                  `T_pass == PASS2` gives Red; `T_style` 1 gives male and 2
+ *                  gives female. So the PASSWORD picks the colour and the TILE
+ *                  picks the sex - the exact inverse of free play
+ *   the identity   the same file, `vrmlmyavatar ...avatars/bluem.wrl?pass=<$T_pass>`
+ *   the world      the same file, `3dscene .../vrml/ne_game_pass.wrl` for both
+ *                  passwords, and `.../vrml/boot.wrl` for neither
+ *   the zone       the same file, `sname Outlands Match 1`, against free play's
+ *                  `sname Outlands` in `enter3D.tmpl`. Two blaxxun scenes on one
+ *                  server: a match and free play never shared game state
+ *   the team       `ne_game_pass.wrl` `set_team()`, which splits the identity on
+ *                  `pass=` and compares the part BEFORE it against the same five
+ *                  bare URLs. Red is team 1 and blue is team 2, as in free play
+ * ------------------------------------------------------------------------ */
+
+/** The team a scheduled-match password grants. Decided by the server, never here. */
+export type OutlandsMatchTeam = "blue" | "red";
+
+/** What the avatar tile chooses in a match: the sex, and only the sex. */
+export type OutlandsSex = "male" | "female";
+
+/** Which of the two Outlands paths a visit is on. */
+export type OutlandsMode = "free" | "match";
+
+/** The historical prompt beside the `T_pass` box, transcribed from `enter.tmpl`. */
+export const OUTLANDS_MATCH_PROMPT =
+  "If you have a scheduled match, enter your password here and select an avatar to enter";
+
+/**
+ * The ONE refusal a rejected scheduled match ever shows.
+ *
+ * Historically there was no message at all: a wrong password loaded `boot.wrl`,
+ * whose whole body is a `loadURL` back to the entrance, so the player simply
+ * found themselves where they started. This says that much and no more. It is a
+ * local constant rather than the server's wording precisely so that no future
+ * server message can leak "wrong team" or "close" into the UI by accident.
+ */
+export const OUTLANDS_MATCH_REFUSED =
+  "That match password was not accepted. Leave the box empty to play free play.";
+
+/** The free-play world, and the place row's own `world_filename`. */
+export const OUTLANDS_FREE_WORLD_FILENAME = "vrml/ne_game.wrl";
+
+/**
+ * The scheduled-match world. A DIFFERENT world with its own team logic, its own
+ * weapon gate and its own scoring. `ne_game.wrl` is never used for a match, and
+ * is never taught to understand a match identity.
+ */
+export const OUTLANDS_MATCH_WORLD_FILENAME = "vrml/ne_game_pass.wrl";
+
+/** The historical blaxxun scene name for free play. */
+export const OUTLANDS_FREE_SCENE_NAME = "Outlands";
+
+/** The historical blaxxun scene name for a scheduled match. */
+export const OUTLANDS_MATCH_SCENE_NAME = "Outlands Match 1";
+
+/**
+ * The historical `T_style` a match tile submitted, after `setStyle()` collapsed
+ * 3 to 1 and 4 to 2. Kept because it is the proof of the sex-only rule, and
+ * because the tests compare against it.
+ */
+export const OUTLANDS_MATCH_STYLE: Readonly<Record<OutlandsSex, number>> =
+  Object.freeze({ male: 1, female: 2 });
+
+/**
+ * The team number `ne_game_pass.wrl` resolves each colour to. Identical to free
+ * play - the match world runs the same red-is-1, blue-is-2 comparison, just
+ * after stripping the `?pass=` tail off the identity first.
+ */
+export const OUTLANDS_MATCH_TEAM_NUMBER: Readonly<Record<OutlandsMatchTeam, number>> =
+  Object.freeze({ red: 1, blue: 2 });
+
+/**
+ * The avatar file stem a (team, sex) pair selects, exactly as the four
+ * `vrmlmyavatar` branches of `enter3Dpass.tmpl` select it.
+ */
+export const OUTLANDS_MATCH_AVATAR_KEYS:
+  Readonly<Record<OutlandsMatchTeam, Readonly<Record<OutlandsSex, string>>>> =
+  Object.freeze({
+    blue: Object.freeze({ male: "bluem", female: "bluef" }),
+    red: Object.freeze({ male: "redm", female: "redf" }),
+  });
+
+/** Is this a team a scheduled-match password can grant? */
+export function isOutlandsMatchTeam(value: unknown): value is OutlandsMatchTeam {
+  return value === "blue" || value === "red";
+}
+
+/** Is this one of the two sexes a match tile can choose? */
+export function isOutlandsSex(value: unknown): value is OutlandsSex {
+  return value === "male" || value === "female";
+}
+
+/**
+ * The avatar a match (team, sex) pair selects.
+ * @param team the colour the server derived from the password
+ * @param sex the sex the member's tile chose
+ * @returns the avatar, or `null` if either input is not one of the two allowed
+ */
+export function findOutlandsMatchAvatar(
+  team: unknown,
+  sex: unknown,
+): OutlandsAvatar | null {
+  if (!isOutlandsMatchTeam(team) || !isOutlandsSex(sex)) { return null; }
+  return findOutlandsAvatar(OUTLANDS_MATCH_AVATAR_KEYS[team][sex]);
+}
+
+/**
+ * The exact identity string a scheduled match registers.
+ *
+ * THE QUERY IS NOT DECORATION AND IT IS NOT ENCODED. `enter3Dpass.tmpl`
+ * substitutes `<$T_pass>` raw, and `ne_game_pass.wrl` reads the password back
+ * with `avatar.substring(avatar.lastIndexOf('pass=') + 5)` - everything after
+ * the marker, to the end of the string, byte for byte. Percent-encoding it here
+ * would hand the world a different password than the member typed.
+ *
+ * The free-play identity must never gain this query: `ne_game.wrl` compares the
+ * WHOLE string, so a `?pass=` tail would resolve no team there at all.
+ * @param team the colour the server derived from the password
+ * @param sex the sex the member's tile chose
+ * @param password the password the member typed, already validated by the server
+ * @returns the identity string, or `null` when the inputs are not usable
+ */
+export function buildOutlandsMatchIdentityUrl(
+  team: unknown,
+  sex: unknown,
+  password: unknown,
+): string | null {
+  const avatar = findOutlandsMatchAvatar(team, sex);
+  if (avatar === null) { return null; }
+  if (typeof password !== "string" || password === "") { return null; }
+  return `${avatar.identityUrl}?pass=${password}`;
+}
+
+/**
+ * The socket session free play joins: the place id, unchanged. Every other CTR
+ * place already joins its place id, and free-play Outlands keeps doing so, so
+ * OUTLANDS-2A's behaviour is byte-for-byte what it was.
+ * @param placeId the CTR place id
+ */
+export function outlandsFreeSessionKey(placeId: number | string): string | number {
+  return placeId;
+}
+
+/**
+ * The socket session a scheduled match joins - the modern "Outlands Match 1".
+ *
+ * A place id is always a positive integer, so this string can never collide with
+ * any place's own room. That is the whole isolation mechanism: CTR's socket
+ * server rooms every relay - `AV`, `SE`, `SO` and `CHAT` - on the joining
+ * client's room string, so two different strings are two separate zones over the
+ * one existing transport. No second transport is introduced.
+ * @param placeId the CTR place id
+ */
+export function outlandsMatchSessionKey(placeId: number | string): string {
+  return `${placeId}:outlands-match-1`;
+}
+
 /** The shape the place row has to have for the entrance to apply. */
 export interface OutlandsPlaceLike {
   slug?: string | null;
@@ -183,15 +358,44 @@ export interface OutlandsIdentityHost {
   } | null;
 }
 
+/** What one validated scheduled-match entry resolved to. */
+export interface OutlandsMatchSelection {
+  /** The avatar the (team, sex) pair selected. */
+  avatar: OutlandsAvatar;
+  /** The colour the server derived from the password. */
+  team: OutlandsMatchTeam;
+  /** The number `ne_game_pass.wrl` resolves that colour to: red 1, blue 2. */
+  teamNumber: number;
+  /** The sex the member's tile chose. */
+  sex: OutlandsSex;
+  /** The registered identity, `?pass=` and all. */
+  identityUrl: string;
+}
+
 /** The selection, and the registration of it, for one Outlands visit. */
 export interface OutlandsIdentitySession {
-  /** Register an avatar. Returns the avatar, or `null` for an unknown key. */
+  /** Register a free-play avatar. Returns the avatar, or `null` for an unknown key. */
   select(key: unknown, avatarName?: unknown): OutlandsAvatar | null;
+  /**
+   * Register a scheduled-match avatar. The team MUST be the one the server
+   * returned; this never derives a team from a password itself. Returns `null`
+   * for an unusable team, sex or password, and registers nothing in that case.
+   */
+  selectMatch(
+    team: unknown,
+    sex: unknown,
+    password: unknown,
+    avatarName?: unknown,
+  ): OutlandsMatchSelection | null;
   /** The avatar in force, or `null` when the entrance has not been used. */
   selected(): OutlandsAvatar | null;
+  /** The match in force, or `null` when this is free play or nothing. */
+  matchSelection(): OutlandsMatchSelection | null;
+  /** Which path this visit is on, or `null` before a selection. */
+  mode(): OutlandsMode | null;
   /** Exactly what the provider would return now, or `null`. */
   identity(): OutlandsIdentity | null;
-  /** Forget the selection and unregister the provider. */
+  /** Forget the selection, drop the password and unregister the provider. */
   release(): void;
 }
 /* eslint-enable no-unused-vars */
@@ -211,17 +415,34 @@ export interface OutlandsIdentitySession {
  *
  * CLEANUP. `release()` unregisters, which puts `Browser.myAvatarURL` back to
  * the pre-OUTLANDS-2 empty string. An Outlands avatar is never left in force
- * for an unrelated world.
+ * for an unrelated world, and a scheduled match's password is dropped with it.
+ *
+ * ONE SELECTION AT A TIME. `select()` and `selectMatch()` each clear the other,
+ * so a free-play avatar and a match avatar can never both be in force. That is
+ * what stops a stale `?pass=` tail reaching `ne_game.wrl`, whose `set_team()`
+ * compares the whole string and would resolve no team at all.
  */
 export function createOutlandsIdentitySession(
   getHost: () => OutlandsIdentityHost | null | undefined,
 ): OutlandsIdentitySession {
   let current: OutlandsAvatar | null = null;
   let nickname = "";
+  /*
+   * OUTLANDS-2B. The whole match state, and the only place the typed password
+   * lives once the entrance form is cleared. It is a closure variable, so it is
+   * never a component field, never reactive, never serialised into a Vue devtools
+   * snapshot and never written to any browser storage. `release()` drops it.
+   */
+  let match: OutlandsMatchSelection | null = null;
+
+  function currentUrl(): string {
+    if (match !== null) { return match.identityUrl; }
+    return current === null ? "" : current.identityUrl;
+  }
 
   function identity(): OutlandsIdentity | null {
     if (current === null) { return null; }
-    return { avatarURL: current.identityUrl, avatarName: nickname };
+    return { avatarURL: currentUrl(), avatarName: nickname };
   }
 
   function register(provider: (() => OutlandsIdentity) | null): void {
@@ -230,22 +451,57 @@ export function createOutlandsIdentitySession(
     host.bxx.setIdentityProvider(provider);
   }
 
+  function setNickname(avatarName: unknown): void {
+    nickname = avatarName === null || avatarName === undefined ? "" : String(avatarName);
+  }
+
   return {
     select(key: unknown, avatarName?: unknown): OutlandsAvatar | null {
       const found = findOutlandsAvatar(key);
       if (found === null) { return null; }
       current = found;
-      nickname = avatarName === null || avatarName === undefined ? "" : String(avatarName);
+      match = null;
+      setNickname(avatarName);
       register(() => ({ avatarURL: found.identityUrl, avatarName: nickname }));
       return found;
     },
+    selectMatch(
+      team: unknown,
+      sex: unknown,
+      password: unknown,
+      avatarName?: unknown,
+    ): OutlandsMatchSelection | null {
+      const avatar = findOutlandsMatchAvatar(team, sex);
+      const identityUrl = buildOutlandsMatchIdentityUrl(team, sex, password);
+      if (avatar === null || identityUrl === null) { return null; }
+      const selection: OutlandsMatchSelection = {
+        avatar,
+        team: team as OutlandsMatchTeam,
+        teamNumber: OUTLANDS_MATCH_TEAM_NUMBER[team as OutlandsMatchTeam],
+        sex: sex as OutlandsSex,
+        identityUrl,
+      };
+      current = avatar;
+      match = selection;
+      setNickname(avatarName);
+      register(() => ({ avatarURL: selection.identityUrl, avatarName: nickname }));
+      return selection;
+    },
     selected(): OutlandsAvatar | null {
       return current;
+    },
+    matchSelection(): OutlandsMatchSelection | null {
+      return match;
+    },
+    mode(): OutlandsMode | null {
+      if (current === null) { return null; }
+      return match === null ? "free" : "match";
     },
     identity,
     release(): void {
       if (current === null) { return; }
       current = null;
+      match = null;
       nickname = "";
       register(null);
     },

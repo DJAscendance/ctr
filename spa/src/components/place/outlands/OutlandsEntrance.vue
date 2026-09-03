@@ -18,10 +18,17 @@
   recovered text is reproduced as written and the conflict is left for a later
   lane. See the note beside the ammunition list.
 
-  OUT OF SCOPE HERE. The historical page also carried a `T_pass` password box
-  for scheduled matches; that is OUTLANDS-2B and is deliberately absent. Game
-  Master entry never appeared on this page at all - it was an owner-only control
-  panel link - and is OUTLANDS-2C.
+  OUTLANDS-2B ADDS THE `T_pass` BOX. It is the historical widget in the
+  historical place, under the historical label, and it is optional exactly as it
+  was: leaving it blank is free play. Typing something in it changes what the
+  four tiles MEAN - `setStyle()` collapsed 3 to 1 and 4 to 2, so the colour was
+  thrown away and only the sex survived - and the note that appears beside them
+  says so, because a coloured picture that no longer picks a colour would
+  otherwise mislead.
+
+  OUT OF SCOPE HERE. Game Master entry never appeared on this page at all - it
+  was an owner-only control panel link - and is OUTLANDS-2C. Scoring is
+  OUTLANDS-2D.
 -->
 <template>
   <div class="w-full h-full overflow-y-auto bg-black text-white outlands-entrance">
@@ -54,24 +61,82 @@
         Sorry, only Cybertown Citizens can enter Outlands.
       </p>
 
+      <!--
+        OUTLANDS-2B. The historical `T_pass` box, `enter.tmpl` line 65. Optional:
+        blank is free play. `autocomplete="off"` keeps the browser from offering
+        to remember a match password, which is the only long-lived store it could
+        otherwise reach.
+      -->
+      <div class="mt-4 text-center">
+        <label for="outlands-match-password" class="block text-sm">
+          {{ matchPrompt }}
+        </label>
+        <input
+          id="outlands-match-password"
+          ref="matchPassword"
+          v-model="password"
+          data-outlands-match-password
+          type="password"
+          size="10"
+          maxlength="128"
+          autocomplete="off"
+          class="mt-1 px-2 py-1 text-black"
+          :disabled="!canEnter || busy"
+        />
+      </div>
+
+      <!--
+        OUTLANDS-2B. Shown only while a password is typed, because that is
+        exactly when the four coloured pictures stop meaning what they look like.
+      -->
+      <p
+        v-if="matchMode"
+        class="mt-3 text-center"
+        data-outlands-match-note
+        style="color: #ffcc33;"
+      >
+        Scheduled match. Your team colour comes from your match password.
+        The avatar you pick chooses male or female only.
+      </p>
+
+      <p
+        v-if="error"
+        class="mt-3 text-center"
+        data-outlands-match-error
+        style="color: #ff6666;"
+      >
+        {{ error }}
+      </p>
+
       <div class="mt-3 flex flex-wrap justify-center">
         <div v-for="entry in avatars" :key="entry.key" class="p-2 text-center">
           <a
             href="#"
-            :title="entry.label"
+            :title="tileLabel(entry)"
             @click.prevent="choose(entry.key)"
           >
             <img
               :src="entry.thumbnailUrl"
-              :alt="entry.label"
+              :alt="tileLabel(entry)"
               :class="tileClass(entry)"
             />
           </a>
-          <div class="mt-1" :data-outlands-avatar="entry.key">
-            {{ entry.label }}
+          <div
+            class="mt-1"
+            :data-outlands-avatar="entry.key"
+            :data-outlands-sex="entry.sex.toLowerCase()"
+          >
+            {{ tileLabel(entry) }}
           </div>
         </div>
       </div>
+
+      <!--
+        OUTLANDS-2B. The modern `ne_game/passupdate.tmpl`. It renders nothing at
+        all unless the server confirms the viewer may administer matches, so an
+        ordinary member never learns it is here.
+      -->
+      <outlands-match-admin></outlands-match-admin>
 
       <h2 class="mt-8 text-lg font-bold text-center">Instructions</h2>
 
@@ -192,14 +257,17 @@
 <script lang="ts">
 import Vue from "vue";
 
+import OutlandsMatchAdmin from "@/components/place/outlands/OutlandsMatchAdmin.vue";
 import {
   OUTLANDS_AVATARS,
   OUTLANDS_HEADER_IMAGE,
+  OUTLANDS_MATCH_PROMPT,
   OutlandsAvatar,
 } from "@/helpers/outlands.helper";
 
 export default Vue.extend({
   name: "OutlandsEntrance",
+  components: { OutlandsMatchAdmin },
   props: {
     /**
      * The modern stand-in for the historical `#ifdef isVisitor` refusal. False
@@ -210,21 +278,67 @@ export default Vue.extend({
       type: Boolean,
       default: false,
     },
+    /**
+     * OUTLANDS-2B. The one generic refusal a rejected match password produces.
+     * It is passed in rather than decided here, because the decision is the
+     * server's; the entrance only shows what it is told.
+     */
+    error: {
+      type: String,
+      default: "",
+    },
+    /** OUTLANDS-2B. True while a match password is being checked. */
+    busy: {
+      type: Boolean,
+      default: false,
+    },
   },
   data: () => {
     return {
       avatars: OUTLANDS_AVATARS,
       headerImage: OUTLANDS_HEADER_IMAGE,
+      matchPrompt: OUTLANDS_MATCH_PROMPT,
+      /*
+       * OUTLANDS-2B. The typed `T_pass`. It lives here for the life of this
+       * component and nowhere else: it is never put in `localStorage`,
+       * `sessionStorage`, a cookie, the URL or the app store, so a page refresh
+       * destroys it and a scheduled match has to be re-entered. That is the
+       * accepted behaviour, and it is the safest one.
+       *
+       * The page hides the entrance with `v-if` the moment a match is accepted,
+       * which destroys this component and this field with it, so the plaintext
+       * does not survive into the world.
+       */
+      password: "",
     };
   },
+  computed: {
+    /** Is a scheduled match being attempted? `setStyle()`'s empty-vs-not test. */
+    matchMode(): boolean {
+      return this.password !== "";
+    },
+  },
   methods: {
+    /**
+     * What the tile says. In free play the colour is the team, so the historical
+     * "Red male" label stands. In a match the password owns the colour and the
+     * tile owns only the sex, so the caption drops the colour rather than
+     * claiming something the entry will not honour.
+     */
+    tileLabel(entry: OutlandsAvatar): string {
+      return this.matchMode ? entry.sex : entry.label;
+    },
     tileClass(entry: OutlandsAvatar): string {
+      if (this.matchMode) { return "outlands-tile outlands-tile-match"; }
       const border = entry.team === 1 ? "outlands-tile-red" : "outlands-tile-blue";
       return `outlands-tile ${border}`;
     },
     choose(key: string): void {
       if (!this.canEnter) { return; }
-      this.$emit("select", key);
+      if (this.busy) { return; }
+      // The password goes out with the pick and is not kept anywhere else. A
+      // blank one is free play and the page above treats it as OUTLANDS-2A did.
+      this.$emit("select", { key: key, password: this.password });
     },
   },
 });
@@ -240,6 +354,13 @@ export default Vue.extend({
   }
   .outlands-entrance .outlands-tile-blue {
     border-color: #3366cc;
+  }
+  /*
+    OUTLANDS-2B. In a scheduled match the picture no longer picks the colour, so
+    it does not wear one.
+  */
+  .outlands-entrance .outlands-tile-match {
+    border-color: #888888;
   }
   .outlands-entrance .outlands-tile:hover {
     border-color: #ffffff;
