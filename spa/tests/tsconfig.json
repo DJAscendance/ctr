@@ -18,6 +18,7 @@
     "../src/helpers/bxx-node.helper.ts",
     "../src/helpers/bxx-sfnode.helper.ts",
     "../src/helpers/shared-event.helper.ts",
-    "../src/helpers/legacy-url.helper.ts"
+    "../src/helpers/legacy-url.helper.ts",
+    "../src/helpers/legacy-destination.helper.ts"
   ]
 }

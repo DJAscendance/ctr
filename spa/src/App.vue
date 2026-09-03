@@ -463,9 +463,14 @@ export default Vue.extend({
     require("./libs/x_ite_mods/bxx_sfnode.js");
     require("./libs/x_ite_mods/bxx_events.js");
     require("./libs/x_ite_mods/bxx_identity.js");
+    // The one place a restored historical link becomes an SPA move. Registered
+    // before the two seams that use it, so the first door can already route.
+    require("./libs/x_ite_mods/bxx_route.js").setRouter(this.$router);
     // Must stay last of the loadURL wrappers: bxx_auth.js and bxx_events.js both
     // wrap loadURL, and a suppressed legacy call must not reach either of them.
     require("./libs/x_ite_mods/bxx_url.js");
+    // The second navigation seam. Anchor nodes never reach Browser.loadURL.
+    require("./libs/x_ite_mods/bxx_anchor.js");
     //require('./libs/x_ite_mods/fix_stairs.js');
   },
   computed: {
