@@ -24,6 +24,15 @@ document.querySelector("html").classList.add("dark");
 
 const router = new VueRouter({ routes });
 Vue.use(VueRouter);
+
+// The app uses hash-based routing, so a direct link like /beta-register only ever
+// serves the app shell - the real route lives in the hash, and a fresh page load has
+// no hash yet. Recover the intended route from the plain URL path this one time.
+if (window.location.hash === "" && window.location.pathname !== "/") {
+  router.replace(window.location.pathname).catch(() => {
+    // already there, or not a real route - nothing to do
+  });
+}
 router.beforeEach(async (to, from, next) => {
   if (to.meta.title) {
     document.title = `${to.meta.title} - Cybertown`;

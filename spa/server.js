@@ -92,14 +92,11 @@ function validJwt(token) {
 
 app.use(express.static("dist"));
 
-// the app uses hash-based routing, so a plain (non-hash) link to a client-side
-// route does nothing on its own - bounce it to the hash form it actually understands
-app.get("/beta-register", (req, res) => {
-    res.redirect("/#/beta-register");
-});
-
 // serves the SPA for any non-static, non-API path so direct links to client-side
-// routes (e.g. /beta-register) don't 404 before Vue Router ever loads
+// routes (e.g. /beta-register) don't 404 before Vue Router ever loads. A server-side
+// redirect to the hash form (e.g. /#/beta-register) would force a second request to
+// "/", which is still Cloudflare-gated for a not-yet-invited visitor - the hash has to
+// be set client-side, after this exact bypassed path has already served the app.
 app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "/dist/index.html"));
 });
