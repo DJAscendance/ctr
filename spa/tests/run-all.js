@@ -18,6 +18,7 @@ const SUITES = [
   "tests/.compiled/tests/shared-event-codec.test.js",
   "tests/.compiled/tests/legacy-url-policy.test.js",
   "tests/.compiled/tests/legacy-destination.test.js",
+  "tests/.compiled/tests/outlands-entry.test.js",
 ];
 
 let failed = false;

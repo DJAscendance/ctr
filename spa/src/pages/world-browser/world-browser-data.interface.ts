@@ -25,4 +25,10 @@ export interface WorldBrowserData {
     force2d: boolean;
     pet: any;
     clickId: string;
+    /** OUTLANDS-2A. True while the Outlands entrance holds back the world. */
+    showOutlandsEntrance: boolean;
+    /** OUTLANDS-2A. The picked free-play avatar key, or `null` before a pick. */
+    outlandsAvatarKey: string | null;
+    /** OUTLANDS-2A. True while Outlands holds the 3D path open for itself. */
+    force3d: boolean;
 }
