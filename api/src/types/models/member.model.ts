@@ -50,4 +50,12 @@ export interface Member extends Model {
    * cannot answer this.
    */
   first_homestead_rewarded_at?: Date;
+  /**
+   * When a city administrator approved this member's immigration, or null while it is
+   * still waiting. Only consulted by deployments that set `MEMBER_APPROVAL_REQUIRED`;
+   * every member that predates the 20260904090000 migration is backfilled as approved.
+   */
+  approved_at?: Date;
+  /** Id of the member who approved this immigration, if any. */
+  approved_by?: number;
 }

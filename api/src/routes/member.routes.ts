@@ -9,6 +9,12 @@ import { memberController } from '../controllers';
 
 const memberRoutes = Router();
 memberRoutes.post('/signup', (request, response) => memberController.signup(request, response));
+memberRoutes.get('/pending-approval', (request, response) =>
+  memberController.listPendingApproval(request, response),
+);
+memberRoutes.post('/pending-approval/:id/approve', (request, response) =>
+  memberController.approveMember(request, response),
+);
 memberRoutes.post('/is_banned', (request, response) =>
   memberController.isBanned(request, response),
 );

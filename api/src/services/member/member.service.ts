@@ -28,6 +28,8 @@ import {
   FIRST_HOMESTEAD_XP as FIRST_HOMESTEAD_XP_AMOUNT,
   IMMIGRATION_GRANT_CC as IMMIGRATION_GRANT_AMOUNT,
 } from '../../libs/economy';
+import { sendMemberApprovedEmail } from '../../libs/mail';
+import { isMemberApprovalRequired } from '../../libs/site-config';
 import { Member, ObjectInstance, Place } from '../../types/models';
 import { MemberInfoView, MemberAdminView } from '../../types/views';
 import { SessionInfo } from 'session-info.interface';
@@ -128,6 +130,15 @@ export class MemberService {
   public static readonly FIRST_HOMESTEAD_XP = FIRST_HOMESTEAD_XP_AMOUNT;
   /** Duration in minutes until a password reset attempt expires */
   public static readonly PASSWORD_RESET_EXPIRATION_DURATION = 15;
+  /**
+   * The message raised when a member exists and their password is right, but their
+   * immigration has not been approved yet. A shared constant because the login path, the
+   * session-refresh path and their tests all have to agree on it exactly -- the client
+   * shows this text to the applicant.
+   */
+  public static readonly PENDING_APPROVAL_ERROR =
+    'Your immigration is waiting for a city administrator to approve it. '
+    + 'We will email you when it is ready.';
   /** Number of times to salt member passwords */
   private static readonly SALT_ROUNDS = 10;
   /**
@@ -351,14 +362,99 @@ export class MemberService {
     username: string,
     password: string,
   ): Promise<string> {
+    const memberId = await this.createMember(email, username, password);
+    await this.giveDailyCreditsForLogin(memberId);
+    return this.getMemberToken(memberId);
+  }
+
+  /**
+   * Creates a new member and returns their id, WITHOUT issuing a session token.
+   *
+   * The half of immigration that a deployment requiring approval can use on its own: the
+   * account and its immigration grant exist, but nothing that could be used to enter the
+   * city has been handed out. `createMemberAndLogin` is this plus the token, so the two
+   * paths cannot drift apart in how an account is actually made.
+   *
+   * `approved_at` is left at its column default of null here. Whether that null blocks
+   * anything is `isMemberApprovalRequired()`'s business, checked at the boundaries where a
+   * token is issued -- so a deployment that later turns approval OFF instantly unblocks
+   * everyone who was waiting, without a data fix-up.
+   *
+   * @param email member email address
+   * @param username member username, used during login
+   * @param password raw member password
+   * @returns promise resolving in the id of the newly created member
+   */
+  public async createMember(
+    email: string,
+    username: string,
+    password: string,
+  ): Promise<number> {
     const hashedPassword = await this.encryptPassword(password);
-    const memberId = await this.memberRepository.create({
+    return this.memberRepository.create({
       email,
       username,
       password: hashedPassword,
     });
-    await this.giveDailyCreditsForLogin(memberId);
-    return this.getMemberToken(memberId);
+  }
+
+  /**
+   * Whether this deployment holds new immigrations for manual approval.
+   *
+   * Exposed on the service so controllers and tests ask one question in one place rather
+   * than each reading the environment for themselves.
+   */
+  public isApprovalRequired(): boolean {
+    return isMemberApprovalRequired();
+  }
+
+  /**
+   * Whether the given member is still waiting on a city administrator.
+   *
+   * Always false where approval is not required, so every existing deployment gets the same
+   * answer it would have got before this existed and no caller needs its own feature check.
+   *
+   * @param memberId member to check
+   * @returns promise resolving true only when this deployment requires approval AND this
+   * member has not received it
+   */
+  public async isPendingApproval(memberId: number): Promise<boolean> {
+    if (!isMemberApprovalRequired()) return false;
+    const member = await this.memberRepository.findById(memberId);
+    return !!member && !member.approved_at;
+  }
+
+  /**
+   * Lists the immigrations waiting on a city administrator.
+   * @returns promise resolving in the pending members, oldest application first
+   */
+  public async listPendingApproval(): Promise<Partial<Member>[]> {
+    return this.memberRepository.findPendingApproval();
+  }
+
+  /**
+   * Approves one pending immigration and tells the applicant by email.
+   *
+   * The email is sent only when this call is the one that flipped the row, so a second
+   * administrator pressing Approve on an already-approved member does not send a duplicate.
+   * A failure to send is logged and swallowed: the approval is a database fact and must not
+   * be undone because a mail server was unreachable, and the citizen can log in either way.
+   *
+   * @param memberId member being approved
+   * @param approverId administrator performing the approval
+   * @returns promise resolving true if this call performed the approval
+   */
+  public async approveMember(memberId: number, approverId: number): Promise<boolean> {
+    const approved = await this.memberRepository.approve(memberId, approverId);
+    if (!approved) return false;
+
+    const member = await this.memberRepository.findById(memberId);
+    try {
+      await sendMemberApprovedEmail(member.email, member.username);
+    } catch (error) {
+      console.error(`Approval email to member ${memberId} failed:`, error.message);
+    }
+    return true;
   }
 
   /**
@@ -588,6 +684,13 @@ export class MemberService {
     const validPassword = await bcrypt.compare(password, member.password);
     if (!validPassword) throw new Error('Incorrect login details.');
     if (member.status === 0) throw new Error('banned');
+    // Checked AFTER the password, never before: answering "that account is awaiting
+    // approval" to anyone who merely guesses a nickname would turn the pending queue into a
+    // username oracle. Checked BEFORE the daily credit, so a member who cannot enter the
+    // city does not silently burn today's login bonus on a refused attempt.
+    if (isMemberApprovalRequired() && !member.approved_at) {
+      throw new Error(MemberService.PENDING_APPROVAL_ERROR);
+    }
     await this.giveDailyCreditsForLogin(member.id);
     // Pays the settle-a-home award to anyone owed it: a citizen whose award failed at settle
     // time, or who homesteaded before the award existed. Costs one conditional UPDATE that

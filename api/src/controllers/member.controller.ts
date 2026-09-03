@@ -5,7 +5,12 @@ import { Container } from 'typedi';
 import validator from 'validator';
 import * as badwords from 'badwords-list';
 
-import { sendPasswordResetEmail, sendPasswordResetUnknownEmail } from '../libs';
+import {
+  sendMemberPendingApprovalEmail,
+  sendPasswordResetEmail,
+  sendPasswordResetUnknownEmail,
+  verifyBotChallenge,
+} from '../libs';
 import { MemberService, HomeService, PlaceService, MemberDataService } from '../services';
 import { SessionInfo } from 'session-info.interface';
 import {parseInt} from 'lodash';
@@ -323,6 +328,15 @@ class MemberController {
       }
       const session = this.memberService.decodeMemberToken(<string>apitoken);
       if (session) {
+        // The approval gate has to be here as well as on `login`, not instead of it. This
+        // is the endpoint every page load consults, and a token can outlive the state it
+        // was issued under: one minted before approval was switched on, or one belonging to
+        // a member whose approval was somehow never recorded, would otherwise keep working
+        // for the life of the token. Checked before any token is refreshed or any credit is
+        // paid, so a pending member is neither re-armed nor rewarded.
+        if (await this.memberService.isPendingApproval(session.id)) {
+          throw new Error(MemberService.PENDING_APPROVAL_ERROR);
+        }
         // refresh client token with latest from database
         const token = await this.memberService.getMemberToken(session.id);
         const { banned, banInfo } = await this.memberService.isBanned(session.id);
@@ -360,8 +374,37 @@ class MemberController {
 
   /** Controller method for registering a new user. */
   public async signup(request: Request, response: Response): Promise<void> {
-    const { email, username, password } = request.body;
+    const { email, username, password, botChallengeToken } = request.body;
     try {
+      // The bot challenge is settled FIRST, before any lookup runs. Checking it after the
+      // duplicate-email and duplicate-nickname probes would leave an unauthenticated
+      // enumeration oracle wide open to exactly the automated caller the challenge exists
+      // to stop: distinct error messages for "taken" and "free" are useful answers.
+      //
+      // A deployment with neither Turnstile key has no challenge and this passes through
+      // untouched, which is every deployment that has not opted in.
+      const challenge = await verifyBotChallenge(botChallengeToken, request.ip);
+      if (!challenge.passed) {
+        if (challenge.misconfigured) {
+          // An operator error, not an applicant error. Told apart from an ordinary failed
+          // challenge because "complete the check and try again" would be a lie here --
+          // no amount of trying fixes a key the deployment never set. The log line names
+          // the missing VARIABLE; it never carries either key's value.
+          console.error(
+            `Immigration refused -- bot protection is misconfigured: ${challenge.reason}. `
+            + 'Set both TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY, or neither.',
+          );
+          throw new Error(
+            'Immigration is temporarily closed while we fix a problem on our side. '
+            + 'Please try again later.',
+          );
+        }
+        console.error(`Immigration bot challenge failed: ${challenge.reason}`);
+        throw new Error(
+          'We could not confirm you are a human. Please complete the check and try again.',
+        );
+      }
+
       this.validateSignupInput(email, username, password);
       if (await this.memberService.find({ email })) {
         throw new Error('An account with this email already exists.');
@@ -374,12 +417,78 @@ class MemberController {
         throw new Error('This language can not be used on CTR!');
       }
 
+      // Where immigration needs approving, the account is created but NO token is issued.
+      // The applicant leaves this request with nothing that can enter the city, which is
+      // what makes the gate real rather than a screen the client could skip.
+      if (this.memberService.isApprovalRequired()) {
+        await this.memberService.createMember(email, username, password);
+        try {
+          await sendMemberPendingApprovalEmail(email, username);
+        } catch (mailError) {
+          // A mail failure must not fail an immigration that already succeeded -- the
+          // account exists and the queue entry is the authoritative record either way.
+          console.error(`Pending-approval email to ${username} failed:`, mailError.message);
+        }
+        response.status(200).json({
+          message: 'Signup Completed',
+          username,
+          pendingApproval: true,
+        });
+        return;
+      }
+
       const token = await this.memberService.createMemberAndLogin(email, username, password);
       response.status(200).json({
         message: 'Signup Completed',
         token,
         username,
+        pendingApproval: false,
       });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Controller method listing the immigrations waiting on a city administrator.
+   * @route GET /api/member/pending-approval
+   */
+  public async listPendingApproval(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+    if (!(await this.memberService.canAdmin(session.id))) {
+      response.status(403).json({ message: 'Access Denied' });
+      return;
+    }
+    try {
+      const members = await this.memberService.listPendingApproval();
+      response.status(200).json({ members });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Controller method approving one pending immigration.
+   * @route POST /api/member/pending-approval/:id/approve
+   */
+  public async approveMember(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+    if (!(await this.memberService.canAdmin(session.id))) {
+      response.status(403).json({ message: 'Access Denied' });
+      return;
+    }
+    const memberId = parseInt(request.params.id, 10);
+    if (!Number.isInteger(memberId) || memberId <= 0) {
+      response.status(400).json({ error: 'Invalid member id.' });
+      return;
+    }
+    try {
+      const approved = await this.memberService.approveMember(memberId, session.id);
+      response.status(200).json({ message: 'success', approved });
     } catch (error) {
       console.error(error);
       response.status(400).json({ error: error.message });

@@ -79,6 +79,52 @@ services:
       ASSETS_DIR: /usr/src/spa/assets
       PRIVATE_UPLOADS_DIR: /usr/src/app/private-uploads
       CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL:-}
+      # Public-beta policy. Every one of these defaults to CTR's existing behaviour, so a
+      # deployment that sets none of them immigrates people immediately, runs no bot
+      # challenge and links its mail at production -- exactly as before these existed.
+      #
+      # MEMBER_APPROVAL_REQUIRED holds every new immigration for a city administrator.
+      MEMBER_APPROVAL_REQUIRED: ${MEMBER_APPROVAL_REQUIRED:-false}
+      SITE_URL: ${SITE_URL:-}
+      SITE_NAME: ${SITE_NAME:-}
+      #
+      # Turnstile is a PAIR, and the API needs to see both halves. It reads the SECRET to
+      # verify a token, and the SITE key only to answer "is the browser being shown a
+      # widget at all". Set both or set neither: with exactly one of them the API refuses
+      # every immigration and logs which variable is missing. That is deliberate. The
+      # earlier arrangement gave the API the secret alone, so a deployment with a site key
+      # and no secret rendered a challenge in the browser and verified nothing on the
+      # server -- protection that existed only where an automated caller could ignore it.
+      #
+      # TURNSTILE_SITE_KEY is publishable and is also given to ct-socket below, which
+      # stamps it into the page. TURNSTILE_SECRET_KEY appears HERE ONLY and must never be
+      # added to any service that talks to a browser.
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      #
+      # Mail transport. Unset, these fall back to a local MTA on 127.0.0.1:25, which is how
+      # CTR's production host has always sent mail. That default cannot work in a container
+      # -- 127.0.0.1 is the container, and no MTA runs inside this image -- so a
+      # containerised deployment must point them at a real mail server.
+      #
+      # The CTNG Beta relays through the existing Cybertown mail host, which already serves
+      # the cybertown.dev family: SMTP_HOST=mail.cybertown.dev, SMTP_PORT=587,
+      # SMTP_SECURE=false. Port 587 is submission: the session starts in the clear and is
+      # upgraded with STARTTLS, and setting SMTP_USER makes that upgrade mandatory, so the
+      # password never crosses an unencrypted channel. Use SMTP_SECURE=true with port 465
+      # for implicit TLS instead.
+      #
+      # SMTP_FROM must be an address the relay is allowed to sign for. Mail claiming a
+      # domain the relay has no DKIM key for is treated as spam by the receiving side.
+      #
+      # SMTP_PASS is a server secret. It belongs to this service and no other, and it is
+      # supplied from the deployment environment -- never written into this file.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     volumes:
       - object-assets:/usr/src/spa/assets/object
       - avatar-assets:/usr/src/spa/assets/avatars
@@ -102,6 +148,16 @@ services:
       API_URL: http://ct-api:3000/api
       WEBSOCKET_PORT: "8000"
       CHAT_WEBHOOK_URL: ${CHAT_WEBHOOK_URL:-}
+      # This service also serves index.html, so it -- not the API -- is where the browser's
+      # view of the deployment comes from. SITE_MODE=beta turns on the landing page, the
+      # BETA badge and the noindex policy together. Everything in these five lines is
+      # PUBLIC: it is stamped into the page source every visitor receives, so no secret may
+      # be added here. TURNSTILE_SITE_KEY is the publishable half of the Turnstile pair.
+      SITE_MODE: ${SITE_MODE:-production}
+      SITE_LABEL: ${SITE_LABEL:-}
+      SITE_NOINDEX: ${SITE_NOINDEX:-}
+      BUG_REPORT_URL: ${BUG_REPORT_URL:-}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
     volumes:
       - object-assets:/usr/src/app/assets/object
       - avatar-assets:/usr/src/app/assets/avatars

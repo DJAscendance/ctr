@@ -1,4 +1,5 @@
 export * from './access-level';
+export * from './bot-challenge';
 export * from './economy';
 export * from './html';
 export * from './mail';
@@ -7,3 +8,4 @@ export * from './vrml';
 export * from './map-background-request';
 export * from './map-theme';
 export * from './route-id';
+export * from './site-config';

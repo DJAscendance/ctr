@@ -401,4 +401,44 @@ export class MemberRepository {
     };
   }
 
+  /**
+   * Lists the immigrations still waiting on a city administrator, oldest first so the queue
+   * is worked in the order people applied.
+   *
+   * `status = 1` excludes anyone who has since been banned, which is how an application is
+   * refused -- there is no separate "rejected" state to filter on. Only the columns the
+   * review screen needs are selected; the password hash and the reset token are never part
+   * of this projection.
+   *
+   * @returns promise resolving in the pending members
+   */
+  public async findPendingApproval(): Promise<Partial<Member>[]> {
+    return this.db.member
+      .select('id', 'username', 'email', 'created_at')
+      .whereNull('approved_at')
+      .andWhere({ status: 1 })
+      .orderBy('created_at', 'asc');
+  }
+
+  /**
+   * Marks one pending immigration as approved.
+   *
+   * The `approved_at IS NULL` condition is part of the UPDATE rather than a preceding read,
+   * so two administrators clicking Approve at the same moment produce one approval: the
+   * second statement matches no rows and reports false. That is what lets the caller send
+   * exactly one approval email.
+   *
+   * @param memberId member being approved
+   * @param approverId administrator performing the approval
+   * @returns true if this call is the one that approved them, false if they were already
+   * approved or do not exist
+   */
+  public async approve(memberId: number, approverId: number): Promise<boolean> {
+    const updated = await this.db.member
+      .where({ id: memberId })
+      .whereNull('approved_at')
+      .update({ approved_at: new Date(), approved_by: approverId });
+    return updated > 0;
+  }
+
 }

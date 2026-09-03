@@ -7,6 +7,7 @@ import api from "./api";
 import appStore, { User } from "./appStore";
 import * as filters from "./helpers/fiters";
 import routes from "./routes";
+import siteConfig from "./site-config";
 import socket from "./socket";
 import "./assets/index.scss";
 
@@ -31,16 +32,44 @@ document.querySelector("html").classList.add("dark");
 // like every other route on the site, not the duplicated-looking
 // "/beta-register#/beta-register".
 if (window.location.hash === "" && window.location.pathname !== "/") {
-  history.replaceState(null, "", "/#" + window.location.pathname);
+  history.replaceState(null, "", `/#${  window.location.pathname}`);
 }
 
 const router = new VueRouter({ routes });
 Vue.use(VueRouter);
+
+/**
+ * Routes a visitor may reach with no session at all.
+ *
+ * Was an inline array inside the guard; named here because the beta's public front door had
+ * to join it and a list this load-bearing should be readable. Adding a name to it makes
+ * that page PUBLIC - nothing else on the site is affected.
+ */
+const PUBLIC_ROUTE_NAMES = [
+  "login", "logout", "signup", "forgot", "password_reset",
+  "about", "privacypolicy", "rulesandregulations", "constitution", "banned",
+  "beta_signup", "beta_landing",
+];
+
+/** Suffix appended to every document title on a labelled deployment, e.g. " (BETA)". */
+const TITLE_SUFFIX = siteConfig.label ? ` (${siteConfig.label})` : "";
+
 router.beforeEach(async (to, from, next) => {
   if (to.meta.title) {
-    document.title = `${to.meta.title} - Cybertown`;
+    document.title = `${to.meta.title} - Cybertown${TITLE_SUFFIX}`;
   } else {
-    document.title = "Cybertown";
+    document.title = `Cybertown${TITLE_SUFFIX}`;
+  }
+
+  // On a beta deployment the front page for someone with no session is the beta landing,
+  // not the classic city home page - a stranger must be told what this site is before it
+  // asks anything of them. Gated on `isBeta` so an ordinary production deployment keeps the
+  // home page it has always had, and skipped once a session exists so a returning citizen
+  // is never bounced back out to the front door.
+  if (siteConfig.isBeta && to.name === "home" && !appStore.data.isUser
+    && !appStore.data.user.token) {
+    next({ name: "beta_landing" });
+    return;
   }
   if (to.fullPath.includes("/place/")) {
     await api.get<any>(`/place/${to.params.id}`)
@@ -72,29 +101,29 @@ router.beforeEach(async (to, from, next) => {
     await api.get<any>(`/place/by_id/${to.params.place_id}`)
       .then(response => {
         const Data = response.data;
-        if (Data.place.type === 'club' && Data.place.private) {
+        if (Data.place.type === "club" && Data.place.private) {
           api.get<any>(`/club/ismember?clubId=${Data.place.id}`)
             .then(response => {
               const member = response.data.isMember;
               if (!member && to.fullPath.includes("/messageboard/")) {
-                api.post<any>(`/messageboard/getadmininfo/`, {
+                api.post<any>("/messageboard/getadmininfo/", {
                   place_id: Data.place.id,
-                  type: Data.place.type
+                  type: Data.place.type,
                 }).then(response => {
                   if (!response.data.admin) {
-                    next(`/clubdoor/${Data.place.id}`)
+                    next(`/clubdoor/${Data.place.id}`);
                   }
-                })
+                });
               }
               if (!member && to.fullPath.includes("/inbox/")) {
-                api.post<any>(`/inbox/getadmininfo/`, {
+                api.post<any>("/inbox/getadmininfo/", {
                   place_id: Data.place.id,
-                  type: Data.place.type
+                  type: Data.place.type,
                 }).then(response => {
                   if (!response.data.admin) {
-                    next('/clubdoor/${Data.place.id}')
+                    next("/clubdoor/${Data.place.id}");
                   }
-                })
+                });
               }
             });
         }
@@ -121,10 +150,7 @@ router.beforeEach(async (to, from, next) => {
       });
   }
 
-  if (!["login", "logout", "signup", "forgot", "password_reset",
-    "about", "privacypolicy", "rulesandregulations", "constitution", "banned",
-    "beta_signup"]
-    .includes(to.name)) {
+  if (!PUBLIC_ROUTE_NAMES.includes(to.name)) {
     await api.get<{
       user: User,
       status: number,

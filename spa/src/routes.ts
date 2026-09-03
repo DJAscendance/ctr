@@ -10,7 +10,7 @@ import SignupPage from "./pages/SignupPage.vue";
 import LogoutPage from "./pages/LogoutPage.vue";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.vue";
 import PasswordResetPage from "./pages/PasswordResetPage.vue";
-import BetaSignupPage from "./pages/BetaSignupPage.vue";
+import BetaLandingPage from "./pages/BetaLandingPage.vue";
 import WorldPage from "@/pages/world-browser/WorldPage.vue";
 import WorldBrowserPage from "./pages/world-browser/WorldBrowserPage.vue";
 import WorldBrowserTools from "./pages/world-browser/WorldBrowserTools.vue";
@@ -69,7 +69,7 @@ import UserFireRoles from "@/pages/admin/user/FireRoles.vue";
 import UserDonor from "@/pages/admin/user/donor.vue";
 import AvatarSearch from "@/pages/admin/avatar/search.vue";
 import PlaceSearch from "@/pages/admin/place/search.vue";
-import LiveEvent from '@/pages/admin/LiveEvent.vue';
+import LiveEvent from "@/pages/admin/LiveEvent.vue";
 import AdminPlaceUpdate from "@/pages/admin/place/update.vue";
 import ObjectSearch from "@/pages/admin/objects/search.vue";
 import AdminObjectUpdate from "@/pages/admin/objects/update.vue";
@@ -77,6 +77,7 @@ import CommunityOverview from "@/pages/admin/overview/overview.vue";
 import CityRoles from "@/pages/admin/roles/roles.vue";
 import Transactions from "@/pages/admin/transactions/search.vue";
 import BetaSignups from "@/pages/admin/beta-signups/BetaSignups.vue";
+import PendingMembers from "@/pages/admin/members/PendingMembers.vue";
 import UserObjectSearch from "@/pages/admin/objects/instances/search.vue";
 import SeizedObjects from "@/pages/admin/objects/instances/seized.vue";
 import NewsEditor from "@/pages/admin/news/editor.vue";
@@ -237,11 +238,23 @@ export default [
     },
   },
   {
+    path: "/beta",
+    component: BetaLandingPage,
+    name: "beta_landing",
+    meta: {
+      title: "CTNG Beta",
+    },
+  },
+  {
+    // Compatibility with the link that was handed out while the beta was invite-only.
+    // It resolves to the landing page directly rather than redirecting: a redirect from a
+    // shared link is a second navigation that can be lost, and the destination is the same
+    // page either way. The old route NAME is kept so nothing that navigated by name breaks.
     path: "/beta-register",
-    component: BetaSignupPage,
+    component: BetaLandingPage,
     name: "beta_signup",
     meta: {
-      title: "Request Beta Access",
+      title: "CTNG Beta",
     },
   },
   {
@@ -532,6 +545,16 @@ export default [
         },
       },
       {
+        path: "/admin/pending-members/",
+        component: PendingMembers,
+        name: "PendingMembers",
+        meta: {
+          title: "Immigration Approvals - Admin Panel",
+        },
+      },
+      {
+        // DEPRECATED. Kept so the email addresses collected during the invite-only beta
+        // stay readable; nothing links here from the public site any more.
         path: "/admin/beta-signups/",
         component: BetaSignups,
         name: "BetaSignups",
@@ -568,9 +591,9 @@ export default [
         component: NewsEditor,
         name: "NewsEditor",
         meta: {
-        title: "Edit Cybertown News",
-  },
-},
+          title: "Edit Cybertown News",
+        },
+      },
       {
         path: "/admin/member/user/:id",
         component: UserMain,
@@ -714,11 +737,11 @@ export default [
         },
       },
       {
-        path: '/admin/live-event/',
+        path: "/admin/live-event/",
         component: LiveEvent,
-        name: 'LiveEvent',
+        name: "LiveEvent",
         meta: {
-          title: 'Live Event - Admin Panel',
+          title: "Live Event - Admin Panel",
         },
       },
       {

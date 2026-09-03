@@ -34,6 +34,15 @@
       </div>
 
       <div class="mb-2" v-if="accessLevel.includes('security')">
+        <router-link class="btn-ui" :to="{name: 'PendingMembers'}">
+          Immigration Approvals
+        </router-link>
+      </div>
+      <!--
+        Deprecated. The invite-only beta collected email addresses here; public immigration
+        replaced it. Left in the panel only so the collected addresses stay reachable.
+      -->
+      <div class="mb-2" v-if="accessLevel.includes('security')">
         <router-link class="btn-ui" :to="{name: 'BetaSignups'}">Beta Signups</router-link>
       </div>
       <div class="mb-2" v-if="accessLevel.includes('admin')">
@@ -91,10 +100,10 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue';
+import Vue from "vue";
 
 export default Vue.extend({
-  name: 'admin',
+  name: "admin",
   data: () => {
     return {
       accessLevel: [],
@@ -104,7 +113,7 @@ export default Vue.extend({
   methods: {
     async getAdminLevel(): Promise<void> {
       try {
-        const access = await this.$http.get('/member/getadminlevel');
+        const access = await this.$http.get("/member/getadminlevel");
         this.accessLevel = access.data.accessLevel;
       } catch (e) {
         console.log(e);
@@ -112,7 +121,7 @@ export default Vue.extend({
     },
     async getNewsPermission(): Promise<void> {
       try {
-        const response = await this.$http.get('/news/can-edit');
+        const response = await this.$http.get("/news/can-edit");
         this.canEditNews = response.data.canEdit;
       } catch (error) {
         console.log(error);
@@ -121,7 +130,7 @@ export default Vue.extend({
     },
     accessCheck() {
       if (this.accessLevel.length <= 0 && !this.canEditNews) {
-        this.$router.push({ name: 'restrictedaccess' });
+        this.$router.push({ name: "restrictedaccess" });
       }
     },
   },

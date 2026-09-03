@@ -101,6 +101,13 @@ async function createFixtureMembers(knex: Knex): Promise<number[]> {
       email: `${username}@example.invalid`,
       password: UNUSABLE_PASSWORD,
       wallet_id: walletId,
+      // Stamped approved because these are fixtures an operator created, not applications
+      // anybody submitted -- there is no immigration here for an administrator to review.
+      // Without it, a deployment that runs `db:init` with MEMBER_APPROVAL_REQUIRED on comes
+      // up with every seeded office-holder stuck in the pending queue: the migration's
+      // backfill runs before the seeds, so it cannot reach a row the seeds have not written
+      // yet. Harmless where approval is not required, since nothing reads the column there.
+      approved_at: new Date(),
     });
     memberIds.push(memberId);
   }

@@ -1,5 +1,19 @@
 <template>
   <main id="app" class="h-screen" style="display:grid;">
+    <!--
+      Environment badge. Present on every page of a labelled deployment, logged in or not,
+      so nobody can be several screens deep and still think this is the live city. Rendered
+      only when the deployment supplies a label, so production shows nothing at all.
+      `pointer-events: none` keeps it from ever swallowing a click on the page underneath.
+    -->
+    <a
+      v-if="siteLabel"
+      class="site-env-badge"
+      :href="bugReportUrl || undefined"
+      :target="bugReportUrl ? '_blank' : undefined"
+      :rel="bugReportUrl ? 'noopener noreferrer' : undefined"
+      :title="bugReportUrl ? 'Report a beta bug' : undefined"
+    >{{ siteLabel }}<span v-if="bugReportUrl" class="site-env-badge-hint">report a bug</span></a>
     <!--Banner-->
     <div
       class="flex bg-lines justify-center"
@@ -176,11 +190,12 @@ import ModalRoot from "./components/modals/ModalRoot.vue";
 import InfoModal from "./components/modals/InfoModal.vue";
 import DirectoryModal from "./components/modals/DirectoryModal.vue";
 import HowDoIModal from "./components/modals/HowDoIModal.vue";
-import SecurityAlertModal from './components/modals/SecurityAlertModal.vue';
-import CitizenOnlineModal from './components/modals/CitizenOnlineModal.vue';
+import SecurityAlertModal from "./components/modals/SecurityAlertModal.vue";
+import CitizenOnlineModal from "./components/modals/CitizenOnlineModal.vue";
 import ModalService from "./components/modals/services/ModalService.vue";
 import ClockPage from "./components/Clock.vue";
-import InstantMessageModal from './components/modals/InstantMessageModal.vue';
+import InstantMessageModal from "./components/modals/InstantMessageModal.vue";
+import siteConfig from "./site-config";
 
 declare const X3D: any;
 
@@ -193,6 +208,8 @@ export default Vue.extend({
   },
   data: () => {
     return {
+      siteLabel: siteConfig.label,
+      bugReportUrl: siteConfig.bugReportUrl,
       accessLevel: null,
       liveEvent: {
         enabled: false,
@@ -367,15 +384,15 @@ export default Vue.extend({
   methods: {
     async loadLiveEvent(): Promise<void> {
       try {
-      const response = await this.$http.get('/live-event');
-      this.liveEvent = response.data.liveEvent;
-    } catch (error) {
-      this.liveEvent = {
-        enabled: false,
-        place: null,
-      };
-    }
-  },
+        const response = await this.$http.get("/live-event");
+        this.liveEvent = response.data.liveEvent;
+      } catch (error) {
+        this.liveEvent = {
+          enabled: false,
+          place: null,
+        };
+      }
+    },
     changeJumpGate(): void {
       if (this.jumpGate?.length) {
         this.$router.push({ path: `/place/${this.jumpGate}` });
@@ -429,30 +446,30 @@ export default Vue.extend({
     moderationListener(): void {
       this.$socket.on("moderation_event", data => {
         if(
-          data.data.event === 'add-ban' && 
+          data.data.event === "add-ban" && 
           Number.parseInt(data.data.member_id) === this.$store.data.user.id &&
           data.data.duration >= 1) {
           this.reloadWindow();
         } 
         if(
-          data.data.event === 'add-ban' && 
+          data.data.event === "add-ban" && 
           Number.parseInt(data.data.member_id) === this.$store.data.user.id &&
           data.data.duration === 0) {
-          alert("You have received a warning from security.\nPlease read and follow the rules & regulations of CTR.")
+          alert("You have received a warning from security.\nPlease read and follow the rules & regulations of CTR.");
         }
       });
     },
     instantMessagingListener(): void {
       this.$socket.on("instant-message-received", data => {
         this.receivedInstantMessage();
-      })
+      });
     },
     async checkAccessLevel() {
       try {
-        await this.$http.get(`/member/getadminlevel`)
+        await this.$http.get("/member/getadminlevel")
           .then((response) => {
             this.accessLevel = response.data.accessLevel;
-            if(this.accessLevel.includes('security')){
+            if(this.accessLevel.includes("security")){
               this.securityListener();
             }
           });
@@ -501,7 +518,7 @@ export default Vue.extend({
     //require('./libs/x_ite_mods/fix_stairs.js');
   },
   watch: {
-    '$store.data.isUser'(isUser: boolean): void {
+    "$store.data.isUser"(isUser: boolean): void {
       if (isUser) {
         this.checkAccessLevel();
       } else {
@@ -514,3 +531,42 @@ export default Vue.extend({
   },
 });
 </script>
+
+<style>
+/*
+ * Not scoped: App.vue has no scoped styles today and the badge is a fixed overlay that
+ * belongs to the document rather than to any panel inside it.
+ */
+.site-env-badge {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.15rem 0.6rem;
+  background: #ffff00;
+  color: #000 !important;
+  border: 2px outset #ffff00;
+  border-top: 0;
+  border-right: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.72rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-decoration: none !important;
+}
+
+.site-env-badge-hint {
+  font-weight: normal;
+  letter-spacing: 0;
+  text-decoration: underline;
+}
+
+@media (max-width: 30rem) {
+  .site-env-badge-hint {
+    display: none;
+  }
+}
+</style>
