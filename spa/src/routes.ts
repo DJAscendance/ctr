@@ -10,6 +10,7 @@ import SignupPage from "./pages/SignupPage.vue";
 import LogoutPage from "./pages/LogoutPage.vue";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.vue";
 import PasswordResetPage from "./pages/PasswordResetPage.vue";
+import BetaSignupPage from "./pages/BetaSignupPage.vue";
 import WorldPage from "@/pages/world-browser/WorldPage.vue";
 import WorldBrowserPage from "./pages/world-browser/WorldBrowserPage.vue";
 import WorldBrowserTools from "./pages/world-browser/WorldBrowserTools.vue";
@@ -75,6 +76,7 @@ import AdminObjectUpdate from "@/pages/admin/objects/update.vue";
 import CommunityOverview from "@/pages/admin/overview/overview.vue";
 import CityRoles from "@/pages/admin/roles/roles.vue";
 import Transactions from "@/pages/admin/transactions/search.vue";
+import BetaSignups from "@/pages/admin/beta-signups/BetaSignups.vue";
 import UserObjectSearch from "@/pages/admin/objects/instances/search.vue";
 import SeizedObjects from "@/pages/admin/objects/instances/seized.vue";
 import NewsEditor from "@/pages/admin/news/editor.vue";
@@ -232,6 +234,14 @@ export default [
     name: "forgot",
     meta: {
       title: "Forgot Password",
+    },
+  },
+  {
+    path: "/beta-register",
+    component: BetaSignupPage,
+    name: "beta_signup",
+    meta: {
+      title: "Request Beta Access",
     },
   },
   {
@@ -519,6 +529,14 @@ export default [
         name: "Transactions",
         meta: {
           title: "Transactions Search - Admin Panel",
+        },
+      },
+      {
+        path: "/admin/beta-signups/",
+        component: BetaSignups,
+        name: "BetaSignups",
+        meta: {
+          title: "Beta Signups - Admin Panel",
         },
       },
       {

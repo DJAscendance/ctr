@@ -1,6 +1,7 @@
 export * from './admin/admin.services';
 export * from './bank/bank.service';
 export * from './avatar/avatar.service';
+export * from './beta-signup/beta-signup.service';
 export * from './blackmarket/blackmarket.service';
 export * from './block/block.service';
 export * from './club/club.service';

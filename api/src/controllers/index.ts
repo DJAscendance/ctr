@@ -1,6 +1,7 @@
 export * from './admin.controller';
 export * from './avatar.controller';
 export * from './bank.controller';
+export * from './beta-signup.controller';
 export * from './blackmarket.controller';
 export * from './block.controller';
 export * from './club.controller';

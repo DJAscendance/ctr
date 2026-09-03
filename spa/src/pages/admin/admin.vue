@@ -33,6 +33,9 @@
         </router-link>
       </div>
 
+      <div class="mb-2" v-if="accessLevel.includes('security')">
+        <router-link class="btn-ui" :to="{name: 'BetaSignups'}">Beta Signups</router-link>
+      </div>
       <div class="mb-2" v-if="accessLevel.includes('admin')">
         <router-link class="btn-ui" :to="{name: 'CityRoles'}">
           Roles

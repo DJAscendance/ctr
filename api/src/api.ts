@@ -8,6 +8,7 @@ import {
   adminRoutes,
   avatarRoutes,
   bankRoutes,
+  betaSignupRoutes,
   blackmarketRoutes,
   blockRoutes,
   clubRoutes,
@@ -53,6 +54,7 @@ app.use((request, response, next) => {
   next();
 });
 
+app.use('/api/beta-signup', betaSignupRoutes);
 app.use('/api/member', memberRoutes);
 app.use('/api/place', placeRoutes);
 app.use('/api/message', messageRoutes);
