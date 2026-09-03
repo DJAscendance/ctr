@@ -87,7 +87,7 @@ function test(name: string, body: () => void): void {
  */
 class X3DField {
   public _value: any;
-  public constructor(value: any = null) { this._value = value === undefined ? null : value; }
+  public constructor(value: any = null) { this._value = value; }
   public getValue(): any { return this._value; }
   public valueOf(): any { return this._value; }
   public setValue(value: any): void { this._value = value; }
