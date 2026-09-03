@@ -1,5 +1,6 @@
 export * from './avatar/avatar.repository';
 export * from './ban/ban.repository';
+export * from './beta-signup/beta-signup.repository';
 export * from './block/block.repository';
 export * from './club-member/club-member.repository';
 export * from './colony/colony.repository';
