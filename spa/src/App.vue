@@ -492,6 +492,7 @@ export default Vue.extend({
     require("./libs/x_ite_mods/bxx_ray.js");
     require("./libs/x_ite_mods/bxx_script.js");
     require("./libs/x_ite_mods/bxx_node.js");
+    require("./libs/x_ite_mods/bxx_sfnode.js");
     require("./libs/x_ite_mods/bxx_events.js");
     require("./libs/x_ite_mods/bxx_identity.js");
     // Must stay last of the loadURL wrappers: bxx_auth.js and bxx_events.js both
