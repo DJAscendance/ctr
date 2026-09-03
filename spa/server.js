@@ -92,6 +92,12 @@ function validJwt(token) {
 
 app.use(express.static("dist"));
 
+// the app uses hash-based routing, so a plain (non-hash) link to a client-side
+// route does nothing on its own - bounce it to the hash form it actually understands
+app.get("/beta-register", (req, res) => {
+    res.redirect("/#/beta-register");
+});
+
 // serves the SPA for any non-static, non-API path so direct links to client-side
 // routes (e.g. /beta-register) don't 404 before Vue Router ever loads
 app.get("*", (req, res) => {
