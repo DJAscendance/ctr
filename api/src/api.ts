@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import {
   adminRoutes,
   avatarRoutes,
+  betaSignupRoutes,
   blackmarketRoutes,
   blockRoutes,
   clubRoutes,
@@ -50,6 +51,7 @@ app.use((request, response, next) => {
   next();
 });
 
+app.use('/api/beta-signup', betaSignupRoutes);
 app.use('/api/member', memberRoutes);
 app.use('/api/place', placeRoutes);
 app.use('/api/message', messageRoutes);
