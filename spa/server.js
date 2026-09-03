@@ -92,9 +92,9 @@ function validJwt(token) {
 
 app.use(express.static("dist"));
 
-// serves the SPA
-app.get("/", (req, res) => {
-    console.log(req);
+// serves the SPA for any non-static, non-API path so direct links to client-side
+// routes (e.g. /beta-register) don't 404 before Vue Router ever loads
+app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "/dist/index.html"));
 });
 
