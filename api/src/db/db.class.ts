@@ -40,6 +40,11 @@ export class Db {
   get objectInstance() {
     return this.knex<Models.ObjectInstance, Models.ObjectInstance[]>('object_instance');
   }
+  get outlandsMatchPassword() {
+    return this.knex<Models.OutlandsMatchPassword, Models.OutlandsMatchPassword[]>(
+      'outlands_match_password',
+    );
+  }
   get place() {
     return this.knex<Models.Place, Models.Place[]>('place');
   }

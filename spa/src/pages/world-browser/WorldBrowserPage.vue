@@ -26,6 +26,8 @@
       v-if="showOutlandsEntrance"
       class="w-full flex-1"
       :can-enter="canEnterOutlands"
+      :error="outlandsMatchError"
+      :busy="outlandsMatchBusy"
       @select="enterOutlands"
     ></outlands-entrance>
     <div
@@ -70,7 +72,14 @@ import {
   debugMsg,
   environment,
 } from "@/helpers";
-import { isOutlandsPlace } from "@/helpers/outlands.helper";
+import {
+  OUTLANDS_MATCH_REFUSED,
+  OUTLANDS_MATCH_WORLD_FILENAME,
+  findOutlandsAvatar,
+  isOutlandsPlace,
+  outlandsFreeSessionKey,
+  outlandsMatchSessionKey,
+} from "@/helpers/outlands.helper";
 import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
@@ -102,6 +111,9 @@ export default Vue.extend({
       showOutlandsEntrance: false,
       outlandsAvatarKey: null,
       force3d: false,
+      outlandsMode: null,
+      outlandsMatchError: "",
+      outlandsMatchBusy: false,
     };
   },
   methods: {
@@ -256,7 +268,9 @@ export default Vue.extend({
       this.force2d = false;
       this.force3d = false;
 
-      if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
+      // OUTLANDS-2B. Leave the session actually joined, which for a scheduled
+      // match is not the place id.
+      if (this.sessionRoom !== null) this.$socket.leaveRoom(this.sessionRoom);
       await this.getPlace();
 
       if(this.$store.data.place.slug === "clubdir"){
@@ -322,7 +336,7 @@ export default Vue.extend({
       this.joinPlace();
     },
     async unloadPlace(): Promise<void> {
-      if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
+      if (this.sessionRoom !== null) this.$socket.leaveRoom(this.sessionRoom);
       // OUTLANDS-2A. Leaving the world-browser route drops the selection and
       // unregisters the identity provider, so `Browser.myAvatarURL` goes back to
       // the empty pre-OUTLANDS-2 default for every other world.
@@ -332,30 +346,114 @@ export default Vue.extend({
     },
 
     /**
+     * OUTLANDS-2A + 2B. The entrance's one exit.
+     *
+     * `setStyle()` in `enter.tmpl` branched on exactly one thing - whether the
+     * `T_pass` box was empty - and so does this. A blank password is free play
+     * and takes the OUTLANDS-2A path with not one byte changed. A typed password
+     * is a scheduled-match attempt and must be validated by the server first.
+     */
+    async enterOutlands(selection: any): Promise<void> {
+      if (!this.canEnterOutlands) { return; }
+      const key = selection && typeof selection === "object" ? selection.key : selection;
+      const password = selection && typeof selection === "object"
+        && typeof selection.password === "string" ? selection.password : "";
+
+      if (password === "") {
+        await this.enterOutlandsFreePlay(key);
+        return;
+      }
+      await this.enterOutlandsMatch(key, password);
+    },
+
+    /**
      * OUTLANDS-2A. Register the picked free-play avatar and only then mount the
      * world. `select()` registers the provider synchronously, so `ne_game.wrl`
      * never observes the empty identity on a successful entry.
      */
-    async enterOutlands(key: string): Promise<void> {
-      if (!this.canEnterOutlands) { return; }
+    async enterOutlandsFreePlay(key: string): Promise<void> {
       const avatar = outlandsIdentity.select(key, this.$store.data.user.username);
       if (avatar === null) { return; }
+      this.outlandsMode = "free";
+      this.outlandsMatchError = "";
       this.outlandsAvatarKey = avatar.key;
       this.showOutlandsEntrance = false;
       await this.loadAndJoinPlace();
     },
 
-    /** OUTLANDS-2A. Forget the free-play avatar and unregister the provider. */
+    /**
+     * OUTLANDS-2B. Attempt a scheduled match.
+     *
+     * THE BROWSER NEVER DECIDES THE TEAM. It posts the typed password and is
+     * told `blue`, `red` or nothing. `selectMatch()` refuses anything that is not
+     * one of those two, so a tampered or broken response cannot conjure a team.
+     *
+     * The tile the member clicked contributes ONLY its sex, which is the
+     * historical collapse of `T_style` 3 to 1 and 4 to 2.
+     *
+     * ON REFUSAL, NOTHING HAPPENS. No identity is registered, no session key
+     * changes, no room is joined and no world is mounted - the member is simply
+     * still at the entrance, which is what `boot.wrl` left them with. One generic
+     * message is shown, and it never says which password was closer.
+     */
+    async enterOutlandsMatch(key: string, password: string): Promise<void> {
+      const picked = findOutlandsAvatar(key);
+      if (picked === null) { return; }
+      if (this.outlandsMatchBusy) { return; }
+
+      this.outlandsMatchBusy = true;
+      this.outlandsMatchError = "";
+      let team = null;
+      try {
+        const response = await this.$http.post("/outlands/match/enter", { password });
+        team = response && response.data ? response.data.team : null;
+      } catch (error) {
+        // Refusal and outage are the same to the member, and neither is logged:
+        // the rejected request body carries the password.
+        team = null;
+      } finally {
+        this.outlandsMatchBusy = false;
+      }
+
+      const match = outlandsIdentity.selectMatch(
+        team,
+        picked.sex.toLowerCase(),
+        password,
+        this.$store.data.user.username,
+      );
+      if (match === null) {
+        this.outlandsMatchError = OUTLANDS_MATCH_REFUSED;
+        return;
+      }
+
+      this.outlandsMode = "match";
+      this.outlandsMatchError = "";
+      this.outlandsAvatarKey = match.avatar.key;
+      // Destroys the entrance component, and with it the only copy of the
+      // plaintext password the page ever held.
+      this.showOutlandsEntrance = false;
+      await this.loadAndJoinPlace();
+    },
+
+    /**
+     * OUTLANDS-2A + 2B. Forget the avatar, forget the match and unregister the
+     * provider. `release()` drops the match password too, so leaving Outlands
+     * leaves no scheduled-match state behind and re-entry starts at the entrance
+     * with an empty box - a valid match never grants automatic re-entry.
+     */
     releaseOutlands(): void {
       this.showOutlandsEntrance = false;
       this.force3d = false;
+      this.outlandsMatchError = "";
+      this.outlandsMatchBusy = false;
       if (this.outlandsAvatarKey === null) { return; }
       this.outlandsAvatarKey = null;
+      this.outlandsMode = null;
       outlandsIdentity.release();
     },
     async joinPlace(): Promise<void> {
-      await this.$socket.joinRoom(this.$store.data.place.id, this.$store.data.user.token);
-      this.debugMsg("joined room success", this.$store.data.place.id);
+      await this.$socket.joinRoom(this.sessionRoom, this.$store.data.user.token);
+      this.debugMsg("joined room success", this.sessionRoom);
       if(this.effective3d){
         const { viewpointPosition, viewpointOrientation } = X3D.getBrowser(this.browser);
         this.$socket.emit("AV", {
@@ -854,9 +952,42 @@ export default Vue.extend({
     effective3d(): boolean {
       return this.force3d || this.$store.data.view3d;
     },
+    /**
+     * OUTLANDS-2B. A scheduled match mounts a DIFFERENT world.
+     * `enter3Dpass.tmpl` set `3dscene .../vrml/ne_game_pass.wrl`, never
+     * `ne_game.wrl`, and the two worlds carry different team logic, different
+     * weapon gates and different scoring. The place row still names the
+     * free-play world, so the override lives here and only while a validated
+     * match is in force.
+     */
     worldUrl(): string {
       const { assets_dir, world_filename } = this.$store.data.place;
-      return `/assets/worlds/${assets_dir}${world_filename}`;
+      const filename = this.outlandsMode === "match"
+        ? OUTLANDS_MATCH_WORLD_FILENAME
+        : world_filename;
+      return `/assets/worlds/${assets_dir}${filename}`;
+    },
+    /**
+     * OUTLANDS-2B. The socket session this visit belongs to.
+     *
+     * Historically free play ran in the blaxxun scene `Outlands` and a scheduled
+     * match in `Outlands Match 1`. Two scenes on one server: they shared the
+     * server and shared nothing else, so a free-play player never saw a match
+     * player's shots and the reverse.
+     *
+     * CTR's socket server rooms every relay it has - `AV`, `SE`, `SO` and `CHAT`
+     * - on the room string the client joined with, so two different strings ARE
+     * two isolated zones. This is the whole isolation mechanism, it reuses the
+     * transport exactly as it stands, and nothing new is introduced. Free play
+     * keeps the bare place id every other CTR place uses, so nothing outside
+     * match mode changes at all.
+     */
+    sessionRoom(): string | number | null {
+      const place = this.$store.data.place;
+      if (!place) { return null; }
+      return this.outlandsMode === "match"
+        ? outlandsMatchSessionKey(place.id)
+        : outlandsFreeSessionKey(place.id);
     },
   },
   watch: {

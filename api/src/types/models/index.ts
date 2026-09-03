@@ -6,6 +6,7 @@ export * from './member.model';
 export * from './message.model';
 export * from './store.model';
 export * from './object.model';
+export * from './outlands-match-password.model';
 export * from './mall-object.position.model';
 export * from './mall-object.rotation.model';
 export * from './object-instance.model';

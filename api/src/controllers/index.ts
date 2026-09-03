@@ -14,5 +14,6 @@ export * from './message.controller';
 export * from './messageboard.controller';
 export * from './object-instance.controller';
 export * from './object.controller';
+export * from './outlands.controller';
 export * from './place.controller';
 export * from './vote.controller';

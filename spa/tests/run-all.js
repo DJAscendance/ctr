@@ -19,6 +19,7 @@ const SUITES = [
   "tests/.compiled/tests/legacy-url-policy.test.js",
   "tests/.compiled/tests/legacy-destination.test.js",
   "tests/.compiled/tests/outlands-entry.test.js",
+  "tests/.compiled/tests/outlands-match.test.js",
 ];
 
 let failed = false;

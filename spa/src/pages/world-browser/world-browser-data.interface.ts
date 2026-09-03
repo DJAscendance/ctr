@@ -31,4 +31,17 @@ export interface WorldBrowserData {
     outlandsAvatarKey: string | null;
     /** OUTLANDS-2A. True while Outlands holds the 3D path open for itself. */
     force3d: boolean;
+    /**
+     * OUTLANDS-2B. Which Outlands path this visit is on, or `null` outside
+     * Outlands. It chooses the world file and the socket session, and nothing
+     * else reads it.
+     */
+    outlandsMode: "free" | "match" | null;
+    /**
+     * OUTLANDS-2B. The one generic refusal shown after a rejected match
+     * password. Never carries a team, a hint or a server message.
+     */
+    outlandsMatchError: string;
+    /** OUTLANDS-2B. True while a match password is being checked. */
+    outlandsMatchBusy: boolean;
 }
