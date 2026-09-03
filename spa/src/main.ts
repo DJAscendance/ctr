@@ -22,24 +22,20 @@ Vue.prototype.$socket = socket;
 
 document.querySelector("html").classList.add("dark");
 
-// Capture this before constructing the router: VueRouter's hash-mode history
-// normalizes an empty hash to "#/" synchronously in its own constructor, so
-// checking window.location.hash *after* `new VueRouter(...)` always sees "/"
-// and never the true empty-hash cold-load state.
-const initialPathname = window.location.pathname;
-const hadNoHashOnLoad = window.location.hash === "";
+// The app uses hash-based routing, so a direct link like /beta-register only ever
+// serves the app shell - the real route lives in the hash. This has to run before
+// `new VueRouter(...)`: its hash-mode history normalizes an empty hash to "#/"
+// synchronously in its own constructor, so checking window.location.hash after
+// construction always sees "/", never the true empty-hash cold-load state. Doing
+// it here also resets the pathname to "/", so the URL ends up "/#/beta-register"
+// like every other route on the site, not the duplicated-looking
+// "/beta-register#/beta-register".
+if (window.location.hash === "" && window.location.pathname !== "/") {
+  history.replaceState(null, "", "/#" + window.location.pathname);
+}
 
 const router = new VueRouter({ routes });
 Vue.use(VueRouter);
-
-// The app uses hash-based routing, so a direct link like /beta-register only ever
-// serves the app shell - the real route lives in the hash, and a fresh page load has
-// no hash yet. Recover the intended route from the plain URL path this one time.
-if (hadNoHashOnLoad && initialPathname !== "/") {
-  router.replace(initialPathname).catch(() => {
-    // already there, or not a real route - nothing to do
-  });
-}
 router.beforeEach(async (to, from, next) => {
   if (to.meta.title) {
     document.title = `${to.meta.title} - Cybertown`;
@@ -126,7 +122,8 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (!["login", "logout", "signup", "forgot", "password_reset",
-    "about", "privacypolicy", "rulesandregulations", "constitution", "banned"]
+    "about", "privacypolicy", "rulesandregulations", "constitution", "banned",
+    "beta_signup"]
     .includes(to.name)) {
     await api.get<{
       user: User,
