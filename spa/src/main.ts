@@ -22,14 +22,21 @@ Vue.prototype.$socket = socket;
 
 document.querySelector("html").classList.add("dark");
 
+// Capture this before constructing the router: VueRouter's hash-mode history
+// normalizes an empty hash to "#/" synchronously in its own constructor, so
+// checking window.location.hash *after* `new VueRouter(...)` always sees "/"
+// and never the true empty-hash cold-load state.
+const initialPathname = window.location.pathname;
+const hadNoHashOnLoad = window.location.hash === "";
+
 const router = new VueRouter({ routes });
 Vue.use(VueRouter);
 
 // The app uses hash-based routing, so a direct link like /beta-register only ever
 // serves the app shell - the real route lives in the hash, and a fresh page load has
 // no hash yet. Recover the intended route from the plain URL path this one time.
-if (window.location.hash === "" && window.location.pathname !== "/") {
-  router.replace(window.location.pathname).catch(() => {
+if (hadNoHashOnLoad && initialPathname !== "/") {
+  router.replace(initialPathname).catch(() => {
     // already there, or not a real route - nothing to do
   });
 }
