@@ -748,11 +748,12 @@ export default Vue.extend({
         document.querySelector("#world").appendChild(this.browser);
       }
       const browser = X3D.getBrowser(this.browser);
-      browser.loadURL(new X3D.MFString(this.worldUrl), "");
+      browser.loadURL(new X3D.MFString(this.worldUrl), new X3D.MFString());
       return new Promise((resolve, reject) => {
         browser.addBrowserCallback({}, eventType => {
           switch (eventType) {
           case X3D.X3DConstants.INITIALIZED_EVENT:
+            this.applyNavigationDefaults(browser);
             resolve(browser);
             break;
           case X3D.X3DConstants.CONNECTION_ERROR:
@@ -762,6 +763,31 @@ export default Vue.extend({
           }
         });
       });
+    },
+    /*
+     * Blaxxun default: only the Walk and Fly viewers are offered.
+     *
+     * This used to be done by the bxx_speed_avatar patch, which rewrote the
+     * NavigationInfo field default. X_ITE 15 no longer exposes that default,
+     * so the value is set on the node instead. A NavigationInfo authored in
+     * the scene still wins, matching the old patch's behaviour.
+     */
+    applyNavigationDefaults(browser: any): void {
+      try {
+        const scene = browser.currentScene;
+        if (!scene) return;
+
+        const authored = scene.rootNodes.some(
+          (node: any) => node && node.getNodeTypeName && node.getNodeTypeName() === "NavigationInfo",
+        );
+        if (authored) return;
+
+        const navInfo = scene.createNode("NavigationInfo");
+        navInfo.type = ["WALK", "FLY"];
+        scene.addRootNode(navInfo);
+      } catch (error) {
+        console.warn("could not apply navigation defaults", error);
+      }
     },
     startX3DListeners(browserbak: any): void {
       const browser = X3D.getBrowser();

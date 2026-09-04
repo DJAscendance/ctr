@@ -28,7 +28,7 @@ export default Vue.extend({
       document.querySelector("#objectModel").appendChild(browser);
       const objectURL = '/assets/object/ObjectPreview.wrl';
       const objectViewer = X3D.getBrowser();
-      objectViewer.loadURL(new X3D.MFString(objectURL));
+      objectViewer.loadURL(new X3D.MFString(objectURL), new X3D.MFString());
       setTimeout(this.loadReference, 3000);
       setTimeout(this.loadObject, 3000);
     },

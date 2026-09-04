@@ -330,7 +330,7 @@ methods: {
     document.querySelector("#objectModel").appendChild(browser);
     const objectURL = '/assets/object/ObjectPreview.wrl';
     const objectViewer = X3D.getBrowser();
-    objectViewer.loadURL(new X3D.MFString(objectURL));
+    objectViewer.loadURL(new X3D.MFString(objectURL), new X3D.MFString());
     setTimeout(this.loadObject, 3000);
   },
   loadObject(){

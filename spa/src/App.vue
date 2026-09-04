@@ -433,7 +433,6 @@ export default Vue.extend({
       "arrow_keys.js",
       "viewpoint_bind.js",
       "allow_sf_string.js",
-      "bxx_speed_avatar.js",
       "bxx_auth.js",
       //'speed_multiplier.js',
       //'fix_stairs.js',
