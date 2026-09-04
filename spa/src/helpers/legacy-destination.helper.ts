@@ -47,8 +47,12 @@
  *   Hi-Tek hood doors  names disagree with the labels painted on the world art
  *                      ("Wild West" resolves to Medieval Times). The two data
  *                      generations must be reconciled first. Owner's decision.
- *   Outlands           `place?plc=ne_game` and the game-master beam page need
- *                      the team-avatar picker CTR does not have. OUTLANDS-2.
+ *   Outlands           `place?plc=ne_game` is MAPPED as of OUTLANDS-2A, which
+ *                      built the team-avatar picker it was waiting for - see
+ *                      `LEGACY_PLACE_ROUTES`. The game-master beam page
+ *                      (`/places/ne_game/html/gmbeam.html`) is still not mapped:
+ *                      it names a flat page outside `/cgi-bin/`, so it keeps
+ *                      being suppressed, and its DMZ destination is OUTLANDS-2C.
  *   Avatar Boutique    CTR has an avatar chooser modal but no route to it.
  *   Old Town, E-Plex,  no CTR destination of any kind exists. Old Town is the
  *   Visitor Center     one of these that names a flat page rather than a CGI
@@ -120,6 +124,13 @@ export const LEGACY_DESTINATION_ACTIONS: readonly string[] =
  * `enter` is here for the Cafe: its Plaza door names the destination in a
  * `scene=` parameter rather than in the address (see `readLegacyScene`).
  * `library` is deliberately absent - see the file header.
+ *
+ * `ne_game` is the Outlands, added by OUTLANDS-2A. Three separate historical
+ * controls name it and all three now land on the entrance: the Plaza Jump Gate
+ * option, the control-panel event button, and `ne_game.wrl:1159` - the world's
+ * own "you have no valid team avatar, go back and pick one" branch. The route
+ * is the same fixed literal string every other entry is, and the entrance is
+ * what the resident meets there, not the world.
  */
 export const LEGACY_PLACE_ROUTES: LegacyRouteTable = Object.freeze({
   blackmarket: "/place/blackmarket",
@@ -130,6 +141,7 @@ export const LEGACY_PLACE_ROUTES: LegacyRouteTable = Object.freeze({
   enter: "/place/enter",
   fleamarket: "/place/fleamarket",
   funpark: "/place/funpark",
+  ne_game: "/place/outlands",
   pool: "/place/pool",
   post: "/place/postoffice",
   shopping: "/place/mall",
