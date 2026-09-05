@@ -53,7 +53,12 @@
 
         // URL
         b.getWorldBaseURL = function () { throw Error('UnimplementedBXXMethod') } //C:\ComputerCare\playground\playground\htdocs\merged\places\enter\vrml\
-        b.getBaseURL = function () { throw Error('UnimplementedBXXMethod') } // C:\ComputerCare\playground\playground\htdocs\merged\places\enter\vrml\
+        // X_ITE 15 ships a real getBaseURL() and calls it internally during
+        // loadURL(). Only install the Blaxxun stub when the browser has no
+        // implementation of its own (X_ITE 4), otherwise every world load throws.
+        if (typeof b.getBaseURL !== 'function') {
+            b.getBaseURL = function () { throw Error('UnimplementedBXXMethod') } // C:\ComputerCare\playground\playground\htdocs\merged\places\enter\vrml\
+        }
         b.loadURLrel = function (URL, params) { throw Error('UnimplementedBXXMethod') }
 
         // Rendering
@@ -92,20 +97,56 @@
 
 
         // Gah this is ugly.... It should also be routable as a definitionfield
+        //
+        // X_ITE 4 exposed the bound viewpoint as browser.activeViewpoint_._value.
+        // X_ITE 15 removed that property and offers getActiveViewpoint() instead,
+        // so the old chain threw "Cannot read properties of undefined (reading
+        // '_value')" on every read. It is also legitimately empty while a world is
+        // being replaced, so callers must tolerate there being no viewpoint at all.
+        function activeViewpoint(browser) {
+            if (typeof browser.getActiveViewpoint === 'function') {
+                return browser.getActiveViewpoint()
+            }
+            var legacy = browser.activeViewpoint_
+            return legacy && legacy._value
+        }
+
         Object.defineProperty(b, 'viewpointPosition', {
-            get: function () { return this.activeViewpoint_._value.userPosition },
+            get: function () {
+                var vp = activeViewpoint(this)
+                if (!vp) return new X3D.SFVec3f(0, 0, 0)
+                return typeof vp.getUserPosition === 'function'
+                    ? vp.getUserPosition()
+                    : vp.userPosition
+            },
             set: function (val) {
-                this.activeViewpoint_._value.position_ = val;
-                this.activeViewpoint_._value.positionOffset_[0] = 0;
-                this.activeViewpoint_._value.positionOffset_[1] = 0;
-                this.activeViewpoint_._value.positionOffset_[2] = 0;
+                var vp = activeViewpoint(this)
+                if (!vp) return
+                try {
+                    vp.position = val
+                    vp.positionOffset = new X3D.SFVec3f(0, 0, 0)
+                } catch (err) {
+                    console.warn('could not set viewpointPosition', err)
+                }
             }
         });
         Object.defineProperty(b, 'viewpointOrientation', {
-            get: function () { return this.activeViewpoint_._value.userOrientation },
+            get: function () {
+                var vp = activeViewpoint(this)
+                if (!vp) return new X3D.SFRotation(0, 1, 0, 0)
+                return typeof vp.getUserOrientation === 'function'
+                    ? vp.getUserOrientation()
+                    : vp.userOrientation
+            },
             set: function (val) {
-                this.activeViewpoint_._value.orientation_ = val;
-                this.activeViewpoint_._value.orientationOffset_.angle = 0
+                var vp = activeViewpoint(this)
+                if (!vp) return
+                try {
+                    vp.orientation = val
+                    vp.orientationOffset = new X3D.SFRotation(0, 1, 0, 0)
+                } catch (err) {
+                    console.warn('could not set viewpointOrientation', err)
+                }
             }
         });
         Object.defineProperty(b, 'boundViewpoint', {
