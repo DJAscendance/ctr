@@ -435,6 +435,7 @@ export default Vue.extend({
       "allow_sf_string.js",
       "bxx_auth.js",
       "legacy_links.js",
+      "scene_cache.js",
       //'speed_multiplier.js',
       //'fix_stairs.js',
     ];
