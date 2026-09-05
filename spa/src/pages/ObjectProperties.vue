@@ -424,3 +424,16 @@ mounted() {
 });
 
 </script>
+
+<style>
+/*
+ * Same as WorldBrowserPage: the <x3d-canvas> created by X3D.createBrowser() is
+ * appended to #objectModel at runtime and X_ITE 15 leaves it at 300x150.
+ * Unscoped on purpose - the appended element carries no scope attribute.
+ */
+#objectModel x3d-canvas {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+</style>

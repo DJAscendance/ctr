@@ -215,3 +215,18 @@ table {
   }
 
 }
+
+// X_ITE 15 returns an <x3d-canvas> custom element from X3D.createBrowser().
+// X_ITE 4 sized it to its parent; v15 leaves it at the HTML default 300x150,
+// which renders the scene into a small box in the corner of a black viewport.
+// Size it to its container instead (see WorldBrowserPage.vue, ObjectProperties.vue).
+x3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#world,
+#objectModel {
+  overflow: hidden;
+}

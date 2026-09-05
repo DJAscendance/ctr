@@ -900,4 +900,18 @@ export default Vue.extend({
   .update-warning a {
     cursor: pointer;
   }
+
+  /*
+   * X3D.createBrowser() returns an <x3d-canvas> element that is appended to #world
+   * at runtime. X_ITE 15 leaves it at the HTML default 300x150 instead of filling
+   * its parent, which drew the scene into a small box in the corner. index.scss
+   * carries the same rule globally; this keeps it with the component that creates
+   * the element. Not a scoped block on purpose - the element is appended by hand
+   * and so never receives the scope attribute.
+   */
+  #world x3d-canvas {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
 </style>
