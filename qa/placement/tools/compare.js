@@ -17,11 +17,36 @@ const fs = require('fs');
 const path = require('path');
 const { compareCaptures } = require('../lib/comparator');
 
+/** Raised when a capture file lists the same CTR object twice. */
+class DuplicateObjectKeyError extends Error {}
+
+/**
+ * Reads a capture file and refuses it if any `<source>:<id>` appears twice.
+ *
+ * The duplicate check has to happen here, on the raw record list, because
+ * everything downstream merges into a `Map` — and a `Map` silently keeps one of
+ * the two rows. Neither "first wins" nor "last wins" is safe: whichever copy is
+ * dropped could be the one carrying the drift we are looking for.
+ */
+function readRecords(file, label) {
+  const capture = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const seen = new Set();
+  (capture.records || []).forEach(record => {
+    const key = `${record.source}:${record.id}`;
+    if (seen.has(key)) {
+      throw new DuplicateObjectKeyError(
+        `DUPLICATE_OBJECT_KEY ${key} in ${label} capture ${file}`);
+    }
+    seen.add(key);
+  });
+  return capture;
+}
+
 /** Loads a capture, merging `stored-*.json` and `rendered-*.json` if given a dir. */
 function loadCapture(target) {
   const stat = fs.statSync(target);
   if (!stat.isDirectory()) {
-    return JSON.parse(fs.readFileSync(target, 'utf8'));
+    return readRecords(target, 'single-file');
   }
   const files = fs.readdirSync(target).filter(f => f.endsWith('.json'));
   const stored = files.find(f => f.startsWith('stored-'));
@@ -29,13 +54,13 @@ function loadCapture(target) {
   if (!stored) {
     throw new Error(`no stored-*.json capture in ${target}`);
   }
-  const storedCapture = JSON.parse(fs.readFileSync(path.join(target, stored), 'utf8'));
+  const storedCapture = readRecords(path.join(target, stored), 'stored');
   const merged = new Map();
   storedCapture.records.forEach(record => {
     merged.set(`${record.source}:${record.id}`, Object.assign({}, record));
   });
   if (rendered) {
-    const renderedCapture = JSON.parse(fs.readFileSync(path.join(target, rendered), 'utf8'));
+    const renderedCapture = readRecords(path.join(target, rendered), 'rendered');
     renderedCapture.records.forEach(record => {
       const key = `${record.source}:${record.id}`;
       const existing = merged.get(key);
@@ -64,8 +89,19 @@ if (!baselineArg || !candidateArg) {
   process.exit(2);
 }
 
-const baseline = loadCapture(baselineArg);
-const candidate = loadCapture(candidateArg);
+let baseline;
+let candidate;
+try {
+  baseline = loadCapture(baselineArg);
+  candidate = loadCapture(candidateArg);
+} catch (error) {
+  if (error instanceof DuplicateObjectKeyError) {
+    console.error(error.message);
+    console.error('REFUSING: a capture lists the same object twice; no record may be dropped');
+    process.exit(3);
+  }
+  throw error;
+}
 
 if (!baseline.engine || !candidate.engine) {
   console.error('REFUSING: a capture is missing its engine version');
@@ -83,6 +119,9 @@ result.records
 
 console.log(`\n${baseline.engine} -> ${candidate.engine}`);
 console.log(`compared ${result.summary.compared}, failed ${result.summary.failed}`);
+console.log(`stored raw mismatches      ${result.summary.storedRawMismatches}`);
+console.log(`stored numeric mismatches  ${result.summary.storedNumericMismatches}`);
+console.log(`rendered mismatches        ${result.summary.renderedMismatches}`);
 console.log(result.pass ? 'PASS' : 'FAIL');
 
 if (reportArg) {

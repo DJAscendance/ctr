@@ -9,7 +9,10 @@
  * not a fit for these pure-logic assertions.
  */
 
-const tests = require('./comparator.test');
+const tests = [
+  ...require('./comparator.test'),
+  ...require('./cli.test'),
+];
 
 let failed = 0;
 tests.forEach(({ name, fn }) => {
