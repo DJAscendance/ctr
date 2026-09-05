@@ -26,12 +26,14 @@
  * already-migrated mall directory kiosk
  * (assets/externprotos/malldirectory/malldirectory.wrl) navigates to.
  *
- * Two of the Mall's doors are intentionally absent. Historical id ...901
- * ("Gallery") and ...916 ("Grocery Store") name shops that have no counterpart
- * in the current place list, so guessing a destination for them would send
- * citizens somewhere the Mall never sent them.
+ * The Mall's last two doors, historical ids ...901 ("Gallery") and ...916
+ * ("Grocery Store"), name shops the current place list renames rather than
+ * drops. The kiosk sends "Fine Art Shop" to fineartshop and "General Store" to
+ * generalstore, and both places are served today, so the owner directed those
+ * two doors to them.
  */
 const LEGACY_PLACE_SLUGS = {
+  "0000000000000901": "fineartshop", // Gallery, served today as the Fine Art Shop
   "0000000000000902": "giftshop", // Gift Shop
   "0000000000000903": "applianceshop", // Appliance Shop
   "0000000000000904": "furniturestore", // Furniture Shop
@@ -41,6 +43,7 @@ const LEGACY_PLACE_SLUGS = {
   "0000000000000908": "noveltystore", // Novelty Store
   "0000000000000909": "toystore", // Toy Store
   "0000000000000911": "antiqueshop", // Antique Shop
+  "0000000000000916": "generalstore", // Grocery Store, served today as the General Store
 };
 
 // Hosts the historical content links to for internal Cybertown destinations.

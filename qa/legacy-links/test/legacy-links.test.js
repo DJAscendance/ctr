@@ -57,17 +57,55 @@ test('produces routes that carry no hostname', () => {
   });
 });
 
+test('maps the Gallery door to the Fine Art Shop', () => {
+  // ...901 is the Mall's "Gallery" door. The current place list serves that
+  // shop as fineartshop, which is where the directory kiosk sends it too.
+  const result = resolveLegacyUrl(
+    '/cgi-bin/cybertown/place?ID=0000000000000901&plc=shop&ac=index3d',
+  );
+  assert.deepStrictEqual(result, { route: '/#/place/fineartshop' });
+});
+
+test('maps the Grocery Store door to the General Store', () => {
+  // ...916 is the Mall's "Grocery Store" door, served today as generalstore.
+  const result = resolveLegacyUrl(
+    'http://www.cybertown.com/cgi-bin/cybertown/place?ID=0000000000000916&plc=shop&ac=index3d',
+  );
+  assert.deepStrictEqual(result, { route: '/#/place/generalstore' });
+});
+
+test('still maps the nine Mall doors that were mapped before', () => {
+  const before = {
+    '0000000000000902': 'giftshop',
+    '0000000000000903': 'applianceshop',
+    '0000000000000904': 'furniturestore',
+    '0000000000000905': 'carpetshop',
+    '0000000000000906': 'gardenstore',
+    '0000000000000907': 'electronicsstore',
+    '0000000000000908': 'noveltystore',
+    '0000000000000909': 'toystore',
+    '0000000000000911': 'antiqueshop',
+  };
+  Object.keys(before).forEach((id) => {
+    const result = resolveLegacyUrl(`/cgi-bin/cybertown/place?ID=${id}&plc=shop`);
+    assert.deepStrictEqual(result, { route: `/#/place/${before[id]}` });
+  });
+});
+
 test('refuses a historical place id with no proven destination', () => {
-  // ...901 is the Mall's "Gallery" door; no current place serves it.
-  const result = resolveLegacyUrl('/cgi-bin/cybertown/place?ID=0000000000000901');
+  // ...912 names no shop this repository has evidence for. Adding the last two
+  // Mall doors must not turn unknown ids into guesses.
+  const result = resolveLegacyUrl('/cgi-bin/cybertown/place?ID=0000000000000912');
   assert.ok(result.unresolved, 'must report the link as unresolved');
   assert.ok(!result.route, 'must not invent a destination');
 });
 
-test('refuses the Grocery Store door as well', () => {
-  const result = resolveLegacyUrl('/cgi-bin/cybertown/place?ID=0000000000000916');
-  assert.ok(result.unresolved);
-  assert.ok(!result.route);
+test('refuses other unknown historical shop ids as well', () => {
+  ['0000000000000900', '0000000000000910', '0000000000000999', '42'].forEach((id) => {
+    const result = resolveLegacyUrl(`/cgi-bin/cybertown/place?ID=${id}&plc=shop&ac=index3d`);
+    assert.ok(result.unresolved, `${id} must be reported as unresolved`);
+    assert.ok(!result.route, `${id} must not invent a destination`);
+  });
 });
 
 test('refuses a legacy place link with no ID at all', () => {
