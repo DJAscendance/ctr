@@ -57,6 +57,8 @@ export default Vue.extend({
       place: undefined,
       position: [0, 0, 0],
       rotation: [0, 0, 0, 0],
+      // ProximitySensor for the scene that is currently loaded
+      proximitySensor: null,
       users: {},
       ROTATE180: null,
       TYPES: {},
@@ -271,22 +273,21 @@ export default Vue.extend({
       await this.$socket.joinRoom(this.$store.data.place.id, this.$store.data.user.token);
       this.debugMsg("joined room success", this.$store.data.place.id);
       if(this.$store.data.view3d){
+        // The viewpoint is not necessarily bound yet when the room is joined, so
+        // fall back to the last sensor reading rather than dereferencing null.
         const { viewpointPosition, viewpointOrientation } = X3D.getBrowser(this.browser);
-        this.$socket.emit("AV", {
-          detail: {
-            pos: [
-              viewpointPosition.x,
-              viewpointPosition.y,
-              viewpointPosition.z,
-            ],
-            rot: [
-              viewpointOrientation.x,
-              viewpointOrientation.y,
-              viewpointOrientation.z,
-              viewpointOrientation.angle,
-            ],
-          },
-        });       
+        const pos = viewpointPosition
+          ? [viewpointPosition.x, viewpointPosition.y, viewpointPosition.z]
+          : this.position;
+        const rot = viewpointOrientation
+          ? [
+            viewpointOrientation.x,
+            viewpointOrientation.y,
+            viewpointOrientation.z,
+            viewpointOrientation.angle,
+          ]
+          : this.rotation;
+        this.$socket.emit("AV", { detail: { pos, rot } });
       }
     },
     moveObject(objectId): void {
@@ -791,7 +792,19 @@ export default Vue.extend({
     },
     startX3DListeners(browserbak: any): void {
       const browser = X3D.getBrowser();
-      const browserProto = Object.getPrototypeOf(browser);
+      /*
+       * The ProximitySensor is what feeds this.position / this.rotation to the
+       * avatar socket messages. It belongs to the scene that is loaded right now,
+       * so it is stored on the component and replaced on every world load.
+       *
+       * This used to also install viewpointPosition / viewpointOrientation getters
+       * onto the browser *prototype*, closing over the sensor of whichever scene
+       * happened to load first. The install was guarded by an "already defined"
+       * check, so after the first world the getters kept reading a sensor that had
+       * been disposed by replaceWorld(). bxx_auth.js already defines both accessors
+       * against the live viewpoint, so the prototype patch is gone. getTime is set
+       * there too (bxx_auth.js:10), so that assignment is gone as well.
+       */
       const prox = browser.currentScene.createNode("ProximitySensor");
       prox.size = new X3D.SFVec3f(1000000, 1000000, 1000000);
       prox.enabled = true;
@@ -802,21 +815,7 @@ export default Vue.extend({
         this.rotation = [val.x, val.y, val.z, val.angle];
       });
       browser.currentScene.addRootNode(prox);
-      if (!("viewpointPosition" in browserProto)) {
-        Object.defineProperty(browserProto, "viewpointPosition", {
-          get: function () {
-            return prox.position_changed;
-          },
-        });
-      }
-      if (!("viewpointOrientation" in browserProto)) {
-        Object.defineProperty(browserProto, "viewpointOrientation", {
-          get: function () {
-            return prox.orientation_changed;
-          },
-        });
-      }
-      browserProto.getTime = browserProto.getCurrentTime;
+      this.proximitySensor = prox;
       this.sharedObjectsMap = new Map();
       setTimeout(() => {
         //this.sharedObjectsMap = new Map();

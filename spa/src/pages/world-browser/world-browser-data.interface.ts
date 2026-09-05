@@ -13,6 +13,8 @@ export interface WorldBrowserData {
     };
     position: [number, number, number];
     rotation: [number, number, number, number];
+    // ProximitySensor for the scene that is currently loaded
+    proximitySensor: any;
     users: any;
     ROTATE180: any;
     TYPES: any;
