@@ -176,13 +176,13 @@ export default Vue.extend({
       inline.url = new X3D.MFString(obj.url);
       sharedObject.children[0] = inline;
       browser.currentScene.addRootNode(sharedObject);
-      sharedObject.addFieldCallback("newPosition", {}, (pos) => {
+      sharedObject.addFieldCallback({}, "newPosition", (pos) => {
         this.saveObjectLocation(obj.id);
       });
-      sharedObject.addFieldCallback("newRotation", {}, (rot) => {
+      sharedObject.addFieldCallback({}, "newRotation", (rot) => {
         this.saveObjectLocation(obj.id);
       });
-      sharedObject.addFieldCallback("touchTime", {}, (_t) => {
+      sharedObject.addFieldCallback({}, "touchTime", (_t) => {
         if(obj.id){
           if(obj.id === this.clickId){
             this.clickId = null;
@@ -385,7 +385,7 @@ export default Vue.extend({
         // Negating pos_offset gives Math.atan2(pos_offset.x, pos_offset.z)
         viewpoint.orientation = new X3D.SFRotation(0, 1, 0, Math.atan2(pos_offset.x, pos_offset.z));
         viewpoint.set_bind = true;
-        viewpoint.addFieldCallback("isBound", {}, (value) => {
+        viewpoint.addFieldCallback({}, "isBound", (value) => {
           if(!value) {
             browser.currentScene.removeRootNode(viewpoint);
             viewpoint.dispose();
@@ -410,8 +410,8 @@ export default Vue.extend({
         loadSensor.watchList[0] = inline;
         const callbackKey = {};
         const promise = new Promise((resolve, reject) => {
-          loadSensor.addFieldCallback("isLoaded", callbackKey, (value) => {
-            loadSensor.removeFieldCallback("isLoaded", callbackKey);
+          loadSensor.addFieldCallback(callbackKey, "isLoaded", (value) => {
+            loadSensor.removeFieldCallback(callbackKey, "isLoaded");
             if (value) {
               resolve(inline);
             } else {
@@ -671,7 +671,7 @@ export default Vue.extend({
 
       for (const eventNode of Array.from<any>(sharedZone.events)) {
         for (const typeName of Object.keys(this.TYPES)) {
-          eventNode.addFieldCallback(`${typeName  }ToServer`, {}, val => {
+          eventNode.addFieldCallback({}, `${typeName  }ToServer`, val => {
             // TODO: confirm validity of adding to possibly non-existent field
             this.sendSharedEvent({
               detail: {
@@ -795,10 +795,10 @@ export default Vue.extend({
       const prox = browser.currentScene.createNode("ProximitySensor");
       prox.size = new X3D.SFVec3f(1000000, 1000000, 1000000);
       prox.enabled = true;
-      prox.addFieldCallback("position_changed", {}, (val) => {
+      prox.addFieldCallback({}, "position_changed", (val) => {
         this.position = [val.x, val.y, val.z];
       });
-      prox.addFieldCallback("orientation_changed", {}, (val) => {
+      prox.addFieldCallback({}, "orientation_changed", (val) => {
         this.rotation = [val.x, val.y, val.z, val.angle];
       });
       browser.currentScene.addRootNode(prox);
