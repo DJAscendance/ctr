@@ -47,26 +47,29 @@
     let originalDispose = WalkViewer.prototype.dispose;
 
     /*
-     * The namespace carries the viewer's own id.
+     * Each viewer keeps its own bound handlers.
      *
      * X_ITE creates a WalkViewer per bound viewpoint, so replacing a world
-     * builds a new one, and every one of them binds on the same element. A
-     * bare '.WalkViewer' namespace would let one viewer's dispose tear down a
-     * live sibling's handlers. This is how X_ITE namespaces its own
-     * document-level bindings, for the same reason.
+     * builds a new one, and every one of them binds on the same element. The
+     * pair below is stored on the viewer so dispose() removes exactly the
+     * handlers this viewer added, never a live sibling's.
+     *
+     * X_ITE 15 returned a jQuery-like wrapper from getElement(), so this used
+     * namespaced .on()/.off(). X_ITE 16 returns the plain <x3d-canvas>
+     * element, which has only addEventListener/removeEventListener.
      */
-    function namespaceFor(viewer) {
-      return typeof viewer.getId === 'function' ? '.WalkViewer' + viewer.getId() : '.WalkViewer';
-    }
-
     WalkViewer.prototype.initialize = function () {
       var browser = this.getBrowser();
       var element = browser.getElement();
-      var ns = namespaceFor(this);
       this.keyx = 0;
       this.keyy = 0;
-      element.on('keydown' + ns, this.keydown.bind(this));
-      element.on('keyup' + ns, this.keyup.bind(this));
+      this._arrowKeysHandlers = {
+        element: element,
+        keydown: this.keydown.bind(this),
+        keyup: this.keyup.bind(this),
+      };
+      element.addEventListener('keydown', this._arrowKeysHandlers.keydown);
+      element.addEventListener('keyup', this._arrowKeysHandlers.keyup);
       originalInitialize.call(this);
     }
 
@@ -85,11 +88,12 @@
      * replacement with only this patch loaded, and under 1 MB without it.
      */
     WalkViewer.prototype.dispose = function () {
-      var browser = this.getBrowser();
-      var element = browser && browser.getElement ? browser.getElement() : null;
-      if (element && typeof element.off === 'function') {
-        element.off(namespaceFor(this));
+      var bound = this._arrowKeysHandlers;
+      if (bound && bound.element) {
+        bound.element.removeEventListener('keydown', bound.keydown);
+        bound.element.removeEventListener('keyup', bound.keyup);
       }
+      this._arrowKeysHandlers = null;
       if (typeof originalDispose === 'function') originalDispose.call(this);
     }
 
