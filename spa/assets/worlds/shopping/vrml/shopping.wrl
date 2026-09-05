@@ -1078,7 +1078,7 @@ eventIn SFBool set_bind
 exposedField SFVec3f position 0 0 0
 exposedField SFRotation rotation 0 1 0 0
 exposedField SFVec3f scale 1 1 1 
-exposedField MFString scriptUrl "http://www.cybertown.com/cgi-bin/games/vrmltime.pl"
+exposedField MFString scriptUrl "/api/compat/city-time.wrl"
 eventOut SFBool isNight
 eventOut SFVec2f time
 
@@ -1164,8 +1164,8 @@ function set_time(min,hour,t){
 function receive(v,t)
 {
  if (v.length==0) return; // hg 
- min = v[0].min; 
- hour = v[0].hour + 2;
+ min = v[0].min + (v[0].sec / 60); 
+ hour = v[0].hour;
  if(hour >= 24){hour -= 24;}
  set_time(min,hour,t);
  if(isGet){time = new SFVec2f(min,hour);isGet = false;}
@@ -1413,7 +1413,7 @@ PROTO AnalogClock[
 eventIn SFTime getTime
 exposedField SFVec3f position 0 0 0
 exposedField SFRotation rotation 0 1 0 0 
-exposedField MFString scriptUrl ["http://www.cybertown.com/cgi-bin/games/vrmltime.pl"]
+exposedField MFString scriptUrl ["/api/compat/city-time.wrl"]
 exposedField MFNode minuteChildren [
  Transform{translation 0 .5 0 scale 1 1 .25
   children Shape{
@@ -1451,28 +1451,33 @@ children[
 
 DEF analogClock Script{
 eventIn MFNode receive 
+eventIn SFTime getTime IS getTime
 field MFString scriptUrl IS scriptUrl
 field SFNode self USE analogClock 
 eventOut SFTime min_changed
 eventOut SFBool min_loop
 eventOut SFTime hour_changed
 eventOut SFBool hour_loop
-eventOut SFVec2f time
+eventOut SFVec2f time IS time
 url "vrmlscript:
 function set_hour(v,t){
  hour_changed = t - (v * 3600);
+ hour_loop = true;
 }
 function set_min(v,t){
  min_changed = t - (v * 60);
+ min_loop = true;
 }
 function receive(v,t){
  if (v.length==0) return; // hg 
  min = v[0].min; 
- hour = v[0].hour + 2;
- if(hour >= 24){hour -= 23;}
- if(hour >= 12){hour -= 11;}
- set_min(min,t);
- set_hour(hour,t);
+ hour = v[0].hour;
+ sec = v[0].sec;
+ if(hour >= 24){hour -= 24;}
+ if(hour >= 12){hour -= 12;}
+ set_min(min + (sec / 60),t);
+ set_hour(hour + (min / 60) + (sec / 3600),t);
+ time = new SFVec2f(min,hour);
 }
 function getTime(){Browser.createVrmlFromURL(scriptUrl,self,'receive');}
 function initialize(){Browser.createVrmlFromURL(scriptUrl,self,'receive');}
