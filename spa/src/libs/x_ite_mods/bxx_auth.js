@@ -4,6 +4,38 @@
     X3D.require(["x_ite/Browser/X3DBrowser"], function (Browser) {
         let b = Browser.prototype;
 
+    /*
+     * X_ITE 4 exposed the bound NavigationInfo as `activeNavigationInfo_` and
+     * let its fields be read straight off the node. X_ITE 15 renamed the
+     * property and prefixes every field with an underscore, so the accessors
+     * below go through getField() instead. Reaching the node this way keeps
+     * these Blaxxun methods working on either version.
+     *
+     * The Mall elevator is what needs this: its Script calls
+     * Browser.getAvatarHeight() on every floor change, and the old property
+     * name made that throw before the car could move.
+     */
+    function navigationInfo(browser) {
+        if (typeof browser.getActiveNavigationInfo === 'function') {
+            return browser.getActiveNavigationInfo()
+        }
+        return browser.activeNavigationInfo_
+    }
+
+    function navigationField(browser, name) {
+        let info = navigationInfo(browser)
+        if (!info) { throw Error('no NavigationInfo is bound') }
+        return typeof info.getField === 'function' ? info.getField(name) : info[name]
+    }
+
+    // Single-valued fields have to be unwrapped; multi-valued ones are indexed
+    // directly by the callers below.
+    function navigationValue(browser, name) {
+        let field = navigationField(browser, name)
+        return field && typeof field.getValue === 'function' ? field.getValue() : field
+    }
+
+
         // Time
         //var wst = X3D.getBrowser().getCurrentTime();
         b.getWorldStartTime = function () { return wst }
@@ -25,7 +57,7 @@
                 this.viewer_ = mode
             }
         }
-        b.getNavigationMode = function () { return this.activeNavigationInfo_.type }
+        b.getNavigationMode = function () { return navigationField(this, 'type') }
         b.setCollisionDetection = function (flag) { throw Error('UnimplementedBXXMethod'); }
         b.getCollisionDetection = function () { throw Error('UnimplementedBXXMethod'); }
         b.setGravity = function (flag) { (flag) ? this.browserOptions.Gravity_ = 15 : this.browserOptions.Gravity_ = 0 }
@@ -34,17 +66,17 @@
         //b.getHeadlight = function() { return this.activeNavigationInfo_.headlight }
         b.setViewpointAnimation = function (flag) { throw Error('UnimplementedBXXMethod') }
         b.getViewpointAnimation = function () { throw Error('UnimplementedBXXMethod') }
-        b.setAvatarHeight = function (height) { this.activeNavigationInfo_.avatarSize[1] = height }
-        b.getAvatarHeight = function () { return this.activeNavigationInfo_.avatarSize[1] }
-        b.setStepOverSize = function (size) { this.activeNavigationInfo_.avatarSize[2] = size }
-        b.getStepOverSize = function () { return this.activeNavigationInfo_.avatarSize[2] }
-        b.setCollisionDistance = function (distance) { this.activeNavigationInfo_.avatarSize[0] = distance }
-        b.getCollisionDistance = function () { return this.activeNavigationInfo_.avatarSize[0] }
-        b.setVisibilityLimit = function (limit) { this.activeNavigationInfo_.visibilityLimit = limit }
-        b.getVisibilityLimit = function () { return this.activeNavigationInfo_.visibilityLimit }
+        b.setAvatarHeight = function (height) { navigationField(this, 'avatarSize')[1] = height }
+        b.getAvatarHeight = function () { return navigationField(this, 'avatarSize')[1] }
+        b.setStepOverSize = function (size) { navigationField(this, 'avatarSize')[2] = size }
+        b.getStepOverSize = function () { return navigationField(this, 'avatarSize')[2] }
+        b.setCollisionDistance = function (distance) { navigationField(this, 'avatarSize')[0] = distance }
+        b.getCollisionDistance = function () { return navigationField(this, 'avatarSize')[0] }
+        b.setVisibilityLimit = function (limit) { navigationInfo(this).visibilityLimit = limit }
+        b.getVisibilityLimit = function () { return navigationValue(this, 'visibilityLimit') }
         // TODO: Should we multiply the walkspeed to match Blaxxun?
         b.setWalkSpeed = function (speed) { navWalk.speed = this.activeNavigationInfo_.speed }
-        b.getWalkSpeed = function () { return this.activeNavigationInfo_.speed }
+        b.getWalkSpeed = function () { return navigationValue(this, 'speed') }
         b.setViewpointByValue = function (position, orientation, mode) { throw Error('UnimplementedBXXMethod') }
         b.getViewpointByValue = function (position, orientation, mode) { throw Error('UnimplementedBXXMethod') }
 
@@ -64,7 +96,7 @@
         // Rendering
         b.setRenderMode = function (mode) { throw Error('UnimplementedBXXMethod') }
         b.getZNear = function () { throw Error('UnimplementedBXXMethod') } // BS Contact 8.0 = 0.25
-        b.getZFar = function () { return this.activeNavigationInfo_.visibilityLimit }
+        b.getZFar = function () { return navigationValue(this, 'visibilityLimit') }
 
         // VRML Browser window
         b.getWindowSizeX = function () { return this.getElement().width() }
