@@ -11,6 +11,17 @@ const { TOLERANCES } = require('./contract');
  * must match exactly plus an optional `rendered` block that may drift within
  * tolerance. Anything that cannot be matched one-to-one is a failure, never a
  * skip.
+ *
+ * The stored layer is checked twice, and the two checks are reported apart:
+ *
+ * - **raw** — the exact TEXT bytes as MySQL returned them. `{"x":1.0}` and
+ *   `{"x":1.0000}` are different here even though they parse alike, because a
+ *   rewritten column means something mutated citizen data.
+ * - **numeric** — the parsed placement values, which is what actually decides
+ *   where an object ends up.
+ *
+ * A raw-only difference is reported as `STORED_RAW_CHANGED` and is a stored-data
+ * mutation, never rendered movement.
  */
 
 const EXACT = 0;
@@ -42,6 +53,32 @@ function within(d, tolerance) {
     return false;
   }
   return tolerance === EXACT ? d === 0 : Math.abs(d) <= tolerance;
+}
+
+/** The stored TEXT columns whose exact bytes must survive an engine upgrade. */
+const RAW_STORED_FIELDS = ['rawPosition', 'rawRotation'];
+
+/**
+ * Compares the untouched TEXT bytes of every stored placement column.
+ *
+ * This is deliberately a string comparison. Two columns that parse to the same
+ * numbers but differ byte-for-byte mean the database was rewritten, which the
+ * numeric check cannot see.
+ */
+function compareStoredRaw(base, cand) {
+  const failures = [];
+  const raw = {};
+  RAW_STORED_FIELDS.forEach(field => {
+    const a = base[field];
+    const b = cand[field];
+    // Captures that predate the raw layer carry neither side; that is agreement.
+    const equal = missing(a) && missing(b) ? true : a === b;
+    raw[field] = { baseline: missing(a) ? null : a, candidate: missing(b) ? null : b, equal };
+    if (!equal) {
+      failures.push(`STORED_RAW_CHANGED stored.${field}: ${JSON.stringify(a)} -> ${JSON.stringify(b)}`);
+    }
+  });
+  return { raw, failures, equal: failures.length === 0 };
 }
 
 /** Indexes a record list by key and reports duplicates rather than dropping them. */
@@ -90,24 +127,34 @@ function compareRotation(base, cand, axisTolerance, angleTolerance, prefix) {
 function compareRecord(base, cand, tolerances) {
   const failures = [];
 
+  const storedRaw = compareStoredRaw(base.stored, cand.stored);
+  failures.push(...storedRaw.failures);
+
   const storedPosition = compareVec3(
     base.stored.position, cand.stored.position, tolerances.storedPosition, 'stored.position');
   const storedRotation = compareRotation(
     base.stored.rotation, cand.stored.rotation,
     tolerances.storedRotation, tolerances.storedRotation, 'stored.rotation');
-  failures.push(...storedPosition.failures, ...storedRotation.failures);
+  const storedNumericFailures = [...storedPosition.failures, ...storedRotation.failures];
+  failures.push(...storedNumericFailures);
 
+  const identityFailures = [];
   ['placeId', 'objectId', 'memberId', 'url'].forEach(field => {
     if (base.stored[field] !== cand.stored[field]) {
-      failures.push(`stored.${field}: ${base.stored[field]} -> ${cand.stored[field]}`);
+      identityFailures.push(`stored.${field}: ${base.stored[field]} -> ${cand.stored[field]}`);
     }
   });
+  failures.push(...identityFailures);
 
   const result = {
     key: keyOf(base),
     source: base.source,
     id: base.id,
     placeId: base.stored.placeId,
+    storedRaw: storedRaw.raw,
+    storedRawEqual: storedRaw.equal,
+    storedNumericEqual: storedNumericFailures.length === 0 && identityFailures.length === 0,
+    renderedEqual: null,
     storedPositionDelta: storedPosition.deltas,
     storedRotationDelta: storedRotation.deltas,
     renderedPositionDelta: null,
@@ -131,8 +178,11 @@ function compareRecord(base, cand, tolerances) {
     result.renderedPositionDelta = pos.deltas;
     result.renderedRotationDelta = rot.deltas;
     result.renderedScaleDelta = scale.deltas;
-    failures.push(...pos.failures, ...rot.failures, ...scale.failures);
+    const renderedFailures = [...pos.failures, ...rot.failures, ...scale.failures];
+    result.renderedEqual = renderedFailures.length === 0;
+    failures.push(...renderedFailures);
   } else if (baseRendered && !candRendered) {
+    result.renderedEqual = false;
     result.status = 'FAIL';
     failures.push('rendered: present in baseline, missing from candidate');
   }
@@ -185,6 +235,7 @@ function compareCaptures(baseline, candidate, overrides) {
   });
 
   const failed = records.filter(record => record.status === 'FAIL');
+  const compared = records.filter(record => record.storedRawEqual !== undefined);
   return {
     pass: failed.length === 0,
     tolerances,
@@ -195,9 +246,12 @@ function compareCaptures(baseline, candidate, overrides) {
       candidateCount: (candidate.records || []).length,
       compared: records.length,
       failed: failed.length,
+      storedRawMismatches: compared.filter(r => r.storedRawEqual === false).length,
+      storedNumericMismatches: compared.filter(r => r.storedNumericEqual === false).length,
+      renderedMismatches: compared.filter(r => r.renderedEqual === false).length,
     },
     records,
   };
 }
 
-module.exports = { compareCaptures, compareRecord, keyOf };
+module.exports = { compareCaptures, compareRecord, compareStoredRaw, keyOf, RAW_STORED_FIELDS };

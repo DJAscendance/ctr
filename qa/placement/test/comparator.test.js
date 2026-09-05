@@ -16,6 +16,8 @@ function record(overrides) {
       url: '/assets/object/qafix/ct-table/Table_finished.wrl',
       position: { x: 1.5, y: 0, z: -2.25 },
       rotation: { x: 0, y: 1, z: 0, angle: 1.5707963 },
+      rawPosition: '{"x":1.5,"y":0,"z":-2.25}',
+      rawRotation: '{"x":0,"y":1,"z":0,"angle":1.5707963}',
     },
     rendered: {
       position: { x: 1.5, y: 0, z: -2.25 },
@@ -162,6 +164,134 @@ test('a stored value appearing where the baseline had none fails', () => {
   });
   const result = compareCaptures(capture([before]), capture([after]));
   assert.strictEqual(result.pass, false);
+});
+
+test('identical raw stored text passes the raw-storage gate', () => {
+  const result = compareCaptures(capture([record()]), capture([record()]));
+  assert.strictEqual(result.pass, true);
+  assert.strictEqual(result.records[0].storedRawEqual, true);
+  assert.strictEqual(result.records[0].storedNumericEqual, true);
+  assert.strictEqual(result.summary.storedRawMismatches, 0);
+});
+
+test('reformatted raw text with equal numbers fails the raw-storage gate', () => {
+  // `1.0` and `1.0000` parse alike. The column was still rewritten.
+  const reformatted = mutate(r => {
+    r.stored.rawPosition = '{"x":1.5000,"y":0,"z":-2.25}';
+  });
+  const result = compareCaptures(capture([record()]), capture([reformatted]));
+  assert.strictEqual(result.pass, false);
+  assert.strictEqual(result.records[0].storedRawEqual, false);
+  // The numbers did not move, so this must not be reported as movement.
+  assert.strictEqual(result.records[0].storedNumericEqual, true);
+  assert.strictEqual(result.records[0].renderedEqual, true);
+  assert.ok(result.records[0].failures.some(f => f.startsWith('STORED_RAW_CHANGED')));
+  assert.strictEqual(result.summary.storedRawMismatches, 1);
+  assert.strictEqual(result.summary.storedNumericMismatches, 0);
+  assert.strictEqual(result.summary.renderedMismatches, 0);
+});
+
+test('raw rotation whitespace change fails the raw-storage gate', () => {
+  const respaced = mutate(r => {
+    r.stored.rawRotation = '{"x": 0, "y": 1, "z": 0, "angle": 1.5707963}';
+  });
+  const result = compareCaptures(capture([record()]), capture([respaced]));
+  assert.strictEqual(result.pass, false);
+  assert.ok(result.records[0].failures.some(
+    f => f.indexOf('STORED_RAW_CHANGED stored.rawRotation') === 0));
+  assert.strictEqual(result.records[0].storedNumericEqual, true);
+});
+
+test('key reordering in raw text fails the raw-storage gate', () => {
+  const reordered = mutate(r => {
+    r.stored.rawPosition = '{"z":-2.25,"y":0,"x":1.5}';
+  });
+  const result = compareCaptures(capture([record()]), capture([reordered]));
+  assert.strictEqual(result.pass, false);
+  assert.strictEqual(result.records[0].storedRawEqual, false);
+  assert.strictEqual(result.records[0].storedNumericEqual, true);
+});
+
+test('a raw column disappearing fails the raw-storage gate', () => {
+  const dropped = mutate(r => {
+    r.stored.rawPosition = null;
+  });
+  const result = compareCaptures(capture([record()]), capture([dropped]));
+  assert.strictEqual(result.pass, false);
+  assert.strictEqual(result.records[0].storedRawEqual, false);
+});
+
+test('different numeric values fail even when raw text is untouched', () => {
+  // Only the parsed layer moved. Raw stays equal, so the two gates disagree and
+  // the report must show exactly which one tripped.
+  const moved = mutate(r => {
+    r.stored.position.x = 9.5;
+  });
+  const result = compareCaptures(capture([record()]), capture([moved]));
+  assert.strictEqual(result.pass, false);
+  assert.strictEqual(result.records[0].storedRawEqual, true);
+  assert.strictEqual(result.records[0].storedNumericEqual, false);
+  assert.strictEqual(result.summary.storedRawMismatches, 0);
+  assert.strictEqual(result.summary.storedNumericMismatches, 1);
+});
+
+test('rendered drift inside tolerance leaves both stored gates equal', () => {
+  const noisy = mutate(r => {
+    r.rendered.position.x += 0.00009;
+  });
+  const result = compareCaptures(capture([record()]), capture([noisy]));
+  assert.strictEqual(result.pass, true);
+  assert.strictEqual(result.records[0].storedRawEqual, true);
+  assert.strictEqual(result.records[0].storedNumericEqual, true);
+  assert.strictEqual(result.records[0].renderedEqual, true);
+});
+
+test('rendered drift outside tolerance fails with both stored gates equal', () => {
+  const moved = mutate(r => {
+    r.rendered.position.x += 0.02;
+  });
+  const result = compareCaptures(capture([record()]), capture([moved]));
+  assert.strictEqual(result.pass, false);
+  assert.strictEqual(result.records[0].storedRawEqual, true);
+  assert.strictEqual(result.records[0].storedNumericEqual, true);
+  assert.strictEqual(result.records[0].renderedEqual, false);
+  assert.strictEqual(result.summary.renderedMismatches, 1);
+});
+
+test('captures with no raw layer on either side still compare', () => {
+  // The pre-raw baseline format must keep working rather than failing closed.
+  const legacy = mutate(r => {
+    delete r.stored.rawPosition;
+    delete r.stored.rawRotation;
+  });
+  const result = compareCaptures(capture([legacy]), capture([legacy]));
+  assert.strictEqual(result.pass, true);
+  assert.strictEqual(result.records[0].storedRawEqual, true);
+});
+
+test('the three gates are reported separately in one run', () => {
+  const rawOnly = record({ id: 4001 });
+  const rawOnlyCand = mutate(r => {
+    r.stored.rawPosition = '{"x":1.50,"y":0,"z":-2.25}';
+  });
+  const numericOnly = record({ id: 4002 });
+  const numericOnlyCand = mutate(r => {
+    r.id = 4002;
+    r.stored.position.z = -9;
+    r.stored.rawPosition = record().stored.rawPosition;
+  });
+  const renderedOnly = record({ id: 4003 });
+  const renderedOnlyCand = mutate(r => {
+    r.id = 4003;
+    r.rendered.position.y = 5;
+  });
+  const result = compareCaptures(
+    capture([rawOnly, numericOnly, renderedOnly]),
+    capture([rawOnlyCand, numericOnlyCand, renderedOnlyCand]));
+  assert.strictEqual(result.pass, false);
+  assert.strictEqual(result.summary.storedRawMismatches, 1);
+  assert.strictEqual(result.summary.storedNumericMismatches, 1);
+  assert.strictEqual(result.summary.renderedMismatches, 1);
 });
 
 test('same id in different tables does not collide', () => {
