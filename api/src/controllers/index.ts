@@ -3,6 +3,7 @@ export * from './avatar.controller';
 export * from './blackmarket.controller';
 export * from './block.controller';
 export * from './club.controller';
+export * from './compat.controller';
 export * from './colony.controller';
 export * from './fleamarket.controller';
 export * from './home.controller';

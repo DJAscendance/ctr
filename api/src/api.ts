@@ -11,6 +11,7 @@ import {
   blockRoutes,
   clubRoutes,
   colonyRoutes,
+  compatRoutes,
   fleamarketRoutes,
   homeRoutes,
   hoodRoutes,
@@ -68,6 +69,7 @@ app.use('/api/blackmarket', blackmarketRoutes);
 app.use('/api/fleamarket', fleamarketRoutes);
 app.use('/api/club', clubRoutes);
 app.use('/api/vote', voteRoutes);
+app.use('/api/compat', compatRoutes);
 
 app.use((request, response, next) => {
   const error = new Error('Not found');
