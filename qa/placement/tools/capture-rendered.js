@@ -196,6 +196,13 @@ async function main() {
   await login(page);
 
   const phases = {};
+  /*
+   * The engine version is read from the runtime that actually produced this
+   * capture, not from the contract constant. A capture labelled with the
+   * control version regardless of what ran would let an upgrade compare
+   * "15.1.12 -> 15.1.12" while a different engine was under test.
+   */
+  let observedEngine = null;
   const renderer = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
@@ -222,6 +229,7 @@ async function main() {
     await page.screenshot({ path: path.join(SHOTS, `${target.key}-reload.png`) });
 
     phases[target.key] = { target, initial, returned, reloaded };
+    if (!observedEngine && initial.engine) observedEngine = initial.engine;
     console.log(`${target.key}: initial=${initial.objects.length} ` +
       `return=${returned.objects.length} reload=${reloaded ? reloaded.objects.length : 0}`);
   }
@@ -274,7 +282,7 @@ async function main() {
 
   const capture = {
     layer: 'rendered',
-    engine: CONTROL_ENGINE_VERSION,
+    engine: observedEngine || CONTROL_ENGINE_VERSION,
     commit: CONTROL_COMMIT,
     renderer,
     baseUrl: BASE,

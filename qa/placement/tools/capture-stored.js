@@ -79,7 +79,9 @@ const records = query(QUERY).map(row => ({
 
 const capture = {
   layer: 'stored',
-  engine: CONTROL_ENGINE_VERSION,
+  // The stored layer is database-only, but the label has to match the run it
+  // belongs to, or a comparison reports the control version against itself.
+  engine: process.env.CTR_QA_ENGINE || CONTROL_ENGINE_VERSION,
   commit: CONTROL_COMMIT,
   database: DATABASE,
   capturedAt: new Date().toISOString(),
