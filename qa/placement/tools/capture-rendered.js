@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { chromium } = require('playwright');
 const { CONTROL_ENGINE_VERSION, CONTROL_COMMIT, IMPLIED_SCALE } = require('../lib/contract');
 
@@ -25,6 +26,8 @@ const USER = process.env.CTR_QA_USER || 'testqa';
 const PASS = process.env.CTR_QA_PASS || 'testqa';
 const OUT = process.argv[2] || path.join(__dirname, '..', 'baselines', 'rendered-15.1.12.json');
 const SHOTS = path.join(__dirname, '..', '..', '..', '..', 'artifacts', 'placement');
+const CONTAINER = process.env.CTR_QA_DB_CONTAINER || 'xite162qa-db-1';
+const DATABASE = process.env.CTR_QA_DB_NAME || 'cybertown';
 
 /**
  * Capture targets.
@@ -39,17 +42,24 @@ const TARGETS = [
   { key: 'home', route: '/home/XiteQA', source: 'object_instance' },
   { key: 'club', route: '/club/837', source: 'object_instance' },
   { key: 'place', route: '/place/fleamarket', source: 'object_instance' },
+  { key: 'shop', route: '/place/antiqueshop', source: 'mall_object', slug: 'antiqueshop' },
+  { key: 'shop2', route: '/place/electronicsstore', source: 'mall_object', slug: 'electronicsstore' },
 ];
 
 /*
- * Individual shop worlds (`/place/<shopslug>`, `type = 'shop'`) are captured at
- * the stored layer only. Their world never finishes loading at the 15.1.12
- * baseline — `assets/worlds/shop/vrml/shop.wrl` pulls in
- * `externprotos/malldirectory/malldirectory.wrl`, which references
- * `/places/shop/sounds/*.wav`; those paths fall through the QA static server to
- * `index.html`, so X_ITE waits on audio that never decodes and
- * `INITIALIZED_EVENT` never fires. Verified stuck at 180 s. This is a content
- * and asset-path gap, not a placement defect, and it predates any engine work.
+ * Shop identity needs a translation step.
+ *
+ * `GET /api/mall/objects/:placeId` selects `object.*` alongside the mall row's
+ * position and rotation, so `object.id` shadows `mall_object.id` and the id the
+ * SPA puts on the SharedObject PROTO is the **catalogue object id**, not the
+ * placement row id. The stored layer keys on `mall_object.id`, so this tool
+ * resolves `(place_id, object_id)` back to the real row id below. Nothing is
+ * ever matched by scene order.
+ *
+ * Every `type = 'shop'` place shares one world, `assets/worlds/shop/vrml/shop.wrl`,
+ * so the two shop targets above cover all 11 `mall_object` fixtures between them:
+ * antiqueshop holds 10 and electronicsstore 1. Both are captured, because a
+ * shared world means a per-place bug would otherwise hide behind a single pass.
  */
 
 const GPU_ARGS = [
@@ -96,6 +106,53 @@ const READ_SCENE = () => {
     objects,
   };
 };
+
+/** Runs a read-only query against the QA database. */
+function query(sql) {
+  const out = execFileSync('docker', [
+    'exec', '-i', CONTAINER, 'sh', '-c',
+    `mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --batch --raw ${DATABASE}`,
+  ], { input: sql, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+  const rows = out.trim().split('\n');
+  const header = rows.shift().split('\t');
+  return rows.map(row => {
+    const cells = row.split('\t');
+    const record = {};
+    header.forEach((name, i) => {
+      record[name] = cells[i] === 'NULL' ? null : cells[i];
+    });
+    return record;
+  });
+}
+
+/**
+ * Maps `<place slug>:<object id>` to the `mall_object.id` that holds the
+ * placement, so a rendered shop object can be keyed the same way the stored
+ * layer keys it.
+ *
+ * A shop stocking the same catalogue object twice would make that pair
+ * ambiguous, so the ambiguity is a hard failure rather than a silent pick.
+ */
+function mallRowIndex(slugs) {
+  if (slugs.length === 0) {
+    return new Map();
+  }
+  const list = slugs.map(slug => `'${slug}'`).join(',');
+  const rows = query(
+    `SELECT p.slug, mo.object_id, mo.id FROM mall_object mo ` +
+    `JOIN place p ON p.id = mo.place_id WHERE p.slug IN (${list});`);
+  const index = new Map();
+  rows.forEach(row => {
+    const key = `${row.slug}:${row.object_id}`;
+    if (index.has(key)) {
+      throw new Error(
+        `AMBIGUOUS_MALL_IDENTITY ${key}: object appears twice in the same shop, ` +
+        'so a rendered node cannot be tied to one mall_object row');
+    }
+    index.set(key, Number(row.id));
+  });
+  return index;
+}
 
 async function login(page) {
   await page.goto(`${BASE}/#/login`, { waitUntil: 'networkidle' });
@@ -172,14 +229,27 @@ async function main() {
 
   await browser.close();
 
+  const mallRows = mallRowIndex(TARGETS.filter(t => t.slug).map(t => t.slug));
+
   const records = [];
   Object.keys(phases).forEach(key => {
     const { target, initial, returned, reloaded } = phases[key];
     initial.objects.forEach(object => {
       const find = scene => (scene && scene.objects || []).find(o => o.id === object.id) || null;
+      let id = Number(object.id);
+      let objectId = null;
+      if (target.source === 'mall_object') {
+        objectId = id;
+        id = mallRows.get(`${target.slug}:${objectId}`);
+        if (id === undefined) {
+          throw new Error(
+            `UNRESOLVED_MALL_OBJECT ${target.slug}:${objectId} rendered but has no mall_object row`);
+        }
+      }
       records.push({
         source: target.source,
-        id: Number(object.id),
+        id,
+        objectId,
         placeKey: key,
         rendered: {
           position: object.position,

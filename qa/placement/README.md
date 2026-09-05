@@ -67,7 +67,15 @@ starts applying a scale is still caught as a failure.
 
 - **Stored** — read straight out of the database with `SELECT`. Must be
   byte-identical before and after an upgrade. Tolerance `0`. The raw TEXT is
-  kept alongside the parsed numbers.
+  kept alongside the parsed numbers, and both are compared:
+
+  - **raw** — the exact MySQL bytes. `{"x":1.0}` and `{"x":1.0000}` differ here
+    even though they parse alike, and the comparator reports that as
+    `STORED_RAW_CHANGED`: a stored-data mutation, never rendered movement.
+  - **numeric** — the parsed values, which decide where the object ends up.
+
+  A run reports raw, numeric and rendered mismatches as three separate counts,
+  so a database rewrite can never be mistaken for an object that moved.
 - **Rendered** — read out of the live X_ITE scene graph in a real browser, by
   CTR object id, never by scene order. Allowed a small float margin.
 
@@ -148,6 +156,15 @@ node qa/placement/test/run.js
 node qa/placement/tools/check-lifecycle.js
 ```
 
+## Duplicate input is refused, never deduplicated
+
+`compare.js` checks every capture file for a repeated `<source>:<id>` as it
+reads it, before any record reaches the merged `Map`. A `Map` would silently
+keep one of the two rows, and whichever copy it dropped could be the one
+carrying the drift the comparison exists to find. A duplicate aborts the run
+with `DUPLICATE_OBJECT_KEY <source>:<id>` and exit status 3, and no comparison
+is performed at all.
+
 ## Routes matter
 
 `/place/:id` resolves a place by **slug**. A numeric place id there leaves the
@@ -169,15 +186,24 @@ nothing loads. Use:
 | club | 10 fixtures | 10 |
 | place (flea market) | 10 fixtures | 10 |
 | public (Plaza) | 5 fixtures + 3 pre-existing NULL-placement rows | 8 |
-| shop (`mall_object`) | 10 fixtures + 1 pre-existing | **0 — see below** |
+| shop (`mall_object`) | 10 fixtures + 1 pre-existing | 11 |
 
-Individual shop worlds are stored-layer only. `assets/worlds/shop/vrml/shop.wrl`
-pulls in `externprotos/malldirectory/malldirectory.wrl`, which references
-`/places/shop/sounds/*.wav`. Those paths fall through the QA static server to
-`index.html`, so X_ITE waits on audio that never decodes and `INITIALIZED_EVENT`
-never fires. Verified still stuck after 180 s. This is a content and asset-path
-gap that predates any engine work, not a placement defect, but it does mean the
-`mall_object` rendered path is unmeasured at this baseline.
+Every category is now measured at both layers: 60 stored rows, 60 rendered.
+
+Shop coverage arrives via two routes because all `type = 'shop'` places share one
+world, `assets/worlds/shop/vrml/shop.wrl`: `/place/antiqueshop` carries 10 of the
+fixtures and `/place/electronicsstore` the remaining one.
+
+### Shop identity: the rendered id is not the stored id
+
+`GET /api/mall/objects/:placeId` selects `object.*` next to the mall row's
+position and rotation, so `object.id` shadows `mall_object.id`. The id the SPA
+puts on the `SharedObject` PROTO is therefore the **catalogue object id**, while
+the stored layer keys on `mall_object.id`. `capture-rendered.js` resolves
+`(place slug, object id)` back to the real row id so both layers key alike, and
+fails with `AMBIGUOUS_MALL_IDENTITY` if one shop ever stocks the same catalogue
+object twice — at which point a rendered node could not be tied to a single
+placement row at all. Nothing is matched by scene order.
 
 The QA database ships with only dev seed data, so the fixtures are synthetic.
 They were seeded from the local item library and cover: every axis sign, the
@@ -198,6 +224,20 @@ either workspace does not reach it. No production SPA or API source is touched
 by this directory, so no build is required to use it.
 
 ## Known baseline defects
+
+- `KNOWN_BASELINE_NON_PLACEMENT_DEFECT` — reloading a shop leaves every mall
+  object in the scene twice. Both copies carry identical placement, the CTR ids
+  stay unique, and the count returns to normal on the next navigation, so
+  captures and comparisons are unaffected. `WorldBrowserPage.vue` adds objects
+  from a 2 s `setTimeout` after world init with no guard against a second init
+  pass, and the shop path has no socket-driven reconciliation because
+  `onSharedObjectEvent` only ever queries the `object_instance` endpoint. This
+  became visible only once the shop world started loading; it is object-lifecycle
+  work, not placement work, and is left for a separate pass.
+
+- `KNOWN_BASELINE_NON_PLACEMENT_DEFECT` — `GET /api/mall/can_admin?id=2` returns
+  HTTP 400 on every shop load for a non-admin QA user. It does not affect world
+  load or placement.
 
 - `KNOWN_BASELINE_NON_PLACEMENT_DEFECT` — Mall `startSharedEvents` can hit a
   `null` entry in `sharedZone.events` and call `addFieldCallback` on it. It

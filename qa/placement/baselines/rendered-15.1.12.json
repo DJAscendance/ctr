@@ -4,7 +4,7 @@
   "commit": "ee238a61867554916aa9336655469b7395b09c6d",
   "renderer": "ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060 Ti/PCIe/SSE2, OpenGL 4.5.0)",
   "baseUrl": "http://127.0.0.1:8128",
-  "capturedAt": "2026-09-05T03:15:02.230Z",
+  "capturedAt": "2026-09-05T14:36:46.023Z",
   "consoleErrors": [
     "Failed to load resource: the server responded with a status of 400 (Bad Request)",
     "Failed to load resource: net::ERR_CONNECTION_REFUSED",
@@ -18,12 +18,14 @@
     "Error: Not Found\n    at sd.checkResponse (https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:662796)\n    at sd.loadDocumentAsync (https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:662143)",
     "Couldn't load URL 'http://127.0.0.1:8128/assets/worlds/003/home.wrl'. AbortError: signal is aborted without reason\n    at sd.abort (https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:659190)\n    at https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:1343116\n    at new Promise ",
     "Couldn't load URL 'http://127.0.0.1:8128/assets/worlds/club/vrml/vrml.wrl'. AbortError: signal is aborted without reason\n    at sd.abort (https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:659190)\n    at https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:1343116\n    at new Pr",
-    "Couldn't load URL 'http://127.0.0.1:8128/assets/worlds//fleamarket/vrml/fleamarket.wrl'. AbortError: signal is aborted without reason\n    at sd.abort (https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:659190)\n    at https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:1343116\n"
+    "Couldn't load URL 'http://127.0.0.1:8128/assets/worlds//fleamarket/vrml/fleamarket.wrl'. AbortError: signal is aborted without reason\n    at sd.abort (https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:659190)\n    at https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:1343116\n",
+    "Couldn't load URL 'http://127.0.0.1:8128/assets/worlds//shop/vrml/shop.wrl'. AbortError: signal is aborted without reason\n    at sd.abort (https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:659190)\n    at https://cdn.jsdelivr.net/npm/x_ite@15.1.12/dist/x_ite.min.js:2:1343116\n    at new P"
   ],
   "records": [
     {
       "source": "object_instance",
       "id": 1,
+      "objectId": null,
       "placeKey": "public",
       "rendered": {
         "position": {
@@ -73,6 +75,7 @@
     {
       "source": "object_instance",
       "id": 3,
+      "objectId": null,
       "placeKey": "public",
       "rendered": {
         "position": {
@@ -122,6 +125,7 @@
     {
       "source": "object_instance",
       "id": 84,
+      "objectId": null,
       "placeKey": "public",
       "rendered": {
         "position": {
@@ -171,6 +175,7 @@
     {
       "source": "object_instance",
       "id": 80,
+      "objectId": null,
       "placeKey": "public",
       "rendered": {
         "position": {
@@ -220,6 +225,7 @@
     {
       "source": "object_instance",
       "id": 81,
+      "objectId": null,
       "placeKey": "public",
       "rendered": {
         "position": {
@@ -269,6 +275,7 @@
     {
       "source": "object_instance",
       "id": 83,
+      "objectId": null,
       "placeKey": "public",
       "rendered": {
         "position": {
@@ -318,6 +325,7 @@
     {
       "source": "object_instance",
       "id": 82,
+      "objectId": null,
       "placeKey": "public",
       "rendered": {
         "position": {
@@ -367,6 +375,7 @@
     {
       "source": "object_instance",
       "id": 2,
+      "objectId": null,
       "placeKey": "public",
       "rendered": {
         "position": {
@@ -416,6 +425,7 @@
     {
       "source": "object_instance",
       "id": 41,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -465,6 +475,7 @@
     {
       "source": "object_instance",
       "id": 46,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -514,6 +525,7 @@
     {
       "source": "object_instance",
       "id": 42,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -563,6 +575,7 @@
     {
       "source": "object_instance",
       "id": 53,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -612,6 +625,7 @@
     {
       "source": "object_instance",
       "id": 50,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -661,6 +675,7 @@
     {
       "source": "object_instance",
       "id": 40,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -710,6 +725,7 @@
     {
       "source": "object_instance",
       "id": 49,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -759,6 +775,7 @@
     {
       "source": "object_instance",
       "id": 54,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -808,6 +825,7 @@
     {
       "source": "object_instance",
       "id": 43,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -857,6 +875,7 @@
     {
       "source": "object_instance",
       "id": 48,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -906,6 +925,7 @@
     {
       "source": "object_instance",
       "id": 56,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -955,6 +975,7 @@
     {
       "source": "object_instance",
       "id": 58,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1004,6 +1025,7 @@
     {
       "source": "object_instance",
       "id": 57,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1053,6 +1075,7 @@
     {
       "source": "object_instance",
       "id": 59,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1102,6 +1125,7 @@
     {
       "source": "object_instance",
       "id": 52,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1151,6 +1175,7 @@
     {
       "source": "object_instance",
       "id": 45,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1200,6 +1225,7 @@
     {
       "source": "object_instance",
       "id": 44,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1249,6 +1275,7 @@
     {
       "source": "object_instance",
       "id": 55,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1298,6 +1325,7 @@
     {
       "source": "object_instance",
       "id": 47,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1347,6 +1375,7 @@
     {
       "source": "object_instance",
       "id": 51,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1396,6 +1425,7 @@
     {
       "source": "object_instance",
       "id": 4,
+      "objectId": null,
       "placeKey": "home",
       "rendered": {
         "position": {
@@ -1445,6 +1475,7 @@
     {
       "source": "object_instance",
       "id": 65,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1494,6 +1525,7 @@
     {
       "source": "object_instance",
       "id": 61,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1543,6 +1575,7 @@
     {
       "source": "object_instance",
       "id": 66,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1592,6 +1625,7 @@
     {
       "source": "object_instance",
       "id": 62,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1641,6 +1675,7 @@
     {
       "source": "object_instance",
       "id": 60,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1690,6 +1725,7 @@
     {
       "source": "object_instance",
       "id": 64,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1739,6 +1775,7 @@
     {
       "source": "object_instance",
       "id": 67,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1788,6 +1825,7 @@
     {
       "source": "object_instance",
       "id": 69,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1837,6 +1875,7 @@
     {
       "source": "object_instance",
       "id": 63,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1886,6 +1925,7 @@
     {
       "source": "object_instance",
       "id": 68,
+      "objectId": null,
       "placeKey": "club",
       "rendered": {
         "position": {
@@ -1935,6 +1975,7 @@
     {
       "source": "object_instance",
       "id": 79,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -1984,6 +2025,7 @@
     {
       "source": "object_instance",
       "id": 75,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2033,6 +2075,7 @@
     {
       "source": "object_instance",
       "id": 76,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2082,6 +2125,7 @@
     {
       "source": "object_instance",
       "id": 74,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2131,6 +2175,7 @@
     {
       "source": "object_instance",
       "id": 78,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2180,6 +2225,7 @@
     {
       "source": "object_instance",
       "id": 70,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2229,6 +2275,7 @@
     {
       "source": "object_instance",
       "id": 72,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2278,6 +2325,7 @@
     {
       "source": "object_instance",
       "id": 71,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2327,6 +2375,7 @@
     {
       "source": "object_instance",
       "id": 73,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2376,6 +2425,7 @@
     {
       "source": "object_instance",
       "id": 77,
+      "objectId": null,
       "placeKey": "place",
       "rendered": {
         "position": {
@@ -2417,6 +2467,556 @@
         "rotation": {
           "x": 0,
           "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 12,
+      "objectId": 36,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 13,
+      "objectId": 37,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": 3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 14,
+      "objectId": 38,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": -3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": -3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": -3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 15,
+      "objectId": 39,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 16,
+      "objectId": 40,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": -4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.7853981633974483
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": -4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.7853981633974483
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": -4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.7853981633974483
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 17,
+      "objectId": 41,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": 1.125,
+          "y": 1.75,
+          "z": -2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 2.356194490192345
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 1.125,
+          "y": 1.75,
+          "z": -2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 2.356194490192345
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 1.125,
+          "y": 1.75,
+          "z": -2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 2.356194490192345
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 18,
+      "objectId": 42,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": -7.875,
+          "y": -1.25,
+          "z": -9.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.9269908169872414
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": -7.875,
+          "y": -1.25,
+          "z": -9.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.9269908169872414
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": -7.875,
+          "y": -1.25,
+          "z": -9.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.9269908169872414
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 19,
+      "objectId": 43,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": 2.5,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 2.5,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 2.5,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 20,
+      "objectId": 44,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": 2.5,
+          "y": 0.82,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 2.5,
+          "y": 0.82,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 2.5,
+          "y": 0.82,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 21,
+      "objectId": 45,
+      "placeKey": "shop",
+      "rendered": {
+        "position": {
+          "x": 2.5,
+          "y": 1.64,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 2.5,
+          "y": 1.64,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 2.5,
+          "y": 1.64,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        }
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 1,
+      "objectId": 4,
+      "placeKey": "shop2",
+      "rendered": {
+        "position": {
+          "x": 0,
+          "y": 1.75,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "angle": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "renderedOnReturn": {
+        "position": {
+          "x": 0,
+          "y": 1.75,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "angle": 0
+        }
+      },
+      "renderedOnReload": {
+        "position": {
+          "x": 0,
+          "y": 1.75,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
           "z": 0,
           "angle": 0
         }
