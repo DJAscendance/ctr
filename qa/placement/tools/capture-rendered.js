@@ -20,6 +20,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { chromium } = require('playwright');
 const { CONTROL_ENGINE_VERSION, CONTROL_COMMIT, IMPLIED_SCALE } = require('../lib/contract');
+const { resolveRenderedPlacements } = require('../lib/rendered-identity');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
 const USER = process.env.CTR_QA_USER || 'testqa';
@@ -126,12 +127,12 @@ function query(sql) {
 }
 
 /**
- * Maps `<place slug>:<object id>` to the `mall_object.id` that holds the
- * placement, so a rendered shop object can be keyed the same way the stored
- * layer keys it.
+ * Maps `<place slug>:<object id>` to every `mall_object.id` that uses it.
  *
- * A shop stocking the same catalogue object twice would make that pair
- * ambiguous, so the ambiguity is a hard failure rather than a silent pick.
+ * Every row is kept rather than the first, so a shop stocking one catalogue
+ * object twice shows up as two real placements. resolve-time is where that is
+ * judged: two rows under one key means the rendered node cannot be tied to
+ * either, which `resolveRenderedPlacements` reports as AMBIGUOUS_MALL_IDENTITY.
  */
 function mallRowIndex(slugs) {
   if (slugs.length === 0) {
@@ -140,16 +141,14 @@ function mallRowIndex(slugs) {
   const list = slugs.map(slug => `'${slug}'`).join(',');
   const rows = query(
     `SELECT p.slug, mo.object_id, mo.id FROM mall_object mo ` +
-    `JOIN place p ON p.id = mo.place_id WHERE p.slug IN (${list});`);
+    `JOIN place p ON p.id = mo.place_id WHERE p.slug IN (${list}) ORDER BY mo.id;`);
   const index = new Map();
   rows.forEach(row => {
     const key = `${row.slug}:${row.object_id}`;
-    if (index.has(key)) {
-      throw new Error(
-        `AMBIGUOUS_MALL_IDENTITY ${key}: object appears twice in the same shop, ` +
-        'so a rendered node cannot be tied to one mall_object row');
+    if (!index.has(key)) {
+      index.set(key, []);
     }
-    index.set(key, Number(row.id));
+    index.get(key).push(Number(row.id));
   });
   return index;
 }
@@ -231,21 +230,28 @@ async function main() {
 
   const mallRows = mallRowIndex(TARGETS.filter(t => t.slug).map(t => t.slug));
 
+  /*
+   * Every phase is resolved from its raw node list, so a world that rendered one
+   * saved placement twice fails here rather than quietly collapsing into a
+   * single record further down.
+   */
   const records = [];
   Object.keys(phases).forEach(key => {
     const { target, initial, returned, reloaded } = phases[key];
-    initial.objects.forEach(object => {
-      const find = scene => (scene && scene.objects || []).find(o => o.id === object.id) || null;
-      let id = Number(object.id);
-      let objectId = null;
-      if (target.source === 'mall_object') {
-        objectId = id;
-        id = mallRows.get(`${target.slug}:${objectId}`);
-        if (id === undefined) {
-          throw new Error(
-            `UNRESOLVED_MALL_OBJECT ${target.slug}:${objectId} rendered but has no mall_object row`);
-        }
+    const identity = Object.assign({ placeKey: key }, target);
+    [['initial', initial], ['return', returned], ['reload', reloaded]].forEach(([phase, scene]) => {
+      if (!scene) {
+        return;
       }
+      try {
+        resolveRenderedPlacements(scene.objects, identity, mallRows);
+      } catch (error) {
+        throw new Error(`${key} (${phase}): ${error.message}`);
+      }
+    });
+    const resolved = resolveRenderedPlacements(initial.objects, identity, mallRows);
+    resolved.forEach(({ id, objectId, node: object }) => {
+      const find = scene => (scene && scene.objects || []).find(o => o.id === object.id) || null;
       records.push({
         source: target.source,
         id,
