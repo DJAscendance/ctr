@@ -13,10 +13,21 @@ export class MallRepository {
     await this.db.mallObject.insert({object_id: objectId});
   }
 
+  /**
+   * Returns the objects on sale in one shop, with their placement.
+   *
+   * `object.*` puts the catalogue object's `id` on each row, which shadows
+   * `mall_object.id`, so the placement row had no identifier of its own in the
+   * response at all. `mall_object_id` is added alongside rather than changing
+   * what `id` means, because existing callers key off the catalogue id. It is
+   * the only stable way to tell two placements of the same catalogue object
+   * apart.
+   */
   public async getMallForSale(
     placeId: number): Promise<any> {
     const objects = await this.db.mallObject
-      .select('object.*', 'mall_object.place_id', 'mall_object.position', 'mall_object.rotation')
+      .select('object.*', 'mall_object.id as mall_object_id',
+        'mall_object.place_id', 'mall_object.position', 'mall_object.rotation')
       .where('place_id', placeId)
       .where('object.status', 1)
       .join('object', 'object.id', 'mall_object.object_id')
