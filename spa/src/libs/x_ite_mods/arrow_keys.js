@@ -28,12 +28,15 @@
       if (e.keyCode == 37 || e.keyCode == 39) this.keyx = 0;
       if (e.keyCode == 38 || e.keyCode == 40) this.keyy = 0;
       if (this.keyx == 0 && this.keyy == 0) {
-        event.preventDefault();
+        e.preventDefault();
         this.event = null;
         this.button = -1;
         this.disconnect();
         this.getBrowser().setCursor("DEFAULT");
-        this.removeCollision();
+        // X_ITE 4's WalkViewer had removeCollision(); X_ITE 15 dropped it and
+        // tears the collision test down in disconnect() instead, so calling it
+        // unconditionally threw on every key release.
+        if (typeof this.removeCollision === "function") this.removeCollision();
         this.isActive_ = false;
       } else {
         this.toVector.set(this.keyx, 0, this.keyy);
