@@ -29,6 +29,11 @@
  * themselves; the dead blaxxun urls still report as unreachable, exactly as
  * they do today.
  */
+
+// X_ITE publishes its runtime as the browser global X3D; it is loaded from the
+// CDN in spa/public/index.html, not imported, so declare it for the linter.
+/* global X3D */
+
 (function () {
   X3D.require(["x_ite/InputOutput/FileLoader"], function (FileLoader) {
     if (!FileLoader || !FileLoader.prototype) {
