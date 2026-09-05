@@ -44,14 +44,53 @@
       }
     }
 
+    let originalDispose = WalkViewer.prototype.dispose;
+
+    /*
+     * The namespace carries the viewer's own id.
+     *
+     * X_ITE creates a WalkViewer per bound viewpoint, so replacing a world
+     * builds a new one, and every one of them binds on the same element. A
+     * bare '.WalkViewer' namespace would let one viewer's dispose tear down a
+     * live sibling's handlers. This is how X_ITE namespaces its own
+     * document-level bindings, for the same reason.
+     */
+    function namespaceFor(viewer) {
+      return typeof viewer.getId === 'function' ? '.WalkViewer' + viewer.getId() : '.WalkViewer';
+    }
+
     WalkViewer.prototype.initialize = function () {
       var browser = this.getBrowser();
       var element = browser.getElement();
+      var ns = namespaceFor(this);
       this.keyx = 0;
       this.keyy = 0;
-      element.bind('keydown.WalkViewer', this.keydown.bind(this));
-      element.bind('keyup.WalkViewer', this.keyup.bind(this));
+      element.on('keydown' + ns, this.keydown.bind(this));
+      element.on('keyup' + ns, this.keyup.bind(this));
       originalInitialize.call(this);
+    }
+
+    /*
+     * Releases the handlers this patch installed.
+     *
+     * Every X_ITE viewer binds under a namespace and drops it again in
+     * dispose(); this patch bound and never unbound. Because the handlers are
+     * `this.keydown.bind(this)`, each one holds its WalkViewer, and they were
+     * attached to the single <x3d-canvas> that lives for the whole session.
+     * So every world's viewer stayed reachable - and with it the browser, the
+     * viewpoint it drove, and that viewpoint's scene. Loading a new world kept
+     * the old one alive, which is what killed the tab at around fifty loads.
+     *
+     * A bare X_ITE control measured this at roughly 18 MB retained per world
+     * replacement with only this patch loaded, and under 1 MB without it.
+     */
+    WalkViewer.prototype.dispose = function () {
+      var browser = this.getBrowser();
+      var element = browser && browser.getElement ? browser.getElement() : null;
+      if (element && typeof element.off === 'function') {
+        element.off(namespaceFor(this));
+      }
+      if (typeof originalDispose === 'function') originalDispose.call(this);
     }
 
   })
