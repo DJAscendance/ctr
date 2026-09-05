@@ -220,6 +220,7 @@ export default Vue.extend({
   name: "ObjectProperties",
   data: () => {
     return {
+      updateObjectHandler: null,
       sessionId: null,
       memberId: null,
       memberUsername: null,
@@ -358,12 +359,28 @@ methods: {
         break;
     }
   },
+  /*
+   * Registers the one socket handler this page needs, keeping a reference.
+   *
+   * This page is a route, so it is destroyed every time the member closes the
+   * object and rebuilt the next time they open one. The socket outlives it, so
+   * an anonymous handler registered here stayed subscribed after the page was
+   * gone and its closure held the dead page. `off` matches on function
+   * identity, so the reference has to be kept for teardown to remove anything.
+   */
   startSocketListeners(){
-    this.$socket.on("update-object", object => {
+    this.updateObjectHandler = object => {
       if(object.obj_id === this.objectId){
         this.objectProperties();
       }
-    });
+    };
+    this.$socket.on("update-object", this.updateObjectHandler);
+  },
+  /* Undoes startSocketListeners. Safe to call when nothing was registered. */
+  stopSocketListeners(){
+    if(!this.updateObjectHandler) return;
+    this.$socket.off("update-object", this.updateObjectHandler);
+    this.updateObjectHandler = null;
   },
   async buy(){
     if(!this.mallObject){
@@ -420,6 +437,9 @@ created(){
 },
 mounted() {
   this.startSocketListeners();
+},
+beforeDestroy() {
+  this.stopSocketListeners();
 },
 });
 

@@ -62,6 +62,27 @@ class SocketManager {
   }
 
   /**
+   * Removes a handler previously registered with `on`.
+   *
+   * The socket is a single long-lived connection, but most of its subscribers
+   * are components that come and go with the route. Without this the wrapper
+   * offered no way to undo a registration at all, so a component destroyed on
+   * a world change left its handler behind, and the closure kept the dead
+   * component - and everything it referenced - alive for the rest of the
+   * session.
+   *
+   * The caller must pass the same function reference it registered; an arrow
+   * function written inline at both call sites removes nothing.
+   * @param event name of event
+   * @param callback the exact handler passed to `on`
+   * @returns socket instance, or undefined if no socket exists
+   */
+  public off(event: string, callback: (...args: any[]) => void): SocketIO.Socket {
+    if (!this.socket) return;
+    return this.socket.off(event, callback);
+  }
+
+  /**
    * Creates and connects a socket instance.
    * @returns promise to be resolved on connection
    */

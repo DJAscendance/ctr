@@ -318,6 +318,7 @@ interface ChatData {
   virtualPetDefault: any[];
   entryMessageCode: number;
   selectedId: any;
+  socketHandlers: [string, (...args: any[]) => void][];
 }
 
 interface ChatMethods {
@@ -349,6 +350,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
   },
   data(): ChatData {
     return {
+      socketHandlers: [],
       message: "",
       messages: [],
       users: [],
@@ -1051,8 +1053,27 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
         }
       }
     },
+    /*
+     * Registers this component's socket handlers, keeping a reference to each.
+     *
+     * Chat is mounted behind `v-if="loaded"` inside WorldBrowserPage, so it is
+     * destroyed and rebuilt on every world change while the socket itself lives
+     * for the whole session. Until the handler list below existed there was
+     * nothing to hand back to `off`, so every dead Chat stayed subscribed - and
+     * each handler's closure held that Chat, its message and user lists, its
+     * parent page and the scene that page had loaded. Six handlers piled up per
+     * world change and the tab died at around fifty.
+     *
+     * The references have to be stored because `off` matches on function
+     * identity; re-declaring the same arrow function at teardown removes
+     * nothing.
+     */
     startSocketListeners(): void {
-      this.$socket.on("CHAT", data => {
+      const bind = (event: string, handler: (...args: any[]) => void): void => {
+        this.socketHandlers.push([event, handler]);
+        this.$socket.on(event, handler);
+      };
+      bind("CHAT", data => {
         this.debugMsg("chat message received...", data);
         if(this.virtualPet){
           this.petResponse(data);
@@ -1064,7 +1085,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
           }
         }
       });
-      this.$socket.on("AV:del", event => {
+      bind("AV:del", event => {
         this.systemMessage(event.username + " has left.");
         this.users = this.users.filter((u) => u.id !== event.id);
         let index = this.worldMembers.indexOf(event.username);
@@ -1072,27 +1093,34 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
           this.worldMembers.splice(index, 1);
         }
       });
-      this.$socket.on("AV:new", event => {
+      bind("AV:new", event => {
         this.systemMessage(event.username + " has entered.");
         this.users.push(event);
         this.isMember3D(event);
       });
-      this.$socket.on("disconnect", () => {
+      bind("disconnect", () => {
         this.systemMessage("Chat server disconnected. Please refresh to reconnect.");
         this.setTimers(false);
         this.chatEnabled = false;
       });
-      this.$socket.on("update-object", (object) => {
+      bind("update-object", (object) => {
         if([object.member_username, object.buyer_username].includes(this.$store.data.user.username) || 
           [object.member_username, object.buyer_username].includes(this.username)){
           this.updateObjectLists(object);
         }
       });
-      this.$socket.on("moderation_event", data => {
+      bind("moderation_event", data => {
         if(data.data.event === 'delete-message') {
           this.deleteMessageFromLive(data.data.messageID);
         }
       });
+    },
+    /* Undoes startSocketListeners. Safe to call when nothing was registered. */
+    stopSocketListeners(): void {
+      for (const [event, handler] of this.socketHandlers) {
+        this.$socket.off(event, handler);
+      }
+      this.socketHandlers = [];
     },
     dropObject() {
       this.$emit("drop-object", this.objectId);
@@ -1198,6 +1226,7 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
   },
   beforeDestroy() {
     this.setTimers(false);
+    this.stopSocketListeners();
   },
   mounted() {
     this.debugMsg("starting chat page...");
