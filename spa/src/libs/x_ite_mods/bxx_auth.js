@@ -99,9 +99,15 @@
         b.getZFar = function () { return navigationValue(this, 'visibilityLimit') }
 
         // VRML Browser window
-        b.getWindowSizeX = function () { return this.getElement().width() }
-        b.getWindowSizeY = function () { return this.getElement().height() }
-        b.getWindowAspect = function () { return this.getElement().width() / this.getElement().height() }
+        // X_ITE 15's getElement() returned a jQuery-like wrapper with width()
+        // and height(); X_ITE 16 returns the plain <x3d-canvas> element, so
+        // the size comes from its client box instead.
+        b.getWindowSizeX = function () { return this.getElement().clientWidth }
+        b.getWindowSizeY = function () { return this.getElement().clientHeight }
+        b.getWindowAspect = function () {
+            var element = this.getElement()
+            return element.clientHeight ? element.clientWidth / element.clientHeight : 0
+        }
 
         // Client System
         // Likely will simply mimic values from Contact
