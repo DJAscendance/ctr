@@ -22,6 +22,8 @@ export interface WorldBrowserData {
     eventNodeMap: any;
     sharedObjects: any[];
     sharedObjectsMap: Map<any, any>;
+    /** Identifies the active place load; see WorldBrowserPage.vue. */
+    worldGeneration: number;
     showUpdateWarning: boolean;
     mainComponent: any;
     force2d: boolean;

@@ -66,6 +66,14 @@ export default Vue.extend({
       eventNodeMap: null,
       sharedObjects: [],
       sharedObjectsMap: undefined,
+      /*
+       * Incremented once per loadAndJoinPlace(). Three watchers can start a
+       * place load, and on a direct page load two of them fire, so two runs are
+       * in flight at once. Every step that outlives an await compares its own
+       * generation against this before touching the scene or the object list,
+       * so a superseded run cannot populate the world that replaced it.
+       */
+      worldGeneration: 0,
       showUpdateWarning: false,
       mainComponent: null,
       force2d: false,
@@ -198,34 +206,49 @@ export default Vue.extend({
       this.sharedObjectsMap.set(obj.id, sharedObject);
     },
     debugMsg,
-    async getPlace(): Promise<void> {
+    /*
+     * Loads the placement list for the current place.
+     *
+     * The shop branch used to push straight onto this.sharedObjects after its
+     * await. `push` re-reads the property when it runs, so when two place loads
+     * overlapped the earlier run's rows landed in the later run's array and the
+     * shop rendered every mall object twice. The list is built locally and
+     * assigned once instead, which is what the object_instance branch always
+     * did, and the assignment is skipped outright if a newer load has started.
+     */
+    async getPlace(generation: number): Promise<void> {
       this.debugMsg("get place");
       document.title = `${this.$store.data.place.name  } - Cybertown`;
-      let objectResponse = null;
-      this.sharedObjects = [];
+      let objects = [];
       try {
         if(this.$store.data.place.type === "shop"){
           const objectResponse = await this.$http.get(`/mall/objects/${this.$store.data.place.id}`);
-          objectResponse.data.objects.forEach(obj => {
-            if(obj.status === 1){
-              this.sharedObjects.push(obj);
-            }
-          });
+          objects = objectResponse.data.objects.filter(obj => obj.status === 1);
         } else {
-          objectResponse = await this.$http.get(`/place/${  this.$store.data.place.id 
+          const objectResponse = await this.$http.get(`/place/${  this.$store.data.place.id 
           }/object_instance`);
-          this.sharedObjects = objectResponse.data.object_instance;
+          objects = objectResponse.data.object_instance;
         }
       } catch(e) {
         console.error(e);
       }
+      if (generation !== this.worldGeneration) {
+        return;
+      }
+      this.sharedObjects = objects;
     },
     async loadAndJoinPlace(): Promise<void> {
+      // Claim this run. Anything below that survives an await belongs to an old
+      // world once a newer run has claimed a higher generation.
+      const generation = ++this.worldGeneration;
       this.loaded = false;
       this.force2d = false;
 
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
-      await this.getPlace();
+      await this.getPlace(generation);
+      if (generation !== this.worldGeneration) {
+        return;
+      }
 
       if(this.$store.data.place.slug === "clubdir"){
         this.force2d = true;
@@ -243,8 +266,11 @@ export default Vue.extend({
       }
       if(this.$store.data.view3d && !this.force2d) {
         const browser = await this.startX3D();
+        if (generation !== this.worldGeneration) {
+          return;
+        }
         this.loaded = true;
-        this.startX3DListeners(browser);
+        this.startX3DListeners(browser, generation);
       } else {
 
         if(this.$store.data.place.type === "shop"){
@@ -790,7 +816,7 @@ export default Vue.extend({
         console.warn("could not apply navigation defaults", error);
       }
     },
-    startX3DListeners(browserbak: any): void {
+    startX3DListeners(browserbak: any, generation: number): void {
       const browser = X3D.getBrowser();
       /*
        * The ProximitySensor is what feeds this.position / this.rotation to the
@@ -817,8 +843,22 @@ export default Vue.extend({
       browser.currentScene.addRootNode(prox);
       this.proximitySensor = prox;
       this.sharedObjectsMap = new Map();
+      /*
+       * The delay is still needed: INITIALIZED_EVENT fires before the scene's
+       * EXTERNPROTOs have finished loading, and createProto("SharedObject")
+       * against externprotos/shared_xite.wrl throws until that resolves. X_ITE
+       * 15 exposes no "externprotos ready" callback, so the wait stays until
+       * one exists.
+       *
+       * It does mean this callback can outlive its world. addSharedObject reads
+       * browser.currentScene when it runs, not when the timer was set, so a
+       * stale timer would otherwise pour its objects into whichever world had
+       * replaced this one. The generation check is what prevents that.
+       */
       setTimeout(() => {
-        //this.sharedObjectsMap = new Map();
+        if (generation !== this.worldGeneration) {
+          return;
+        }
         this.sharedObjects.forEach((object) => {
           this.addSharedObject(object, browser);
         });
