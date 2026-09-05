@@ -434,6 +434,7 @@ export default Vue.extend({
       "viewpoint_bind.js",
       "allow_sf_string.js",
       "bxx_auth.js",
+      "legacy_links.js",
       //'speed_multiplier.js',
       //'fix_stairs.js',
     ];
