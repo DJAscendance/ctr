@@ -74,6 +74,8 @@ export default Vue.extend({
        * so a superseded run cannot populate the world that replaced it.
        */
       worldGeneration: 0,
+      /** Guards the one-time bind in start3DSocketListeners(). */
+      socket3dListenersBound: false,
       showUpdateWarning: false,
       mainComponent: null,
       force2d: false,
@@ -763,7 +765,19 @@ export default Vue.extend({
       });
       this.$socket.on("SO", event => this.onSharedObjectEvent(event));
     },
+    /*
+     * Binds the 3D socket handlers exactly once.
+     *
+     * This runs on every place load, and the socket wrapper only exposes `on`,
+     * so each load used to add another set of handlers that was never removed.
+     * The handlers dispatch through `this`, so one registration serves every
+     * world the component ever loads.
+     */
     start3DSocketListeners(): void {
+      if (this.socket3dListenersBound) {
+        return;
+      }
+      this.socket3dListenersBound = true;
       this.$socket.on("AV", event => this.onAvatarMoved(event));
       this.$socket.on("AV:del", event => this.onAvatarRemoved(event));
       this.$socket.on("AV:new", event => this.onAvatarAdded(event));
@@ -777,7 +791,14 @@ export default Vue.extend({
       const browser = X3D.getBrowser(this.browser);
       browser.loadURL(new X3D.MFString(this.worldUrl), new X3D.MFString());
       return new Promise((resolve, reject) => {
-        browser.addBrowserCallback({}, eventType => {
+        /*
+         * X_ITE keys browser callbacks by their first argument. A fresh {} on
+         * every place load registered a new callback and kept every earlier
+         * one, each holding the scene it was created for, so the tab died after
+         * roughly fifty loads. Passing the component keys them all to one slot,
+         * so the newest load replaces the previous one.
+         */
+        browser.addBrowserCallback(this, eventType => {
           switch (eventType) {
           case X3D.X3DConstants.INITIALIZED_EVENT:
             this.applyNavigationDefaults(browser);

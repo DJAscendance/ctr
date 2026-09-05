@@ -24,6 +24,8 @@ export interface WorldBrowserData {
     sharedObjectsMap: Map<any, any>;
     /** Identifies the active place load; see WorldBrowserPage.vue. */
     worldGeneration: number;
+    /** True once the 3D socket handlers have been bound. */
+    socket3dListenersBound: boolean;
     showUpdateWarning: boolean;
     mainComponent: any;
     force2d: boolean;
