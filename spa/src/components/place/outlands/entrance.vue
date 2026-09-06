@@ -246,7 +246,11 @@
  * the side off the avatar that is worn. See @/libs/outlands.
  */
 import Vue from "vue";
-import { OUTLANDS_TEAM_AVATARS, RED_TEAM } from "@/libs/outlands";
+import {
+  OUTLANDS_TEAM_AVATARS,
+  RED_TEAM,
+  rememberAvatarBeforeOutlands,
+} from "@/libs/outlands";
 
 /*
  * The recovered entrance art for each choice, with the alt text the historical
@@ -379,6 +383,13 @@ export default Vue.extend({
 
       this.busy = true;
       try {
+        /*
+         * Write down what they were wearing before the side goes on, so that
+         * leaving Outlands can give it back. This has to happen before the
+         * swap: once the POST returns, the member's own avatar is gone from
+         * the store and there is nothing left to remember.
+         */
+        rememberAvatarBeforeOutlands(this.$store.data.user.avatar);
         const response = await this.$http.post("/member/update_avatar", {
           avatarId: avatar.id,
         });

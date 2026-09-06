@@ -52,6 +52,8 @@ import {
   isOutlands,
   outlandsTeamOfAvatar,
   OUTLANDS_SPAWNS,
+  avatarToRestoreAfterOutlands,
+  forgetAvatarBeforeOutlands,
 } from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
@@ -256,6 +258,54 @@ export default Vue.extend({
       }
       this.sharedObjects = objects;
     },
+    /*
+     * Puts back the avatar the Outlands entrance replaced.
+     *
+     * Nothing happens unless the entrance actually left a note, so an ordinary
+     * member joining an ordinary place pays nothing for this. A failed restore
+     * is not worth interrupting a world load for - the member simply keeps the
+     * avatar they are wearing - but the note is dropped either way, so a
+     * broken avatar row cannot make every future place join retry forever.
+     */
+    async restoreAvatarAfterOutlands(generation: number): Promise<void> {
+      const wanted = avatarToRestoreAfterOutlands();
+      if (!wanted) return;
+      if (!this.$store.data.isUser) return;
+      /*
+       * Already back in their own clothes: drop the note and move on. The
+       * store types the avatar id as a string because it arrives inside the
+       * member's token, so the comparison is made on numbers.
+       */
+      if (this.$store.data.user.avatar && Number(this.$store.data.user.avatar.id) === wanted) {
+        forgetAvatarBeforeOutlands();
+        return;
+      }
+      try {
+        const response = await this.$http.post("/member/update_avatar", { avatarId: wanted });
+        if (generation !== this.worldGeneration) return;
+        const list = await this.$http.get("/avatar");
+        if (generation !== this.worldGeneration) return;
+        const restored = (list.data.avatars || []).find(a => a.id === wanted);
+        /*
+         * The token carries the avatar row but nothing decodes it back into
+         * the store, so the fields the world reads are written here - the same
+         * thing the entrance does on the way in.
+         */
+        this.$store.methods.setToken(response.data.token);
+        if (restored) {
+          this.$store.data.user.avatar.id = restored.id;
+          this.$store.data.user.avatar.name = restored.name;
+          this.$store.data.user.avatar.filename = restored.filename;
+          this.$store.data.user.avatar.directory = restored.directory;
+          this.$store.data.user.avatar.image = restored.image;
+        }
+      } catch (e) {
+        debugMsg("could not restore the avatar worn before Outlands");
+      } finally {
+        forgetAvatarBeforeOutlands();
+      }
+    },
+
     async loadAndJoinPlace(): Promise<void> {
       // Claim this run. Anything below that survives an await belongs to an old
       // world once a newer run has claimed a higher generation.
@@ -299,6 +349,18 @@ export default Vue.extend({
            */
           this.$store.methods.setView3d(true);
         }
+      } else {
+        /*
+         * Anywhere that is not Outlands, the citizen gets their own avatar
+         * back. The entrance dressed them for a side because in Outlands the
+         * avatar file is what carries the side; outside it, a member should
+         * not be left in uniform, and the team avatars reach for a weapon on a
+         * host that no longer exists. Done on the join rather than on the way
+         * out, because leaving is very often a page load and there is no
+         * reliable moment of departure to hang it on.
+         */
+        await this.restoreAvatarAfterOutlands(generation);
+        if (generation !== this.worldGeneration) return;
       }
 
       if(this.$route.params.username){
@@ -827,7 +889,7 @@ export default Vue.extend({
             y: vec3f.y,
             z: vec3f.z,
           }),
-          fromJSON: (vec3f) => new X3D.SFVec2f(vec3f.x, vec3f.y, vec3f.z),
+          fromJSON: (vec3f) => new X3D.SFVec3f(vec3f.x, vec3f.y, vec3f.z),
         },
       };
       try {
