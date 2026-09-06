@@ -29,6 +29,9 @@ export interface WorldBrowserData {
     showUpdateWarning: boolean;
     mainComponent: any;
     force2d: boolean;
+    /* TEMPORARY Outlands compatibility: the member has not picked a side yet,
+     * so the entrance screen stays up and ne_game.wrl is not loaded. */
+    outlandsTeamNeeded: boolean;
     pet: any;
     clickId: string;
 }

@@ -42,6 +42,11 @@ import {
   debugMsg,
   environment,
 } from "@/helpers";
+import {
+  isOutlands,
+  outlandsTeamOfAvatar,
+  OUTLANDS_SPAWNS,
+} from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -79,6 +84,12 @@ export default Vue.extend({
       showUpdateWarning: false,
       mainComponent: null,
       force2d: false,
+      /*
+       * TEMPORARY Outlands compatibility. True when Outlands was asked for by
+       * a member who has not picked a side yet, which keeps the entrance
+       * screen up and stops ne_game.wrl from loading at all.
+       */
+      outlandsTeamNeeded: false,
       pet: null,
       clickId: null,
     };
@@ -256,6 +267,21 @@ export default Vue.extend({
         this.force2d = true;
       }
 
+      /*
+       * TEMPORARY Outlands compatibility - X_ITE 16.2.0 migration only.
+       *
+       * Outlands takes a member's side from the avatar they wear, and a member
+       * with no side is parked under the map by the world itself. The
+       * historical entry page made them pick a side before the world loaded,
+       * so the entrance screen stands in for it here. See @/libs/outlands.
+       */
+      this.outlandsTeamNeeded = false;
+      if (isOutlands(this.$store.data.place)
+          && !outlandsTeamOfAvatar(this.$store.data.user && this.$store.data.user.avatar)) {
+        this.outlandsTeamNeeded = true;
+        this.force2d = true;
+      }
+
       if(this.$route.params.username){
         if(this.$store.data.place.assets_dir === null) {
           this.force2d = true;
@@ -273,9 +299,14 @@ export default Vue.extend({
         }
         this.loaded = true;
         this.startX3DListeners(browser, generation);
+        this.applyTemporaryOutlandsSpawn(browser);
       } else {
 
-        if(this.$store.data.place.type === "shop"){
+        if(this.outlandsTeamNeeded){
+          this.mainComponent = () => import(
+            "@/components/place/outlands/entrance.vue"
+          );
+        } else if(this.$store.data.place.type === "shop"){
           this.mainComponent = () => import(
             "@/components/place/mall/main2d.vue"
           );
@@ -828,6 +859,97 @@ export default Vue.extend({
         console.warn("could not publish the avatar identity", error);
       }
     },
+    /*
+     * TEMPORARY Outlands compatibility - X_ITE 16.2.0 migration only.
+     *
+     * ne_game.wrl's `battle_view` Viewpoint is authored at 0 -1000 0 and is
+     * the first Viewpoint in the file, so it is what the browser binds. That
+     * is not a fault: it is where a member with no side has always waited
+     * while `set_team` works out which side they are on and calls
+     * `set_viewpoint()` to move them. The battle Script is not yet whole on
+     * X_ITE 16, so on this branch nobody is ever moved off the parking spot.
+     *
+     * This bridge does the one thing a citizen needs in the meantime. It reads
+     * the side off the avatar the member is wearing - the same rule set_team
+     * uses - and binds a fresh Viewpoint at one of that side's own spawns.
+     *
+     * A fresh node is used on purpose. Writing a position into `battle_view`
+     * would fight the camera offset the member has already built up falling
+     * from the parking spot, because X_ITE keeps that offset per Viewpoint. A
+     * newly created Viewpoint starts with no offset, so binding it puts the
+     * camera exactly where the historical spawn says, and `jump TRUE` makes
+     * the bind a move rather than an animation.
+     *
+     * The spawns are read out of the loaded world where possible, so this
+     * cannot drift away from the content. The table in @/libs/outlands is a
+     * copy of the same fields and is only a fallback.
+     *
+     * Full spawn ownership stays with the battle Script and returns to it in
+     * the dedicated Outlands restoration lane. Nothing here handles matches,
+     * respawn, the Game Master or scoring.
+     */
+    applyTemporaryOutlandsSpawn(browser: any): void {
+      if (!isOutlands(this.$store.data.place)) {
+        return;
+      }
+      const team = outlandsTeamOfAvatar(this.$store.data.user && this.$store.data.user.avatar);
+      if (!team) {
+        return;
+      }
+      try {
+        const scene = browser.currentScene;
+        if (!scene) return;
+
+        const spawns = this.outlandsSpawnTable(scene, team);
+        const index = Math.floor(spawns.position.length * Math.random());
+        const position = spawns.position[index];
+        const orientation = spawns.orientation[index];
+
+        const viewpoint = scene.createNode("Viewpoint");
+        viewpoint.description = "CTR temporary Outlands team spawn";
+        viewpoint.position = new X3D.SFVec3f(position[0], position[1], position[2]);
+        viewpoint.orientation = new X3D.SFRotation(
+          orientation[0], orientation[1], orientation[2], orientation[3],
+        );
+        viewpoint.jump = true;
+        scene.addRootNode(viewpoint);
+        viewpoint.set_bind = true;
+
+        /* A reading hook for the temporary-entry gate. It records what the
+         * bridge aimed at; the gate still measures where the camera ended up. */
+        (window as any).ctrTemporaryOutlandsSpawn = {
+          team,
+          index,
+          position,
+          orientation,
+          source: spawns.source,
+        };
+      } catch (error) {
+        console.warn("could not place the member at an Outlands team spawn", error);
+      }
+    },
+    /*
+     * TEMPORARY Outlands compatibility. The spawns belong to the world, so
+     * they are read back out of `DEF battle Script`'s `red_view_pos` /
+     * `blue_view_pos` fields when X_ITE will hand them over, and only fall
+     * back to the copy in @/libs/outlands when it will not.
+     */
+    outlandsSpawnTable(scene: any, team: number): any {
+      const fallback = Object.assign({ source: "libs/outlands" }, OUTLANDS_SPAWNS[team]);
+      try {
+        const battle = scene.getNamedNode("battle");
+        if (!battle) return fallback;
+        const prefix = team === 1 ? "red" : "blue";
+        const position = Array.from(battle.getField(`${prefix}_view_pos`))
+          .map((value: any) => [value.x, value.y, value.z]);
+        const orientation = Array.from(battle.getField(`${prefix}_view_or`))
+          .map((value: any) => [value.x, value.y, value.z, value.angle]);
+        if (!position.length || position.length !== orientation.length) return fallback;
+        return { position, orientation, source: "ne_game.wrl" };
+      } catch (error) {
+        return fallback;
+      }
+    },
     async startX3D(): Promise<any> {
       if (!this.browser) {
         this.browser = X3D.createBrowser();
@@ -1000,8 +1122,13 @@ export default Vue.extend({
   },
   mounted() {
     this.startSocketListeners();
+    /* TEMPORARY Outlands compatibility: the entrance screen wears the avatar
+     * that carries the member's side, and the world can be loaded once it has. */
+    this.$root.$on("outlands-team-selected", this.loadAndJoinPlace);
   },
-  beforeDestroy() {},
+  beforeDestroy() {
+    this.$root.$off("outlands-team-selected", this.loadAndJoinPlace);
+  },
   async beforeCreate() {
     await this.$socket.start();
   },
