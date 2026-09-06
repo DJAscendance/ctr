@@ -55,7 +55,12 @@
           <div class="flex flex-row justify-center" v-if="$store.data.place.name">
             <span class="inline" style="color:lime;">{{ $store.data.place.name }}</span> 
           </div>
-            <div class="flex flex-row justify-center">
+            <!--
+              Outlands never offered a 2D/3D choice: its entrance led straight
+              into the 3D battle zone and there was no 2D Outlands room. The
+              selector is withheld while the historical entrance is up.
+            -->
+            <div class="flex flex-row justify-center" v-if="!outlandsEntrance">
               <img src="/assets/img/b2dchat.gif" @click="$store.methods.setView3d(false)"
                   class="cursor-pointer"/>
               <img src="/assets/img/b3dchat.gif" @click="$store.methods.setView3d(true)"
@@ -84,7 +89,16 @@
                   class="cursor-pointer" style="width: 85px; height: 70px;" />
             </div>
             <div class="flex justify-center" v-else>
-              <img src="/assets/img/outlandico.jpeg" />
+              <!--
+                The Outlands event button. Historically this art was the
+                control panel's Outlands entry point: place_002.html wraps
+                outlandico.jpg in a link to `place?plc=ne_game` with
+                target="_top". The legacy resolver maps that same `plc` name to
+                the `outlands` slug, so this route is the same destination.
+              -->
+              <router-link to="/place/outlands">
+                <img src="/assets/img/outlandico.jpeg" alt="Enter Outlands" />
+              </router-link>
             </div>
             <div class="px-8">
               <select
@@ -146,6 +160,7 @@ import SecurityAlertModal from './components/modals/SecurityAlertModal.vue';
 import CitizenOnlineModal from './components/modals/CitizenOnlineModal.vue';
 import ModalService from "./components/modals/services/ModalService.vue";
 import ClockPage from "./components/Clock.vue";
+import { outlandsEntranceActive } from "@/libs/outlands";
 import InstantMessageModal from './components/modals/InstantMessageModal.vue';
 
 declare const X3D: any;
@@ -450,7 +465,10 @@ export default Vue.extend({
     }
   },
   computed: {
-
+    /** True while the historical Outlands entrance replaces the place screen. */
+    outlandsEntrance(): boolean {
+      return outlandsEntranceActive(this.$store.data.place, this.$store.data.user);
+    },
   },
 });
 </script>

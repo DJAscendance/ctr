@@ -13,7 +13,13 @@
     <div v-show="!this.$store.data.view3d || force2d" class="w-full flex-1">
       <component :is="mainComponent"></component>
     </div>
-    <div class="flex flex-none h-1/3 bg-chat">
+    <!--
+      The historical Outlands entrance is an entrance and instruction screen,
+      not a place. It had no 2D Outlands room and no chat panel beneath it, so
+      the normal place chat is withheld until a side has been chosen and the
+      world is the thing on screen.
+    -->
+    <div class="flex flex-none h-1/3 bg-chat" v-if="!outlandsTeamNeeded">
       <chat
         ref="chat"
         v-if="loaded"
@@ -276,10 +282,23 @@ export default Vue.extend({
        * so the entrance screen stands in for it here. See @/libs/outlands.
        */
       this.outlandsTeamNeeded = false;
-      if (isOutlands(this.$store.data.place)
-          && !outlandsTeamOfAvatar(this.$store.data.user && this.$store.data.user.avatar)) {
-        this.outlandsTeamNeeded = true;
-        this.force2d = true;
+      if (isOutlands(this.$store.data.place)) {
+        if (!outlandsTeamOfAvatar(this.$store.data.user && this.$store.data.user.avatar)) {
+          this.outlandsTeamNeeded = true;
+          this.force2d = true;
+        } else if (!this.$store.data.view3d) {
+          /*
+           * Outlands is a 3D place and only ever was one: the historical
+           * entrance offered no 2D/3D choice and there was no 2D Outlands
+           * room, so there is no components/place/outlands/main2d.vue for the
+           * 2D branch below to import. A member whose default is 2D is moved
+           * to 3D on the way in. The write is synchronous, so this run reads
+           * the new value straight away; the flag's own watcher then starts a
+           * second run, and worldGeneration abandons this one so the world is
+           * still only built once.
+           */
+          this.$store.methods.setView3d(true);
+        }
       }
 
       if(this.$route.params.username){
