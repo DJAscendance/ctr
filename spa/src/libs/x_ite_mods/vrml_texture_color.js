@@ -1,3 +1,7 @@
+// X_ITE publishes its runtime as the browser global X3D; it is loaded from the
+// CDN in spa/public/index.html, not imported, so declare it for the linter.
+/* global X3D */
+
 (function () {
 
   /*
