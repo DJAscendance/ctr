@@ -35,7 +35,7 @@ texture "./bluef.jpg"
 r_wrist_children[
 #Transform{translation -.2 .03 0 rotation 0 -1 0 1.571 children[ Inline{url "http://www.colonycity.com/places/ne_game/vrml/weapons/beamer.wrl"}]}
 #Transform{translation -.2 .03 0 rotation 0 -1 0 1.571 children[ Inline{url "http://www.colonycity.com/places/ne_game/vrml/weapons/repulsor.wrl"}]}
-Transform{translation -.15 .03 0 rotation 0 -1 0 1.571 children[ Inline{url "http://www.cybertown.com/places/ne_game/vrml/weapons/aapd.wrl"}]}
+Transform{translation -.15 .03 0 rotation 0 -1 0 1.571 children[ Inline{url "/assets/worlds/ne_game/vrml/weapons/aapd.wrl"}]}
 ] 
 
 }#END avatar 
