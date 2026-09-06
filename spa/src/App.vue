@@ -442,6 +442,7 @@ export default Vue.extend({
 
     // Each patch is isolated: one failing patch must not stop the others.
     const x3dPatches = [
+      "vrml_scalar_types.js",
       "vrml_texture_color.js",
       "vrml_nav_default.js",
       "relax_route.js",
@@ -450,7 +451,9 @@ export default Vue.extend({
       "viewpoint_bind.js",
       "allow_sf_string.js",
       "bxx_auth.js",
+      "bxx_events.js",
       "bxx_rayhit.js",
+      "bxx_avatars.js",
       "legacy_links.js",
       "scene_cache.js",
       //'speed_multiplier.js',

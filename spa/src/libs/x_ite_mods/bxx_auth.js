@@ -334,9 +334,25 @@
             get: function () {
                 var vp = activeViewpoint(this)
                 if (!vp) return new X3D.SFVec3f(0, 0, 0)
-                return typeof vp.getUserPosition === 'function'
+                var value = typeof vp.getUserPosition === 'function'
                     ? vp.getUserPosition()
                     : vp.userPosition
+                if (!value) return new X3D.SFVec3f(0, 0, 0)
+                /*
+                 * As with viewpointOrientation: getUserPosition() returns
+                 * X_ITE's internal Vector3, and its arithmetic returns more
+                 * Vector3s. That is invisible until a world mixes the two
+                 * families, which Outlands does on every shot -
+                 *
+                 *   we_start = Browser.viewpointPosition.add(...)
+                 *   ray.hitPoint.subtract(we_start)
+                 *
+                 * - where hitPoint is an SAI SFVec3f and cannot subtract a
+                 * Vector3. blaxxun only ever had the one kind of vector, so
+                 * this returns the kind a Script can use everywhere.
+                 */
+                if (value instanceof X3D.SFVec3f) return value
+                return new X3D.SFVec3f(value.x, value.y, value.z)
             },
             set: function (val) {
                 var vp = activeViewpoint(this)
@@ -353,9 +369,26 @@
             get: function () {
                 var vp = activeViewpoint(this)
                 if (!vp) return new X3D.SFRotation(0, 1, 0, 0)
-                return typeof vp.getUserOrientation === 'function'
+                var value = typeof vp.getUserOrientation === 'function'
                     ? vp.getUserOrientation()
                     : vp.userOrientation
+                if (!value) return new X3D.SFRotation(0, 1, 0, 0)
+                /*
+                 * getUserOrientation() hands back X_ITE's internal Rotation4,
+                 * which is a maths helper and not the SAI type. blaxxun handed
+                 * a Script the SFRotation itself, and Outlands uses every part
+                 * of it: fire() calls .multVec() to point the shot down the
+                 * line of sight, and send_repulsor indexes [1] and [3]. Only
+                 * the SAI value carries both.
+                 */
+                if (typeof value.multVec === 'function') return value
+                var axis = typeof value.getAxis === 'function' ? value.getAxis() : value
+                return new X3D.SFRotation(
+                    axis.x !== undefined ? axis.x : axis[0],
+                    axis.y !== undefined ? axis.y : axis[1],
+                    axis.z !== undefined ? axis.z : axis[2],
+                    value.angle,
+                )
             },
             set: function (val) {
                 var vp = activeViewpoint(this)
