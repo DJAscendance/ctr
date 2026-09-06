@@ -41,10 +41,17 @@ const OUT_DIR = process.argv[2]
   || path.join(__dirname, '..', '..', '..', '..', 'artifacts', 'collision');
 
 /* The Plaza is the densest world CTR serves and the one the QAFIX objects sit
- * in, so a long step through it is certain to meet geometry. */
+ * in. */
 const PLACE = 'enter';
-/* How far down the object is asked to travel. Down is used because the floor
- * is the one piece of solid geometry every world is guaranteed to have. */
+/* How far down the object is asked to travel. Down used to be chosen because
+ * "the floor is always there", but that was a bounding-box artefact: with the
+ * triangle narrow phase in place, the column under the Plaza's QAFIX spot
+ * contains no triangle at all between the object and -1200 (checked against
+ * every face in the world), so an unobstructed drop is the CORRECT answer.
+ * The blocked case is therefore given a wall of real triangle geometry,
+ * injected two metres below the object, which is also what proves the refusal
+ * comes from the right surface rather than from a box that merely spans the
+ * room. */
 const DROP = -60;
 
 const results = [];
@@ -170,6 +177,62 @@ function moveRun(page, spec) {
   }, spec);
 }
 
+/*
+ * Put a plate of real triangles two metres below the named QAFIX object, wide
+ * enough that the whole drag stays over it. Returns what a direct cast along
+ * the step reports, so the gate can assert the refusal is caused by exactly
+ * this surface. The plate is a root node of the live scene and disappears on
+ * the next world reload.
+ */
+function placeWall(page, name) {
+  return page.evaluate(async objName => {
+    const api = window.__ctr;
+    const scene = api.scene();
+    const b = X3D.getBrowser(document.querySelector('#world x3d-canvas'));
+    const V = (x, y, z) => new X3D.SFVec3f(x, y, z);
+    const objects = Array.from(scene.rootNodes)
+      .filter(n => api.typeName(n) === 'SharedObject')
+      .map(n => ({ node: n, name: api.readScalar(n, 'name') }))
+      .filter(o => typeof o.name === 'string' && o.name.indexOf('QAFIX ') === 0)
+      .sort((a, c) => (a.name < c.name ? -1 : 1));
+    const chosen = objects.find(o => o.name === objName) || objects[0];
+    if (!chosen) return { error: 'no QAFIX object' };
+    const body = api.protoBody(chosen.node);
+    const t1 = body && api.findByDef('T1', body)[0];
+    if (!t1) return { error: 'no T1' };
+    const p = api.readVec3(t1, 'translation');
+
+    const y = p[1] - 2;
+    const coord = scene.createNode('Coordinate');
+    coord.point = new X3D.MFVec3f(
+      V(p[0] - 20, y, p[2] - 20), V(p[0] + 20, y, p[2] - 20),
+      V(p[0] + 20, y, p[2] + 20), V(p[0] - 20, y, p[2] + 20),
+    );
+    const ifs = scene.createNode('IndexedFaceSet');
+    ifs.coord = coord;
+    ifs.coordIndex = new X3D.MFInt32(0, 1, 2, 3, -1);
+    const shape = scene.createNode('Shape');
+    shape.geometry = ifs;
+    shape.bboxCenter = V(p[0], y, p[2]);
+    shape.bboxSize = V(40, 0.02, 40);
+    const wall = scene.createNode('Transform');
+    wall.children = new X3D.MFNode(shape);
+    scene.addRootNode(wall);
+    window.__ctrQAWall = wall;
+    /* a node created at runtime carries a stale bbox until the next tick */
+    await new Promise(r => setTimeout(r, 1600));
+
+    const cast = b.computeRayHit(V(p[0], p[1], p[2]), V(p[0], p[1] - 60, p[2]));
+    return {
+      objectAt: p,
+      wallY: y,
+      castHits: !!cast,
+      castHitsWall: !!cast && cast.hitPath && cast.hitPath.indexOf(wall) >= 0,
+      castPoint: cast ? [cast.hitPoint.x, cast.hitPoint.y, cast.hitPoint.z] : null,
+    };
+  }, name || null);
+}
+
 const travelled = run => {
   if (!run.start || !run.end) return null;
   return Math.abs(run.end[0] - run.start[0])
@@ -185,6 +248,41 @@ const travelled = run => {
 
   /* Collision on - the historical default. Nothing is clicked. */
   await enterPlace(page, PLACE);
+
+  /* What the world itself answers under the object, before any fixture: the
+   * exact historical floor behaviour, recorded rather than gated. At the
+   * Plaza's QAFIX spot the column below is genuinely empty of triangles, so
+   * a downward step proceeds; a world whose floor does put faces under the
+   * object would refuse it. No floor snapping exists either way. */
+  record.floorBehaviour = await page.evaluate(() => {
+    const api = window.__ctr;
+    const b = X3D.getBrowser(document.querySelector('#world x3d-canvas'));
+    const V = (x, y, z) => new X3D.SFVec3f(x, y, z);
+    const obj = Array.from(api.scene().rootNodes)
+      .filter(n => api.typeName(n) === 'SharedObject')
+      .map(n => ({ node: n, name: api.readScalar(n, 'name') }))
+      .filter(o => typeof o.name === 'string' && o.name.indexOf('QAFIX ') === 0)
+      .sort((a, c) => (a.name < c.name ? -1 : 1))[0];
+    if (!obj) return null;
+    const body = api.protoBody(obj.node);
+    const t1 = body && api.findByDef('T1', body)[0];
+    if (!t1) return null;
+    const p = api.readVec3(t1, 'translation');
+    const down = b.computeRayHit(V(p[0], p[1], p[2]), V(p[0], p[1] - 1200, p[2]));
+    return {
+      objectAt: p,
+      downHit: !!down,
+      downPoint: down ? [down.hitPoint.x, down.hitPoint.y, down.hitPoint.z] : null,
+    };
+  });
+  check('floor behaviour recorded (informational)', record.floorBehaviour !== null,
+    record.floorBehaviour);
+
+  const wallOn = await placeWall(page, null);
+  record.wallOn = wallOn;
+  check('a wall of real triangles blocks the cast, and it is the wall',
+    !wallOn.error && wallOn.castHits === true && wallOn.castHitsWall === true, wallOn);
+
   const on = await moveRun(page, { drop: DROP, turnOff: false });
   record.on = on;
   if (on.error) {
@@ -203,6 +301,10 @@ const travelled = run => {
    * historical checkbox is clicked once. The world is reloaded first so the
    * PROTO instance starts from its own default again. */
   await enterPlace(page, PLACE);
+  /* The same wall is placed again, so collision OFF is proven to drive the
+   * same movement THROUGH the very surface that refused it. */
+  const wallOff = await placeWall(page, on.name);
+  record.wallOff = wallOff;
   const off = await moveRun(page, { drop: DROP, turnOff: true, name: on.name });
   record.off = off;
   if (off.error) {
