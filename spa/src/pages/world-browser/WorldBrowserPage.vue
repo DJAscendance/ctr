@@ -494,31 +494,67 @@ export default Vue.extend({
     async onAvatarAdded(event): Promise<void> {
       const ROTATE180 = new X3D.SFRotation(0, 1, 0, Math.PI);
 
-      const unique = (prefix) => {
-        this.uniqValue += 1;
-        return prefix + this.uniqValue.toString();
-      };
-
+      /*
+       * Waits for a member's avatar model to arrive.
+       *
+       * This used to watch the Inline with a LoadSensor. LoadSensor is an X3D
+       * node and every CTR world is VRML97, and X_ITE 16 enforces that:
+       * createNode("LoadSensor") throws "Node type 'LoadSensor' does not match
+       * specification version". The throw happened before the promise existed,
+       * so onAvatarAdded rejected without a handler, every member stayed at
+       * `loading: true` for ever, and nobody has seen anybody else in a 3D
+       * place since the move to 16. It is invisible in a single-client test,
+       * which is why it survived the migration; it took two clients in Outlands
+       * to find it, because Outlands is the world where a member who cannot be
+       * seen also cannot be shot.
+       *
+       * X_ITE has no VRML97-legal load event to replace it with - Inline
+       * exposes neither isLoaded nor loadState - so the Inline is added to the
+       * scene, which is what starts the fetch, and its scene is watched for
+       * content. The wait is bounded: a model that never arrives settles as a
+       * failure rather than leaving the member half-added.
+       */
       const loadInlineAsync = (browser, url) => {
-        browser.endUpdate();
-        //todo: error coming from here about 'url' = ''
         const inline = browser.currentScene.createNode("Inline");
         inline.url = new X3D.MFString(url);
-        const loadSensor = browser.currentScene.createNode("LoadSensor");
-        loadSensor.watchList[0] = inline;
-        const callbackKey = {};
-        const promise = new Promise((resolve, reject) => {
-          loadSensor.addFieldCallback(callbackKey, "isLoaded", (value) => {
-            loadSensor.removeFieldCallback(callbackKey, "isLoaded");
-            if (value) {
-              resolve(inline);
-            } else {
-              reject(inline);
+        browser.currentScene.addRootNode(inline);
+
+        /* The loaded content sits on the concrete node behind X_ITE 16's SAI
+         * facade, found by capability rather than by symbol position, the same
+         * way bxx_rayhit.js reaches a node's geometry. */
+        const concrete = (node) => {
+          for (const symbol of Object.getOwnPropertySymbols(node)) {
+            const value = node[symbol];
+            if (value && typeof value === "object"
+              && typeof value.getInternalScene === "function") return value;
+          }
+          return null;
+        };
+
+        const internal = concrete(inline);
+        return new Promise<any>((resolve, reject) => {
+          if (!internal) {
+            reject(new Error("Inline has no reachable internal scene"));
+            return;
+          }
+          let waited = 0;
+          const step = 100;
+          const limit = 20000;
+          const tick = () => {
+            const scene = internal.getInternalScene();
+            if (scene && scene.rootNodes && scene.rootNodes.length) {
+              resolve({ inline, scene });
+              return;
             }
-          });
+            waited += step;
+            if (waited >= limit) {
+              reject(new Error(`avatar model did not load: ${url}`));
+              return;
+            }
+            setTimeout(tick, step);
+          };
+          setTimeout(tick, step);
         });
-        browser.beginUpdate();
-        return promise;
       };
 
       const browser = X3D.getBrowser(this.browser);
@@ -535,15 +571,42 @@ export default Vue.extend({
         const avURL = `/assets/avatars/${directory}/${filename}`;
 
         this.users[event.id].loading = true;
-        loadInlineAsync(browser, avURL).then((avInline) => {
-          const uniqueID = unique("Av-");
-          browser.currentScene.updateImportedNode(avInline, "Avatar", uniqueID);
-          const avImport = browser.currentScene.getImportedNode(uniqueID);
-          browser.currentScene.addRootNode(avInline);
+        loadInlineAsync(browser, avURL).then(({ inline: avInline, scene: avScene }) => {
+          /*
+           * The node that carries the member: its position, its facing, and
+           * its gestures.
+           *
+           * This used to be reached with updateImportedNode(inline, "Avatar")
+           * / getImportedNode. X3D's IMPORT only binds to a node the inlined
+           * scene has EXPORTed, and EXPORT is X3D syntax that no VRML97 avatar
+           * can carry - so X_ITE 16 handed back a stub. The stub has the right
+           * shape, accepts `set_position` without complaint, and drops it: every
+           * member in the room stood at the world origin, whatever the AV
+           * messages said. In Outlands that also made everyone unshootable,
+           * because the shot goes where the member appears to be.
+           *
+           * The avatar's own scene is reachable, so the node is taken from
+           * there instead: the DEF'd `Avatar` when the file has one, and the
+           * scene's first root node otherwise, which is the same node in an
+           * avatar whose whole content is one Avatar PROTO instance.
+           */
+          const avatarNode = (() => {
+            try {
+              const named = avScene.getNamedNode("Avatar");
+              if (named) return named;
+            } catch (error) { /* not every avatar DEFs it */ }
+            return avScene.rootNodes[0];
+          })();
           this.users[event.id].loading = false;
           this.users[event.id].loaded = true;
           this.users[event.id]["inline"] = avInline;
-          this.users[event.id]["import"] = avImport;
+          this.users[event.id]["import"] = avatarNode;
+          /* Outlands shoots at people, not at models: fire() walks the ray's
+           * hit path for a node that answers to 'Avatar' and sends the
+           * nickname it finds there. This is where that node gets its name. */
+          if (typeof browser.registerBlaxxunAvatar === "function") {
+            browser.registerBlaxxunAvatar(avInline, event.username);
+          }
 
           if (this.users[event.id]["inline"]) {
             if (
@@ -563,6 +626,12 @@ export default Vue.extend({
               );
             }
           }
+        }).catch((error) => {
+          /* A member whose model never arrived is not left half-added: the
+           * flags go back so a later AV:new for the same member can try again,
+           * and the empty Inline does not stay in the scene. */
+          console.warn("could not load a member's avatar", error);
+          if (this.users[event.id]) this.users[event.id].loading = false;
         });
       }
     },
@@ -608,9 +677,11 @@ export default Vue.extend({
       const { id } = event;
 
       if (this.users[id].inline) {
-        X3D.getBrowser(this.browser)
-          .currentScene
-          .removeRootNode(this.users[id].inline);
+        const browser = X3D.getBrowser(this.browser);
+        if (typeof browser.unregisterBlaxxunAvatar === "function") {
+          browser.unregisterBlaxxunAvatar(this.users[id].inline);
+        }
+        browser.currentScene.removeRootNode(this.users[id].inline);
       }
 
       if (this.users[id].import) {
@@ -980,6 +1051,12 @@ export default Vue.extend({
        * that owns addRoute, which is only reachable from a live browser. */
       if (typeof browser.installBlaxxunRouteShim === "function") {
         browser.installBlaxxunRouteShim();
+      }
+      /* And the route has to carry events, or Outlands has no weapon controls.
+       * Bound once per browser, not once per world, so the listener count stays
+       * flat as places are replaced. */
+      if (typeof browser.installBlaxxunEventDelivery === "function") {
+        browser.installBlaxxunEventDelivery();
       }
       this.applyAvatarIdentity(browser);
       browser.loadURL(new X3D.MFString(this.worldUrl), new X3D.MFString());
