@@ -8,6 +8,12 @@ export interface User {
         name: string;
         filename: string;
         gestures: string[];
+        /* The avatar row travels whole inside the member's token, so it carries
+         * the two columns that locate its files as well: `directory` names the
+         * folder under /assets/avatars and `image` its thumbnail. AvatarModal
+         * has always read `directory`; it was simply missing from this type. */
+        directory?: string;
+        image?: string;
     };
     roleName?: string;
     username?: string;

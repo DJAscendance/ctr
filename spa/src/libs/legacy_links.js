@@ -46,6 +46,19 @@ const LEGACY_PLACE_SLUGS = {
   "0000000000000916": "generalstore", // Grocery Store, served today as the General Store
 };
 
+/*
+ * Historical `plc` place names, mapped to the slug that serves the same place
+ * today. `plc` is the other way the historical site named a place: place.tmpl
+ * and enter.tmpl both address Outlands as plc=ne_game, and ne_game.wrl's
+ * set_team sends a member with no team back to
+ * `place?plc=ne_game`, which is the entry page that let them pick a side.
+ *
+ * Only names this repository has evidence for belong here.
+ */
+const LEGACY_PLACE_NAMES = {
+  ne_game: "outlands",
+};
+
 // Hosts the historical content links to for internal Cybertown destinations.
 const LEGACY_HOSTS = ["cybertown.com", "www.cybertown.com"];
 
@@ -130,10 +143,18 @@ function resolveLegacyUrl(url) {
     if (id && Object.prototype.hasOwnProperty.call(LEGACY_PLACE_SLUGS, id)) {
       return { route: `/#/place/${LEGACY_PLACE_SLUGS[id]}` };
     }
+    // A place link can name its destination with `plc` instead of an id.
+    const name = queryParam(parts.query, "plc");
+    if (name && Object.prototype.hasOwnProperty.call(LEGACY_PLACE_NAMES, name)) {
+      return { route: `/#/place/${LEGACY_PLACE_NAMES[name]}` };
+    }
+    if (name) {
+      return { unresolved: `no current place is known for historical place name ${name}` };
+    }
     return {
       unresolved: id
         ? `no current place is known for historical place id ${id}`
-        : "historical place link carries no ID parameter",
+        : "historical place link carries no ID or plc parameter",
     };
   }
 
@@ -142,5 +163,6 @@ function resolveLegacyUrl(url) {
 
 module.exports = {
   LEGACY_PLACE_SLUGS,
+  LEGACY_PLACE_NAMES,
   resolveLegacyUrl,
 };

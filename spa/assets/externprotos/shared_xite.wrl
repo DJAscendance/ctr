@@ -78,7 +78,14 @@ url "vrmlscript:
  function removeObjects(value, time) { objects_removed = value; }
  function set_myAvatarGesture(value, time) { myAvatarGestureToServer = value; }
  function myAvatarGestureFromServer(value, time) { myAvatarGesture_changed = value; }
- function set_myAvatarURL(value, time) { myAvatarURL_changed = value; }
+ // The historical place pickers changed identity through this eventIn, via
+ // sendEvent('change','set_avatar',...). Contact then republished the value as
+ // Browser.myAvatarURL, which is what ne_game.wrl reads to pick a team, so the
+ // browser has to see it too and not just the zone's own listeners.
+ function set_myAvatarURL(value, time) {
+   myAvatarURL_changed = value;
+   try { X3D.getBrowser().setMyAvatarURL(value); } catch(e) {}
+ }
 "
 }
 }
