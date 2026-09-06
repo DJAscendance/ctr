@@ -450,6 +450,7 @@ export default Vue.extend({
       "arrow_keys.js",
       "viewpoint_bind.js",
       "allow_sf_string.js",
+      "bxx_node_name.js",
       "bxx_auth.js",
       "bxx_events.js",
       "bxx_rayhit.js",
