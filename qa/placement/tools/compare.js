@@ -55,12 +55,19 @@ function loadCapture(target) {
     throw new Error(`no stored-*.json capture in ${target}`);
   }
   const storedCapture = readRecords(path.join(target, stored), 'stored');
+  /* The engine version of the merged capture. Stored placement data does not
+   * depend on the engine at all, so capture-stored.js writes a fixed control
+   * string into it; taking the label from there made a 16.2.0 run print as
+   * "15.1.12 -> 15.1.12" and read as though nothing had been compared. The
+   * rendered layer is the one the engine can move, so it names the run. */
+  let engine = storedCapture.engine;
   const merged = new Map();
   storedCapture.records.forEach(record => {
     merged.set(`${record.source}:${record.id}`, Object.assign({}, record));
   });
   if (rendered) {
     const renderedCapture = readRecords(path.join(target, rendered), 'rendered');
+    if (renderedCapture.engine) engine = renderedCapture.engine;
     renderedCapture.records.forEach(record => {
       const key = `${record.source}:${record.id}`;
       const existing = merged.get(key);
@@ -76,7 +83,7 @@ function loadCapture(target) {
     });
   }
   return {
-    engine: storedCapture.engine,
+    engine,
     commit: storedCapture.commit,
     capturedAt: storedCapture.capturedAt,
     records: Array.from(merged.values()),
