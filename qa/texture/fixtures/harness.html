@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CTR VRML97 texture semantics</title>
+  <style>
+    body { margin: 0; background: #000; }
+    x3d-canvas { display: block; width: 240px; height: 240px; float: left; }
+  </style>
+</head>
+<body>
+<script>
+  /*
+   * Loads every fixture scene side by side on the same X_ITE the SPA pins, with
+   * the same patch files the SPA loads. The tool that drives this page reads the
+   * rendered colour back out of each canvas.
+   *
+   * preserveDrawingBuffer is on so the colour can be read with drawImage; that
+   * also turns antialiasing off, which is what we want - the assertions are
+   * about colour, and an antialiased edge would only add noise.
+   */
+  function param (name) {
+    var match = new RegExp('[?&]' + name + '=([^&]*)').exec(location.search);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
+  var scenes = param('scenes').split(',').filter(Boolean);
+  var patches = param('patches').split(',').filter(Boolean);
+
+  window.CTR_LOADED = 0;
+  window.CTR_FAILED = [];
+
+  function loadScript (src) {
+    return new Promise(function (resolve) {
+      var element = document.createElement('script');
+      element.src = src;
+      element.onload = resolve;
+      element.onerror = function () { window.CTR_FAILED.push(src); resolve(); };
+      document.head.appendChild(element);
+    });
+  }
+
+  function addScenes () {
+    scenes.forEach(function (name) {
+      var canvas = document.createElement('x3d-canvas');
+      canvas.setAttribute('id', 'scene-' + name.split('_')[0]);
+      canvas.setAttribute('src', '/scenes/' + name);
+      canvas.setAttribute('preserveDrawingBuffer', 'true');
+      canvas.setAttribute('splashScreen', 'false');
+      canvas.addEventListener('load', function () { window.CTR_LOADED += 1; });
+      canvas.addEventListener('error', function () { window.CTR_FAILED.push(name); });
+      document.body.appendChild(canvas);
+    });
+  }
+
+  loadScript(param('engine'))
+    .then(function () {
+      return patches.reduce(function (chain, name) {
+        return chain.then(function () { return loadScript('/patches/' + name); });
+      }, Promise.resolve());
+    })
+    .then(addScenes);
+</script>
+</body>
+</html>

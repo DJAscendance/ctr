@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Byte-for-byte the same content as case a, in the modern X3D XML encoding.
+     X3D multiplies, so this one must NOT change. It is the guard that keeps
+     future .x3d, .glb, .gltf and .obj content on native X_ITE semantics. -->
+<X3D profile="Interchange" version="4.0">
+  <Scene>
+    <NavigationInfo type='"EXAMINE"' headlight="true"/>
+    <Viewpoint position="0 0 3"/>
+    <Background skyColor="0 0 0"/>
+    <Shape>
+      <Appearance>
+        <Material diffuseColor="1 0 0"/>
+        <ImageTexture url='"/assets/worlds/ad_col/vrml/wood.jpg"'/>
+      </Appearance>
+      <Box size="2 2 0.01"/>
+    </Shape>
+  </Scene>
+</X3D>
