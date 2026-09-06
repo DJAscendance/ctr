@@ -435,6 +435,7 @@ export default Vue.extend({
       "viewpoint_bind.js",
       "allow_sf_string.js",
       "bxx_auth.js",
+      "bxx_rayhit.js",
       "legacy_links.js",
       "scene_cache.js",
       //'speed_multiplier.js',
