@@ -278,6 +278,7 @@ async function readEntrance(page) {
   check('the Beamer information keeps its recovered copy',
     !!arm.text && arm.text.indexOf('beamed') > -1 && arm.text.indexOf('BEAMER') > -1);
   check('the Beamer information draws its recovered art', arm.artLoaded);
+  await page.screenshot({ path: path.join(OUT_DIR, 'entrance-weapon-panel.png') });
   await page.evaluate(() => {
     const btn = Array.from(document.querySelectorAll('.oe-info__box button'))
       .find(b => b.textContent.trim() === 'Close');

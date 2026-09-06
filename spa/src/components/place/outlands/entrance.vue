@@ -551,10 +551,15 @@ export default Vue.extend({
   white-space: nowrap;
 }
 
-/* Weapon information, in place of the historical control-panel frame. */
+/*
+ * Weapon information, in place of the historical control-panel frame. Fixed to
+ * the viewport, the way CTR's own modals are, so it stays centred wherever the
+ * long instructions have been scrolled to.
+ */
 .oe-info {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
