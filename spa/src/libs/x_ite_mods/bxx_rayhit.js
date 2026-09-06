@@ -165,13 +165,19 @@
     /* Slab test of a segment against an axis-aligned box. The segment is the
      * ray restricted to 0..1, because a blaxxun ray cast is bounded by its end
      * point rather than infinite. */
+    /* Returns where along the segment the box is entered, 0..1, or -1 for a
+     * miss. It used to return a bare boolean, and the caller then measured
+     * box-only hits in metres while triangle hits were measured as a fraction
+     * of the segment - two different scales compared against each other, so
+     * which shape won was arbitrary. The entry parameter is on the same scale
+     * as a triangle hit, so both can be ordered together. */
     function segmentHitsBox(origin, direction, min, max) {
         var enter = 0
         var exit = 1
         for (var axis = 0; axis < 3; axis += 1) {
             var d = direction[axis]
             if (Math.abs(d) < 1e-12) {
-                if (origin[axis] < min[axis] || origin[axis] > max[axis]) { return false }
+                if (origin[axis] < min[axis] || origin[axis] > max[axis]) { return -1 }
                 continue
             }
             var t1 = (min[axis] - origin[axis]) / d
@@ -179,9 +185,9 @@
             if (t1 > t2) { var swap = t1; t1 = t2; t2 = swap }
             if (t1 > enter) { enter = t1 }
             if (t2 < exit) { exit = t2 }
-            if (enter > exit) { return false }
+            if (enter > exit) { return -1 }
         }
-        return true
+        return enter
     }
 
     /* Moller-Trumbore, restricted to the 0..1 segment. Returns the distance
@@ -284,6 +290,19 @@
         if (skip && skip.has(node)) { return }
 
         var type = typeName(node)
+
+        /*
+         * The HUD is the member's own overlay and is not part of the world.
+         *
+         * blaxxun drew HUD children in screen space, after the scene, so a ray
+         * cast through the world never met them. X_ITE has no such pass - the
+         * HUD PROTO is an ordinary subtree pinned to the viewpoint - so without
+         * this every Outlands shot struck the weapon model held in front of the
+         * shooter's own camera, a hundredth of a metre away, and no shot ever
+         * reached anything else.
+         */
+        if (type === 'HUD') { return }
+
         var nextMatrix = matrix
         if (type === 'Transform') {
             nextMatrix = multiply(transformMatrix(node), matrix)
@@ -398,23 +417,37 @@
             for (var s = 0; s < shapes.length; s += 1) {
                 var bounds = shapeBounds(shapes[s])
                 if (!bounds) { continue }
-                if (!segmentHitsBox(origin, direction, bounds.min, bounds.max)) { continue }
+                var entry = segmentHitsBox(origin, direction, bounds.min, bounds.max)
+                if (entry < 0) { continue }
 
                 var geometry = fieldValue(shapes[s].node, 'geometry')
                 var faces = geometry ? triangles(geometry) : null
 
                 if (!faces) {
-                    /* No readable triangles: the bounding box is the answer.
-                     * Its distance is the box entry, approximated by its
-                     * centre, which is only used to order competing hits. */
-                    var centre = [
-                        (bounds.min[0] + bounds.max[0]) / 2 - origin[0],
-                        (bounds.min[1] + bounds.max[1]) / 2 - origin[1],
-                        (bounds.min[2] + bounds.max[2]) / 2 - origin[2],
-                    ]
-                    var d = Math.sqrt(centre[0] * centre[0] + centre[1] * centre[1] + centre[2] * centre[2])
-                    if (!best || d < best.distance) {
-                        best = { distance: d, shape: shapes[s], point: null }
+                    /* A box that already contains the ray's origin says
+                     * nothing about where its surface is, so it is not an
+                     * answer. Outlands is where that matters: the arena is
+                     * ringed by a 20000 x 500 x 20000 Cylinder, a primitive
+                     * this pass cannot tessellate, and its box holds every
+                     * player in the world. Counted as a hit it landed at the
+                     * shooter's own feet and stopped every shot dead. */
+                    if (entry <= 0) { continue }
+
+                    /* No readable triangles: the bounding box is the answer,
+                     * and the point is where the segment enters it. The old
+                     * fallback reported the shape's own origin instead, which
+                     * is not on the ray at all - an Outlands shot fired down
+                     * -Z came back with a hit point behind the shooter. */
+                    if (!best || entry < best.distance) {
+                        best = {
+                            distance: entry,
+                            shape: shapes[s],
+                            point: [
+                                origin[0] + direction[0] * entry,
+                                origin[1] + direction[1] * entry,
+                                origin[2] + direction[2] * entry,
+                            ],
+                        }
                     }
                     continue
                 }
