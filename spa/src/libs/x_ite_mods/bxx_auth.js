@@ -60,8 +60,33 @@
         b.getNavigationMode = function () { return navigationField(this, 'type') }
         b.setCollisionDetection = function (flag) { throw Error('UnimplementedBXXMethod'); }
         b.getCollisionDetection = function () { throw Error('UnimplementedBXXMethod'); }
-        b.setGravity = function (flag) { (flag) ? this.browserOptions.Gravity_ = 15 : this.browserOptions.Gravity_ = 0 }
-        b.getGravity = function () { return (this.browserOptions.Gravity_ == 0) ? false : true }
+        /*
+         * Blaxxun's setGravity is a plain on/off switch; X_ITE carries gravity as
+         * the numeric "Gravity" browser option (metres per second squared,
+         * 9.80665 by default). X_ITE 4 kept that value on a `browserOptions`
+         * property, which X_ITE 16 no longer exposes, so these go through the
+         * public setBrowserOption/getBrowserOption pair instead.
+         *
+         * Switching gravity back on restores the value the world was loaded
+         * with rather than a constant, so a Script that lifts a member and then
+         * releases them leaves the world exactly as it found it. The remembered
+         * value lives on the browser, so unloading a world mid-lift cannot leak
+         * a disabled state into the next one.
+         */
+        var DEFAULT_GRAVITY = 9.80665
+
+        b.setGravity = function (flag) {
+            if (flag) {
+                var restored = this.ctrGravityWhenEnabled_
+                this.setBrowserOption('Gravity',
+                    typeof restored === 'number' && restored > 0 ? restored : DEFAULT_GRAVITY)
+                return
+            }
+            var current = this.getBrowserOption('Gravity')
+            if (typeof current === 'number' && current > 0) { this.ctrGravityWhenEnabled_ = current }
+            this.setBrowserOption('Gravity', 0)
+        }
+        b.getGravity = function () { return this.getBrowserOption('Gravity') !== 0 }
         //b.setHeadlight = function(flag) { this.activeNavigationInfo_.headlight = flag }
         //b.getHeadlight = function() { return this.activeNavigationInfo_.headlight }
         b.setViewpointAnimation = function (flag) { throw Error('UnimplementedBXXMethod') }
