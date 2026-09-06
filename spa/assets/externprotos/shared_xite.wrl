@@ -266,6 +266,37 @@ geometry IndexedFaceSet{coord Coordinate{point[0 0 0,.15 -.1 0,.1 -.15 0,.15 .1 
 Shape{appearance Appearance{material Material{transparency 1}}geometry Sphere{radius .2}}
 ]}#END CancelButton
 
+Transform{ #Collision toggle
+# The VWP 5.1 object-move HUD carried a collision checkbox: a tick that the
+# member could clear to slide an object through a wall instead of being
+# stopped by it. Cybertown shipped it after the 2001 archive was taken, so the
+# geometry and the wording of the behaviour come from the VWP 5.1
+# commserv/community/home/vrml/sharedobject.wrl original.
+translation -0.075 -.058 0
+scale .06 .06 .06
+children[
+DEF crossTouch TouchSensor{}
+Shape{ #the box the tick sits in
+appearance Appearance{material Material{diffuseColor .06 .24 .39 transparency .3}}
+geometry IndexedFaceSet{solid FALSE
+coord Coordinate{point[-.06 -.06 0,.06 -.06 0,.06 .06 0,-.06 .06 0]}
+coordIndex[0,1,2,3,-1]}}
+DEF collisionOnOff Switch{
+whichChoice 0
+choice[
+DEF collision_kreuz Transform{
+rotation -1 0 0 -1.571
+scale 1.1 1 1.37
+children[
+Shape{
+appearance Appearance{material Material{diffuseColor .06275 .2353 .3882 ambientIntensity .2288 specularColor .045 .045 .045 shininess .2875}}
+geometry IndexedFaceSet{solid FALSE
+coord Coordinate{point[-.026 0 0,.001 0 -.032,.026 0 0,.04 0 0,.008 0 -.039,.039 0 -.073,.025 0 -.073,.001 0 -.045,-.022 0 -.073,-.037 0 -.073,-.006 0 -.038,-.04 0 0]}
+coordIndex[10,11,0,-1,10,0,1,-1,4,5,6,-1,4,6,7,-1,8,9,10,-1,7,8,10,-1,2,3,4,-1,1,2,4,-1,7,10,1,-1,7,1,4,-1]}}
+]}
+]}
+]}#END Collision toggle
+
 Transform{ #Rotation Control
 translation 0 -.054 0
 scale .16 .16 .16
@@ -328,6 +359,9 @@ eventIn SFVec3f set_Z
 eventIn SFRotation set_rotation
 eventIn SFBool set_done
 eventIn SFBool set_cancel
+eventIn SFBool collisionClicked
+eventOut SFInt32 switchCross
+field SFBool collisionDetection TRUE
 eventIn SFBool set_enable IS startMove
 eventIn MFString attributesFromServer IS attributesFromServer
 exposedField SFString name IS name
@@ -357,23 +391,54 @@ function set_enable(v,t){
   currentRotation = initialRotation;
   choice_changed = 0;
 }
+// Refuse a movement step that would drive the object into solid geometry.
+// This is the VWP 5.1 contract: cast a ray along the step, and if anything is
+// hit, do not apply the step. The object being moved is excluded from the cast
+// so that it cannot collide with itself; the 5.1 original hid the object for
+// the duration of the cast, which flickers when the step comes from a drag
+// rather than from a button press.
+function blocked(step){
+  if(!collisionDetection){return false;}
+  var browser = X3D.getBrowser();
+  if(typeof browser.computeRayHit != 'function'){return false;}
+  var to = currentPosition.add(step);
+  var hit = null;
+  try{
+    if(typeof browser.setRayHitIgnore == 'function'){browser.setRayHitIgnore([initialT1]);}
+    hit = browser.computeRayHit(currentPosition, to);
+  }catch(e){ hit = null; }
+  finally{
+    if(typeof browser.setRayHitIgnore == 'function'){browser.setRayHitIgnore(null);}
+  }
+  return hit != null;
+}
+function applyStep(step){
+  if(blocked(step)){return;}
+  currentPosition = currentPosition.add(step);
+  position_changed = currentPosition;
+}
 function set_X(v,t){
   newPosition = new X3D.SFRotation(X3D.getBrowser().viewpointOrientation).multVec((new SFVec3f(v[0],0,0)).subtract(XlastChange)).multiply(rate);
-  currentPosition = currentPosition.add(newPosition);
-  position_changed = currentPosition;
+  applyStep(newPosition);
   XlastChange = new SFVec3f(v[0],0,0);
 }
 function set_Y(v,t){
   newPosition = new X3D.SFRotation(X3D.getBrowser().viewpointOrientation).multVec((new SFVec3f(0,v[1],0)).subtract(YlastChange)).multiply(rate);
-  currentPosition = currentPosition.add(newPosition);
-  position_changed = currentPosition;
+  applyStep(newPosition);
   YlastChange = new SFVec3f(0,v[1],0);
 }
 function set_Z(v,t){
   newPosition = new X3D.SFRotation(X3D.getBrowser().viewpointOrientation).multVec((new SFVec3f(0,0,v[1])).subtract(ZlastChange)).multiply(rate);
-  currentPosition = currentPosition.add(newPosition);
-  position_changed = currentPosition;
+  applyStep(newPosition);
   ZlastChange = new SFVec3f(0,0,v[1]);
+}
+// The tick is shown when collision is on and hidden when it is off, and the
+// setting lasts only as long as this PROTO instance: VWP 5.1 held it in a
+// Script field, so it was never carried between objects, worlds or logins.
+function collisionClicked(clicked,t){
+  if(!clicked){return;}
+  if(collisionDetection){switchCross = -1; collisionDetection = false;}
+  else{switchCross = 0; collisionDetection = true;}
 }
 function set_rotation(v,t){
  rotation_changed = v;
@@ -417,6 +482,8 @@ ROUTE RotControlSensor.rotation_changed TO RotControlKnob.set_rotation
 ROUTE RotControlSensor.rotation_changed TO SOScript.set_rotation
 ROUTE SOScript.position_changed TO T1.set_translation
 ROUTE SOScript.rotation_changed TO T1.set_rotation
+ROUTE crossTouch.isActive TO SOScript.collisionClicked
+ROUTE SOScript.switchCross TO collisionOnOff.set_whichChoice
 ROUTE DoneButton.isActive TO SOScript.set_done
 ROUTE CancelButton.isActive TO SOScript.set_cancel
 ROUTE SOScript.choice_changed TO SOSwitch.set_whichChoice
