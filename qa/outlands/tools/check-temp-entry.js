@@ -109,7 +109,7 @@ async function settle(page, attempts) {
   for (let attempt = 0; attempt < (attempts || 22); attempt += 1) {
     await page.waitForTimeout(900);
     const done = await page.evaluate(() => {
-      if (document.body.innerText.indexOf('Choose the side') > -1) return true;
+      if (document.body.innerText.indexOf('Select an avatar to enter Outlands') > -1) return true;
       const c = document.querySelector('#world x3d-canvas');
       if (!c) return false;
       try { return X3D.getBrowser(c).currentScene.rootNodes.length > 0; } catch (e) { return false; }
@@ -122,7 +122,11 @@ async function settle(page, attempts) {
 async function readState(page) {
   return page.evaluate(() => {
     const worldDiv = document.querySelector('#world');
-    const entrance = document.body.innerText.indexOf('Choose the side') > -1;
+    /* The historical entrance's own instruction to the citizen, taken from
+     * ne_game/enter.tmpl. It is the line the screen exists to deliver, so it
+     * identifies the entrance without depending on any styling. */
+    const entrance = document.body.innerText
+      .indexOf('Select an avatar to enter Outlands') > -1;
     const canvas = document.querySelector('#world x3d-canvas');
     const out = {
       entranceVisible: entrance,
