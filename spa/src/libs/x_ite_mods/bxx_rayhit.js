@@ -65,6 +65,25 @@
         }
     }
 
+    /*
+     * A node's type name.
+     *
+     * KNOWN LIMIT, deliberately left alone here. Nodes walked out of `children`
+     * arrive as the SAI facade and answer getNodeTypeName(); a node read out of
+     * a field - a Shape's `geometry` above all - arrives as the concrete node
+     * behind the facade and answers getTypeName() instead. So no geometry is
+     * ever recognised and this whole pass is, in practice, bounding boxes only.
+     *
+     * Teaching it the second name is one line, and doing so is not a small
+     * change: the triangle reader below then runs for the first time, and it
+     * does not work either - fieldValue() on a Coordinate's `point` returns
+     * X_ITE's flat internal storage rather than a list of vectors, so every
+     * vertex reads as the origin and every shape becomes untouchable. Fixing
+     * the narrow phase properly changes what every world's rays answer, which
+     * is the collision gate's subject as much as Outlands', so it belongs to a
+     * lane that can re-run those gates. Recorded here so the next reader does
+     * not have to find it twice.
+     */
     function typeName(node) {
         try { return node.getNodeTypeName() } catch (err) { return '' }
     }
@@ -424,13 +443,12 @@
                 var faces = geometry ? triangles(geometry) : null
 
                 if (!faces) {
-                    /* A box that already contains the ray's origin says
-                     * nothing about where its surface is, so it is not an
-                     * answer. Outlands is where that matters: the arena is
-                     * ringed by a 20000 x 500 x 20000 Cylinder, a primitive
-                     * this pass cannot tessellate, and its box holds every
-                     * player in the world. Counted as a hit it landed at the
-                     * shooter's own feet and stopped every shot dead. */
+                    /* A box that already contains the ray's origin says nothing
+                     * about where its surface is, so it is not an answer. The
+                     * Outlands arena is ringed by a 20000-metre Cylinder whose
+                     * box holds every player in the world; counted as a hit it
+                     * put every shot at the shooter's own feet and stopped the
+                     * game dead. */
                     if (entry <= 0) { continue }
 
                     /* No readable triangles: the bounding box is the answer,
