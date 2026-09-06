@@ -99,3 +99,14 @@ export function outlandsTeamOfAvatar(avatar: any): number {
 export function isOutlands(place: any): boolean {
   return !!place && place.slug === OUTLANDS_SLUG;
 }
+
+/**
+ * True while the historical Outlands entrance stands in front of the world:
+ * Outlands has been asked for and the member is not wearing a side yet.
+ *
+ * The entrance replaces the ordinary place screen rather than sitting inside
+ * it, so the normal place chrome asks this before drawing itself.
+ */
+export function outlandsEntranceActive(place: any, user: any): boolean {
+  return isOutlands(place) && !outlandsTeamOfAvatar(user && user.avatar);
+}
