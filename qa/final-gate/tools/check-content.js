@@ -56,7 +56,10 @@ const WORLDS = [
   { key: 'plaza', label: 'Plaza', hash: '#/place/enter' },
   { key: 'mall', label: 'Mall', hash: '#/place/mall' },
   { key: 'hitek', label: 'Hi-Tek', hash: '#/place/hitek_col' },
-  { key: 'outlands', label: 'Outlands', hash: '#/place/outlands' },
+  /* Outlands does not mount until the member has picked a side, so the walk
+   * wears one of the four public team avatars first. See @/libs/outlands and
+   * qa/outlands/tools/check-temp-entry.js. */
+  { key: 'outlands', label: 'Outlands', hash: '#/place/outlands', wear: 'redm.wrl' },
   { key: 'adventure', label: 'Adventure', hash: '#/place/ad_col' },
   { key: 'innerrealms', label: 'Inner Realms', hash: '#/place/inrlms_col' },
   { key: 'electronicsstore', label: 'Electronics Store', hash: '#/place/electronicsstore' },
@@ -238,6 +241,18 @@ async function main() {
   for (const world of WORLDS) {
     current = { failures: [], types: {} };
     console.log(`\n${world.label}`);
+    if (world.wear) {
+      await page.evaluate(async filename => {
+        const app = document.querySelector('#app').__vue__;
+        const list = await app.$http.get('/avatar');
+        const row = list.data.avatars.find(a => a.filename === filename);
+        if (!row) return;
+        const res = await app.$http.post('/member/update_avatar', { avatarId: row.id });
+        app.$store.methods.setToken(res.data.token);
+        Object.assign(app.$store.data.user.avatar, row);
+      }, world.wear);
+      await page.waitForTimeout(1500);
+    }
     const roots = await enter(page, world.hash);
     await gesture(page);
     await page.waitForTimeout(2500);
@@ -438,7 +453,8 @@ async function main() {
    */
   console.log(`  note HUD instances built: Plaza ${plaza.census.HUD || 0},`
     + ` Mall ${mall.census.HUD || 0} (declared against dead blaxxun URLs),`
-    + ` Outlands ${out.hudNodes} (used but never declared in ne_game.wrl)`);
+    + ` Outlands ${out.hudNodes} (declared against the local externproto since`
+    + ' "compat: restore the Outlands HUD declaration")');
 
   fs.writeFileSync(path.join(OUT_DIR, 'content.json'),
     `${JSON.stringify({ capturedAt: new Date().toISOString(), worlds, results }, null, 2)}\n`);
