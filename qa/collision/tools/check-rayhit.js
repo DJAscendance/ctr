@@ -31,6 +31,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
 const USER = process.env.CTR_QA_USER || 'testqa';
@@ -70,7 +71,7 @@ async function enter(page, hash) {
 
 (async () => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const page = await browser.newPage();
 
   await login(page);
@@ -206,6 +207,50 @@ async function enter(page, hash) {
       scene.addRootNode(outer);
       added.push(outer);
 
+      /* Lanes 4200-4260: each transform kind on its own, so a regression in
+       * one of them cannot hide behind the combined lane above. Every plate
+       * is one square metre at the local origin, facing -Z, and every ray is
+       * fired along -Z, so the expected hit point is arithmetic. */
+
+      /* Lane 4200: translation only. Plate moved to (3, 4200, -6). */
+      const tOnly = scene.createNode('Transform');
+      tOnly.translation = V(3, 4200, -6);
+      tOnly.children = new X3D.MFNode(plate(0, 0, 0, 1));
+      scene.addRootNode(tOnly);
+      added.push(tOnly);
+
+      /* Lane 4220: rotation only. A +90-degree yaw maps (x,y,z) to (z,y,-x),
+       * so a plate centred at (0, 4220, -4) facing -Z becomes a plate centred
+       * at (-4, 4220, 0) facing -X. A ray along +X down z 0 must strike it at
+       * exactly (-4, 4220, 0), and a ray along -Z down the plate's old
+       * position must now miss. */
+      const rOnly = scene.createNode('Transform');
+      rOnly.rotation = new X3D.SFRotation(0, 1, 0, Math.PI / 2);
+      rOnly.children = new X3D.MFNode(plate(0, 4220, -4, 1));
+      scene.addRootNode(rOnly);
+      added.push(rOnly);
+
+      /* Lane 4240: translation and rotation together. The same yaw takes a
+       * plate at (0, 0, -4) to (-4, 0, 0); the translation then puts it at
+       * (16, 4240, 0). Getting the order the other way round would land it at
+       * x -4 or at z -4 instead, so the hit point is the whole test. */
+      const trBoth = scene.createNode('Transform');
+      trBoth.translation = V(20, 4240, 0);
+      trBoth.rotation = new X3D.SFRotation(0, 1, 0, Math.PI / 2);
+      trBoth.children = new X3D.MFNode(plate(0, 0, -4, 1));
+      scene.addRootNode(trBoth);
+      added.push(trBoth);
+
+      /* Lane 4260: scale only. A half-metre plate whose local centre is
+       * (0, 1065, -1.5) is scaled by 4, so in world it sits at y 4260, z -6,
+       * and its half-width grows from 0.5 to 2. A ray down x 1.5 therefore
+       * hits it, and the same ray would have missed it unscaled. */
+      const sOnly = scene.createNode('Transform');
+      sOnly.scale = V(4, 4, 4);
+      sOnly.children = new X3D.MFNode(plate(0, 1065, -1.5, 0.5));
+      scene.addRootNode(sOnly);
+      added.push(sOnly);
+
       /* Lane 4020: two solids on one ray; the front one must win. */
       const nearPlate = root(plate(0, 4020, -5, 2));
       root(plate(0, 4020, -10, 2));
@@ -279,6 +324,30 @@ async function enter(page, hash) {
       out.mixedScaleFrontOk = !!mHit2 && mHit2.hitPath.indexOf(frontPlate) >= 0;
 
       out.backFaceOk = !!hit(0, 4100, -5, 0, 4100, 5);
+
+      /* Isolated transform lanes, read back as hit coordinates. */
+      const tHit200 = hit(3, 4200, 4, 3, 4200, -20);
+      out.translationPoint = tHit200
+        ? [tHit200.hitPoint.x, tHit200.hitPoint.y, tHit200.hitPoint.z] : null;
+      out.translationOk = near(tHit200 && tHit200.hitPoint, 3, 4200, -6);
+      /* Off the translated plate's edge by two metres: must miss. */
+      out.translationMissOk = !hit(6, 4200, 4, 6, 4200, -20);
+
+      const rHit = hit(-8, 4220, 0, 8, 4220, 0);
+      out.rotationPoint = rHit ? [rHit.hitPoint.x, rHit.hitPoint.y, rHit.hitPoint.z] : null;
+      out.rotationOk = near(rHit && rHit.hitPoint, -4, 4220, 0);
+      /* The un-rotated plate faced -Z; a ray along -Z must now pass by it. */
+      out.rotationMissOk = !hit(0.9, 4220, 4, 0.9, 4220, -20);
+
+      const trHit = hit(-6, 4240, 0, 40, 4240, 0);
+      out.transRotPoint = trHit ? [trHit.hitPoint.x, trHit.hitPoint.y, trHit.hitPoint.z] : null;
+      out.transRotOk = near(trHit && trHit.hitPoint, 16, 4240, 0);
+
+      const sHit = hit(1.5, 4260, 4, 1.5, 4260, -20);
+      out.scalePoint = sHit ? [sHit.hitPoint.x, sHit.hitPoint.y, sHit.hitPoint.z] : null;
+      out.scaleOk = near(sHit && sHit.hitPoint, 1.5, 4260, -6);
+      /* Beyond the scaled plate's new edge at x 2: must miss. */
+      out.scaleMissOk = !hit(2.6, 4260, 4, 2.6, 4260, -20);
     } catch (err) {
       out.error = String(err && err.message || err);
     } finally {
@@ -301,11 +370,72 @@ async function enter(page, hash) {
     check('box-only hit in front outranks triangle hit behind', fixture.mixedScaleOk === true);
     check('triangle hit in front outranks box-only hit behind', fixture.mixedScaleFrontOk === true);
     check('a back face still counts', fixture.backFaceOk === true);
+    check('translation alone moves the triangles', fixture.translationOk === true, fixture.translationPoint);
+    check('translation alone: past the edge is a miss', fixture.translationMissOk === true);
+    check('rotation alone moves the triangles', fixture.rotationOk === true, fixture.rotationPoint);
+    check('rotation alone: the old facing is a miss', fixture.rotationMissOk === true);
+    check('translation and rotation together', fixture.transRotOk === true, fixture.transRotPoint);
+    check('scale alone stretches the triangles', fixture.scaleOk === true, fixture.scalePoint);
+    check('scale alone: past the new edge is a miss', fixture.scaleMissOk === true);
   }
 
   await page.screenshot({ path: path.join(OUT_DIR, 'rayhit-plaza.png') });
+
+  /*
+   * Ray cost, measured rather than guessed. The narrow phase added triangle
+   * work to every cast, so the closeout asks what a cast now costs in the
+   * three worlds that matter: the busiest public world, the heaviest
+   * historical world, and the one that fires rays as gameplay. Fifty casts per
+   * world, reported as median and worst, because a mean hides the worst case
+   * and the worst case is what a player feels. No budget is enforced here
+   * beyond the single-frame check above; this is evidence for a later
+   * decision, not an optimisation target.
+   */
+  const PERF_WORLDS = [
+    { name: 'Plaza', hash: '#/place/enter' },
+    { name: 'Hi-Tek', hash: '#/place/hitek_col' },
+    { name: 'Outlands', hash: '#/place/outlands' },
+  ];
+  const performance_ = {};
+  for (const world of PERF_WORLDS) {
+    await enter(page, world.hash);
+    await page.waitForTimeout(6000);
+    performance_[world.name] = await page.evaluate(() => {
+      const canvas = document.querySelector('#world x3d-canvas');
+      if (!canvas) return { error: 'no canvas' };
+      const b = X3D.getBrowser(canvas);
+      const V = (x, y, z) => new X3D.SFVec3f(x, y, z);
+      const at = b.viewpointPosition;
+      const times = [];
+      let hits = 0;
+      for (let i = 0; i < 50; i += 1) {
+        /* Sweep the ray around the viewer, so the sample is not one lucky
+         * direction: a full turn in yaw, fired 200 m out and 200 m down. */
+        const a = (i / 50) * Math.PI * 2;
+        const end = V(at.x + Math.sin(a) * 200, at.y - 200, at.z + Math.cos(a) * 200);
+        const t0 = performance.now();
+        const hit = b.computeRayHit(V(at.x, at.y, at.z), end);
+        times.push(performance.now() - t0);
+        if (hit) hits += 1;
+      }
+      times.sort((x, y) => x - y);
+      const round = v => Number(v.toFixed(2));
+      return {
+        casts: times.length,
+        hits,
+        medianMs: round(times[Math.floor(times.length / 2)]),
+        worstMs: round(times[times.length - 1]),
+        bestMs: round(times[0]),
+      };
+    });
+    process.stdout.write(`      ray cost ${world.name}: ${JSON.stringify(performance_[world.name])}\n`);
+  }
+  check('ray cost was measured in all three worlds',
+    PERF_WORLDS.every(w => performance_[w.name] && !performance_[w.name].error),
+    performance_);
+
   fs.writeFileSync(path.join(OUT_DIR, 'rayhit.json'),
-    JSON.stringify({ probe, fixture, results }, null, 2));
+    JSON.stringify({ probe, fixture, performance: performance_, results }, null, 2));
 
   await browser.close();
 
