@@ -802,12 +802,45 @@ export default Vue.extend({
       this.$socket.on("AV:new", event => this.onAvatarAdded(event));
       this.$socket.on("SE", event => this.onSharedEvent(event));
     },
+    /*
+     * Publish the member's chosen avatar as the browser's avatar identity.
+     *
+     * blaxxun Contact took this from the `vrmlmyavatar` client parameter, which
+     * Cybertown wrote per place - ne_game/enter3D.tmpl mapped the team the
+     * member picked on the Outlands entry page to one of five avatar URLs.
+     * CTR has no client parameter and one avatar selection for the whole city,
+     * so the identity comes from the avatar the member is wearing.
+     *
+     * It is set before loadURL because a world's Scripts read it during their
+     * own initialize(); ne_game.wrl's set_team runs three seconds after the
+     * world starts and decides the member's team from this value alone.
+     */
+    applyAvatarIdentity(browser): void {
+      const avatar = this.$store.data.user && this.$store.data.user.avatar;
+      if (!avatar || !avatar.directory || !avatar.filename) {
+        return;
+      }
+      const url = `${window.location.origin}/assets/avatars/${avatar.directory}/${avatar.filename}`;
+      try {
+        browser.setMyAvatarURL(url);
+        browser.myAvatarName = this.$store.data.user.username || "";
+      } catch (error) {
+        console.warn("could not publish the avatar identity", error);
+      }
+    },
     async startX3D(): Promise<any> {
       if (!this.browser) {
         this.browser = X3D.createBrowser();
         document.querySelector("#world").appendChild(this.browser);
       }
       const browser = X3D.getBrowser(this.browser);
+      /* Blaxxun let Scripts route the browser's own input events to
+       * themselves. X_ITE rejects that, and the shim has to sit on the class
+       * that owns addRoute, which is only reachable from a live browser. */
+      if (typeof browser.installBlaxxunRouteShim === "function") {
+        browser.installBlaxxunRouteShim();
+      }
+      this.applyAvatarIdentity(browser);
       browser.loadURL(new X3D.MFString(this.worldUrl), new X3D.MFString());
       return new Promise((resolve, reject) => {
         /*

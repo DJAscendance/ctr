@@ -37,12 +37,64 @@
 
 
         // Time
-        //var wst = X3D.getBrowser().getCurrentTime();
-        b.getWorldStartTime = function () { return wst }
+        /*
+         * The time the world now loaded started running.
+         *
+         * This used to return an undeclared `wst`, so every caller threw a
+         * ReferenceError. Outlands is where that showed: ne_game.wrl's
+         * initialize() calls getWorldStartTime() three times, the first of them
+         * before it starts the timer whose deactivation runs set_team, so the
+         * Script aborted and no member was ever put on a team - they stayed on
+         * the viewpoint at y = -1000 that a teamless member is parked on.
+         *
+         * The value is captured per scene rather than per browser: a world
+         * replacement has to reset it, or a Script in the second world would
+         * schedule its timers against the first world's clock.
+         */
+        b.getWorldStartTime = function () {
+            var scene = this.currentScene
+            if (this.worldStartScene_ !== scene) {
+                this.worldStartScene_ = scene
+                this.worldStartTime_ = this.getCurrentTime()
+            }
+            return this.worldStartTime_
+        }
         b.getTime = b.getCurrentTime;
         //Browser.prototype.getTime = function () { console.log('called gettime!'); return X3D.getBrowser.getCurrentTime() }
 
-        // Avatar
+        /*
+         * Avatar identity.
+         *
+         * blaxxun Contact took the member's avatar from the `vrmlmyavatar`
+         * client parameter and published it as Browser.myAvatarURL. Cybertown
+         * drove that parameter from the server: the Outlands entry template
+         * ne_game/enter3D.tmpl writes
+         *
+         *   T_style 1 -> .../ne_game/vrml/avatars/redm.wrl
+         *   T_style 2 -> .../redf.wrl      3 -> .../bluem.wrl
+         *   T_style 4 -> .../bluef.wrl     CKSM. -> .../gm.wrl
+         *
+         * and ne_game.wrl reads Browser.myAvatarURL back to decide which team
+         * the member is on. CTR has no client parameter, so the value is held
+         * here and set from the member's chosen avatar when a world loads.
+         *
+         * Two writers, matching the two the historical client had: the page,
+         * which sets it from the avatar the member is wearing, and a world,
+         * through BlaxxunZone's set_myAvatarURL eventIn - the route the
+         * historical place pickers used via sendEvent('change','set_avatar',...).
+         */
+        b.setMyAvatarURL = function (url) {
+            this.myAvatarURL_ = (typeof url === 'string') ? url : ''
+        }
+        Object.defineProperty(b, 'myAvatarURL', {
+            get: function () { return this.myAvatarURL_ || '' },
+            set: function (url) { this.setMyAvatarURL(url) },
+        });
+        Object.defineProperty(b, 'myAvatarName', {
+            get: function () { return this.myAvatarName_ || '' },
+            set: function (name) { this.myAvatarName_ = (typeof name === 'string') ? name : '' },
+        });
+
         b.setMyAvatar = function (node) { throw Error('UnimplementedBXXMethod') }
         b.showMyAvatar = function (flag) { throw Error('UnimplementedBXXMethod') }
         b.getThirdPersonView = function () { throw Error('UnimplementedBXXMethod') }
@@ -51,6 +103,92 @@
         b.setSoundEnabled = function (flag) { this.mute_ = flag }
         b.getSoundEnabled = function () { return this.mute_ }
 
+        /*
+         * Browser-sourced routes and the browser event mask.
+         *
+         * blaxxun let a Script route the browser's own input events to itself:
+         *
+         *   Browser.eventMask = Browser.eventMask | (1<<4) | (1<<5) | (1<<6)
+         *   Browser.addRoute(Browser, 'event_changed', self, 'onEvent')
+         *
+         * X_ITE's addRoute expects two X3D nodes and rejects the browser with
+         * "Bad ROUTE specification". That is what kept Outlands broken:
+         * ne_game.wrl makes this call on the third line of its initialize(), so
+         * the Script died before it could start the timer that puts a member on
+         * a team, and every member stayed on the parked viewpoint at y = -1000.
+         *
+         * These routes are accepted and recorded so the calling Script survives
+         * and the rest of its initialize() runs. Delivering the events is a
+         * separate piece of work and is deliberately not faked here: in
+         * Outlands the event route carries the weapon controls (D fires, W
+         * changes weapon, A pans) and the suppression of the blaxxun client's
+         * own shortcuts, none of which exist yet. A world that asks for browser
+         * events currently gets none, rather than getting wrong ones.
+         */
+        var browserRoutesWarned = false
+
+        /* The browser, not a node. Both carry getBrowser(), so that cannot
+         * separate them; an X3DNode carries getNodeTypeName() and the browser
+         * carries getVersion(), and neither carries the other's. */
+        function isBrowserNode(node) {
+            return !!node
+                && typeof node.getNodeTypeName !== 'function'
+                && typeof node.getVersion === 'function'
+        }
+
+        /*
+         * addRoute and deleteRoute are not declared on X3DBrowser. A class
+         * further along the browser's prototype chain owns them, and anything
+         * defined here would simply be shadowed by it - which is exactly what
+         * happened on the first attempt. So the shim goes on whichever
+         * prototype actually owns the method, located from a live browser.
+         * WorldBrowserPage calls this once per browser; the flag makes every
+         * call after the first free.
+         */
+        b.installBlaxxunRouteShim = function () {
+            var proto = Object.getPrototypeOf(this)
+            while (proto && !Object.prototype.hasOwnProperty.call(proto, 'addRoute')) {
+                proto = Object.getPrototypeOf(proto)
+            }
+            if (!proto || proto.blaxxunRouteShim_) { return }
+            proto.blaxxunRouteShim_ = true
+
+            var originalAddRoute = proto.addRoute
+            var originalDeleteRoute = proto.deleteRoute
+
+            proto.addRoute = function (fromNode, fromField, toNode, toField) {
+                if (isBrowserNode(fromNode)) {
+                    this.browserEventRoutes_ = this.browserEventRoutes_ || []
+                    this.browserEventRoutes_.push({ field: fromField, node: toNode, eventIn: toField })
+                    if (!browserRoutesWarned) {
+                        browserRoutesWarned = true
+                        console.warn(
+                            '[bxx_auth] a world routed the browser event ' + fromField
+                            + '; the route is recorded but browser events are not delivered yet',
+                        )
+                    }
+                    return
+                }
+                return originalAddRoute.apply(this, arguments)
+            }
+
+            proto.deleteRoute = function (fromNode, fromField, toNode, toField) {
+                if (isBrowserNode(fromNode)) {
+                    var routes = this.browserEventRoutes_ || []
+                    this.browserEventRoutes_ = routes.filter(function (r) {
+                        return !(r.field === fromField && r.node === toNode && r.eventIn === toField)
+                    })
+                    return
+                }
+                return originalDeleteRoute.apply(this, arguments)
+            }
+        }
+
+        Object.defineProperty(b, 'eventMask', {
+            get: function () { return this.eventMask_ || 0 },
+            set: function (mask) { this.eventMask_ = Number(mask) || 0 },
+        });
+
         // Navigation
         b.setNavigationMode = function (mode) {
             if (this.viewer_ != mode) { // Added due to Jail calling this constantly
@@ -58,8 +196,26 @@
             }
         }
         b.getNavigationMode = function () { return navigationField(this, 'type') }
-        b.setCollisionDetection = function (flag) { throw Error('UnimplementedBXXMethod'); }
-        b.getCollisionDetection = function () { throw Error('UnimplementedBXXMethod'); }
+        /*
+         * Avatar-versus-world collision, the setting the blaxxun client exposed
+         * as the "Collision Test" context-menu item and the C key.
+         *
+         * X_ITE has no global switch for it - collision is decided by the
+         * Collision nodes in the scene - so this records the flag rather than
+         * enforcing it. That is enough for the content CTR serves: Outlands
+         * calls setCollisionDetection(true) on every position tick to undo any
+         * press of C, and true is already the behaviour, so a member sees
+         * exactly what they saw historically. Throwing here did not: it killed
+         * ne_game.wrl's set_position on its first run.
+         *
+         * A world that switched collision off would not be honoured. None in
+         * the archive does, and adding it would mean a Collision-node override
+         * rather than a browser flag.
+         */
+        b.setCollisionDetection = function (flag) { this.collisionDetection_ = !!flag }
+        b.getCollisionDetection = function () {
+            return this.collisionDetection_ === undefined ? true : this.collisionDetection_
+        }
         /*
          * Blaxxun's setGravity is a plain on/off switch; X_ITE carries gravity as
          * the numeric "Gravity" browser option (metres per second squared,
