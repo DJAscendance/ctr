@@ -330,14 +330,26 @@ export default Vue.extend({
       pos_offset.y = 0;
       const dropPosition = pos.add(pos_offset);
       const dropRotation= new X3D.SFRotation(0, 1, 0, Math.atan2(pos_offset.x, pos_offset.z));
+      /*
+       * The four floats are read straight off the field objects. X_ITE 4 and 15
+       * kept the numbers on an internal `_value` holder whose members were the
+       * underscored `x_` / `y_` / `z_`; 16.2.0 removed it, so `dropPosition._value`
+       * is undefined and reading `.x_` off it threw before the request was ever
+       * sent. `.x` / `.y` / `.z` / `.angle` are the accessors on every version,
+       * which is what saveObjectLocation below has always used.
+       */
       const request = await this.$http.post(`/object_instance/${  objectId  }/drop`, {
         placeId: this.$store.data.place.id,
-        position: dropPosition._value,
+        position: {
+          x: dropPosition.x,
+          y: dropPosition.y,
+          z: dropPosition.z,
+        },
         rotation: {
-          x: dropRotation._value.x_,
-          y: dropRotation._value.y_,
-          z: dropRotation._value.z_,
-          angle: dropRotation._value.angle + Math.PI,
+          x: dropRotation.x,
+          y: dropRotation.y,
+          z: dropRotation.z,
+          angle: dropRotation.angle + Math.PI,
         },
       });
       this.sharedObjects.push(request.data.object_instance);
@@ -376,9 +388,16 @@ export default Vue.extend({
       if(/^[0-9]+$/.test(id)){
         objectSelected = true;
         target = this.sharedObjectsMap.get(id);
-        position = Object.values(target.translation._value);
-        rotation = Object.values(Object.values(target.rotation._value));
-        rotation.pop();
+        /*
+         * Same removed `_value` holder as dropObject. It used to be enumerable,
+         * so Object.values() lifted the numbers out of it in field order; on
+         * 16.2.0 the holder is gone and Object.values() on the field itself
+         * returns an empty array, which made every beam land at the origin.
+         * The angle is dropped because SFRotation is rebuilt from the axis
+         * below and the beam faces the target on its own.
+         */
+        position = [target.translation.x, target.translation.y, target.translation.z];
+        rotation = [target.rotation.x, target.rotation.y, target.rotation.z];
       } else {
         target = this.users[id];
         position = target.transform.pos;
