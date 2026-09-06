@@ -427,7 +427,7 @@ export default Vue.extend({
 
     // Each patch is isolated: one failing patch must not stop the others.
     const x3dPatches = [
-      "spec_color.js",
+      "vrml_texture_color.js",
       "vrml_nav_default.js",
       "relax_route.js",
       "relax_is.js",
