@@ -975,6 +975,7 @@ export default Vue.extend({
         browser.addBrowserCallback(this, eventType => {
           switch (eventType) {
           case X3D.X3DConstants.INITIALIZED_EVENT:
+            this.resetGravity(browser);
             this.applyNavigationDefaults(browser);
             resolve(browser);
             break;
@@ -985,6 +986,29 @@ export default Vue.extend({
           }
         });
       });
+    },
+    /*
+     * Gravity belongs to the world, not to the session.
+     *
+     * blaxxun's Browser.setGravity is a plain on/off switch, and X_ITE carries
+     * gravity as the numeric "Gravity" browser option, which is a property of
+     * the browser rather than of the scene. Four home templates switch it off
+     * while a lift or a transport effect runs (worlds/007, /008, /009, /00a),
+     * and a member who leaves one of them mid-effect - or whose effect Script
+     * never delivers its closing event - used to carry weightlessness into
+     * every world they visited afterwards.
+     *
+     * Every world therefore starts under normal gravity. A world that wants it
+     * off switches it off itself, as those four do.
+     */
+    resetGravity(browser: any): void {
+      try {
+        if (typeof browser.setGravity === "function") {
+          browser.setGravity(true);
+        }
+      } catch (error) {
+        console.warn("could not reset gravity for the new world", error);
+      }
     },
     /*
      * Blaxxun default: only the Walk and Fly viewers are offered.
