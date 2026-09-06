@@ -253,7 +253,14 @@ async function main() {
     current = { failures: [], consoleErrors: [], components: [] };
     const timings = [];
 
-    /* Cold: the first visit of the session. */
+    /*
+     * Cold: the first visit of the session. The session lands somewhere after
+     * login, and if that somewhere is the world about to be measured the URL
+     * never changes, so the run steps away first and the timing is of a real
+     * transition into the world.
+     */
+    const here = await page.evaluate(() => window.location.hash);
+    if (here === world.hash) await enter(page, world.key === 'plaza' ? '#/place/fleamarket' : '#/place/enter');
     const cold = await enter(page, world.hash);
     const survey = await page.evaluate(SURVEY_SOURCE);
     const fps = await measureFps(page);
@@ -262,11 +269,19 @@ async function main() {
       fullPage: false,
     });
 
-    /* Warm: leave to the Plaza and come back, once per extra sample. This also
-     * exercises world return, which several gates depend on separately. */
+    /*
+     * Warm: leave to another world and come back, once per extra sample. This
+     * also exercises world return, which several gates depend on separately.
+     *
+     * The world it leaves to has to differ from the world under test. Leaving
+     * the Plaza to the Plaza never changes the world URL, so readiness never
+     * fires and the Plaza - which the performance gate names explicitly - came
+     * back unmeasured.
+     */
+    const away = world.key === 'plaza' ? '#/place/fleamarket' : '#/place/enter';
     const warm = [];
     for (let sample = 1; sample < SAMPLES; sample += 1) {
-      await enter(page, '#/place/enter');
+      await enter(page, away);
       const again = await enter(page, world.hash);
       warm.push(again.totalMs);
     }
