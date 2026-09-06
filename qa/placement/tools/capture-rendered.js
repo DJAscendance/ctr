@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 const { CONTROL_ENGINE_VERSION, CONTROL_COMMIT, IMPLIED_SCALE } = require('../lib/contract');
 const { resolveRenderedPlacements } = require('../lib/rendered-identity');
 
@@ -62,10 +63,6 @@ const TARGETS = [
  * antiqueshop holds 10 and electronicsstore 1. Both are captured, because a
  * shared world means a per-place bug would otherwise hide behind a single pass.
  */
-
-const GPU_ARGS = [
-  '--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=gl',
-];
 
 /** Reads every SharedObject PROTO instance out of the live scene. */
 const READ_SCENE = () => {
@@ -184,7 +181,7 @@ async function leave(page) {
 
 async function main() {
   fs.mkdirSync(SHOTS, { recursive: true });
-  const browser = await chromium.launch({ headless: true, args: GPU_ARGS });
+  const browser = await launchBrowser({ args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const consoleErrors = [];
   page.on('console', message => {

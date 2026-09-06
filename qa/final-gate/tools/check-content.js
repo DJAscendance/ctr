@@ -32,6 +32,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const { SCENE_ACCESS_SOURCE } = require('../lib/scene-access');
 
@@ -197,11 +198,13 @@ async function gesture(page) {
 
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=gl',
+  const browser = await launchBrowser({
+    args: [
+      '--no-sandbox',
       '--autoplay-policy=no-user-gesture-required',
-      '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+    ],
   });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();

@@ -28,6 +28,7 @@
  */
 
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
 const USER = process.env.CTR_QA_USER || 'testqa';
@@ -156,10 +157,7 @@ async function press(page, key, ms) {
 }
 
 async function main() {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=gl'],
-  });
+  const browser = await launchBrowser({ args: ['--no-sandbox'] });
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
 
   const failures = [];

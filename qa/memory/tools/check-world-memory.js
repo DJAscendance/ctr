@@ -27,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const { PROBE_SOURCE } = require('../lib/probe');
 const { evaluateGates, formatReport } = require('../lib/gates');
@@ -150,14 +151,9 @@ async function forcedHeap(cdp) {
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  const browser = await chromium.launch({
-    headless: true,
+  const browser = await launchBrowser({
     args: [
       '--no-sandbox',
-      '--ignore-gpu-blocklist',
-      '--enable-gpu',
-      '--use-angle=gl',
-      /* performance.memory is coarse without this; the run wants real byte counts. */
       '--enable-precise-memory-info',
       '--js-flags=--expose-gc',
     ],

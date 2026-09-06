@@ -25,6 +25,7 @@
 
 const { execFileSync } = require('child_process');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 const { resolveRenderedPlacements } = require('../lib/rendered-identity');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
@@ -138,17 +139,7 @@ async function enter(page, route) {
 async function main() {
   const mallRows = mallRowIndex();
   const expected = expectedCounts();
-  const browser = await chromium.launch({
-    headless: true,
-    /*
-     * --disable-dev-shm-usage: Chromium's default /dev/shm is small, and dozens
-     * of consecutive world loads exhaust it, crashing the tab partway through a
-     * long run. That is a harness limit, not an app defect.
-     */
-    args: ['--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=gl',
-      '--disable-dev-shm-usage'].concat(
-      process.env.CTR_QA_SOFTWARE_GL ? ['--use-gl=swiftshader'] : []),
-  });
+  const browser = await launchBrowser({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const consoleErrors = [];
   let page = null;
   async function freshPage() {

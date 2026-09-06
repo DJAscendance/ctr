@@ -32,6 +32,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const { SCENE_ACCESS_SOURCE } = require('../lib/scene-access');
 
@@ -256,19 +257,19 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(path.join(OUT_DIR, 'screenshots'), { recursive: true });
 
-  const browser = await chromium.launch({
-    headless: true,
-    /*
-     * Background throttling has to be off for the minute-boundary check. A
-     * headless page with no input pending gets its timers and its rAF slowed
-     * to a crawl, and X_ITE drives its clock from that loop: an earlier run of
-     * this tool measured the engine advancing 1.6 seconds across a 70 second
-     * wait and reported a stopped clock, when what had stopped was the page.
-     */
-    args: ['--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=gl',
+  /*
+   * Background throttling has to be off for the minute-boundary check. A
+   * headless page with no input pending gets its timers and its rAF slowed
+   * down, and the Mall clock is read against the wall clock.
+   */
+  const browser = await launchBrowser({
+    args: [
+      '--no-sandbox',
       '--autoplay-policy=no-user-gesture-required',
-      '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
-      '--disable-backgrounding-occluded-windows'],
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+    ],
   });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();

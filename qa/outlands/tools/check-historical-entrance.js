@@ -27,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
 const USER = process.env.CTR_QA_USER || 'testqa';
@@ -194,7 +195,7 @@ async function readEntrance(page) {
 
 (async () => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const consoleErrors = [];
   page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });

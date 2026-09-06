@@ -36,6 +36,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const REPO = path.resolve(__dirname, '..', '..', '..');
 const FIXTURES = path.join(REPO, 'qa', 'texture', 'fixtures');
@@ -232,9 +233,7 @@ function assertions (by) {
     `&scenes=${SCENES.join(',')}` +
     (patched ? `&patches=${PATCHES.join(',')}` : '');
 
-  const browser = await chromium.launch({
-    args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-  });
+  const browser = await launchBrowser();
 
   let failed = 0;
 

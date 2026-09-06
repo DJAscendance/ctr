@@ -29,6 +29,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
 const LOADS = Number.parseInt(process.argv[2] || '40', 10);
@@ -177,11 +178,7 @@ async function forcedHeap(cdp) {
 async function main() {
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=gl',
-      '--enable-precise-memory-info'],
-  });
+  const browser = await launchBrowser({ args: ['--no-sandbox', '--enable-precise-memory-info'] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);

@@ -26,6 +26,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const { SCENE_ACCESS_SOURCE } = require('../lib/scene-access');
 
@@ -130,11 +131,13 @@ async function main() {
   for (const engine of ENGINES) {
     const server = await serve(engine);
     const port = server.address().port;
-    const browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=gl',
-        '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
-    });
+    const browser = await launchBrowser({
+    args: [
+      '--no-sandbox',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+    ],
+  });
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
     /* The world files live on the QA origin; the harness page does not. */

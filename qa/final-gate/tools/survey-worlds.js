@@ -30,6 +30,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 
 const { SURVEY_SOURCE } = require('../lib/world-probe');
 
@@ -205,10 +206,8 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(path.join(OUT_DIR, 'screenshots'), { recursive: true });
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=gl',
-      '--autoplay-policy=no-user-gesture-required'],
+  const browser = await launchBrowser({
+    args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'],
   });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();

@@ -32,6 +32,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
+const { launch: launchBrowser } = require('../../lib/browser');
 const { SCENE_ACCESS_SOURCE } = require('../../final-gate/lib/scene-access');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
@@ -242,7 +243,7 @@ const travelled = run => {
 
 (async () => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   const page = await browser.newPage();
   await login(page);
 
