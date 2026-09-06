@@ -30,7 +30,7 @@ exposedField MFNode l_wrist_children
 ]"./m.wrl#Avatar"
 
 
-Avatar{ 
+DEF Avatar Avatar{ 
 texture "./redm.jpg"
 r_wrist_children[
 #Transform{translation -.2 .03 0 rotation 0 -1 0 1.571 children[ Inline{url "http://www.colonycity.com/places/ne_game/vrml/weapons/beamer.wrl"}]}
