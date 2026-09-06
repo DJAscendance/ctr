@@ -424,18 +424,31 @@ function applyStep(step){
   currentPosition = currentPosition.add(step);
   position_changed = currentPosition;
 }
+// The member's own heading turns an axis button into a world-space step.
+//
+// Browser.viewpointOrientation reports the bound Viewpoint's user orientation.
+// That value is the engine's own rotation object, not an SAI SFRotation: it
+// carries x, y, z and angle but has no multVec. Passing it whole to
+// `new X3D.SFRotation(...)` does not convert it either - X_ITE's one-argument
+// constructor does not take a rotation, and produced (NaN, 0, 1, 0), so every
+// step multiplied out to NaN and the object's translation became NaN. The
+// four components are read across explicitly instead.
+function heading(){
+  var o = X3D.getBrowser().viewpointOrientation;
+  return new X3D.SFRotation(o.x, o.y, o.z, o.angle);
+}
 function set_X(v,t){
-  newPosition = new X3D.SFRotation(X3D.getBrowser().viewpointOrientation).multVec((new SFVec3f(v[0],0,0)).subtract(XlastChange)).multiply(rate);
+  newPosition = heading().multVec((new SFVec3f(v[0],0,0)).subtract(XlastChange)).multiply(rate);
   applyStep(newPosition);
   XlastChange = new SFVec3f(v[0],0,0);
 }
 function set_Y(v,t){
-  newPosition = new X3D.SFRotation(X3D.getBrowser().viewpointOrientation).multVec((new SFVec3f(0,v[1],0)).subtract(YlastChange)).multiply(rate);
+  newPosition = heading().multVec((new SFVec3f(0,v[1],0)).subtract(YlastChange)).multiply(rate);
   applyStep(newPosition);
   YlastChange = new SFVec3f(0,v[1],0);
 }
 function set_Z(v,t){
-  newPosition = new X3D.SFRotation(X3D.getBrowser().viewpointOrientation).multVec((new SFVec3f(0,0,v[1])).subtract(ZlastChange)).multiply(rate);
+  newPosition = heading().multVec((new SFVec3f(0,0,v[1])).subtract(ZlastChange)).multiply(rate);
   applyStep(newPosition);
   ZlastChange = new SFVec3f(0,0,v[1]);
 }
