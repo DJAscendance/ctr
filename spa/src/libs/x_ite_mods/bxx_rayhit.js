@@ -66,26 +66,18 @@
     }
 
     /*
-     * A node's type name.
+     * A node's type name, whichever of X_ITE's two node forms it arrives in.
      *
-     * KNOWN LIMIT, deliberately left alone here. Nodes walked out of `children`
-     * arrive as the SAI facade and answer getNodeTypeName(); a node read out of
-     * a field - a Shape's `geometry` above all - arrives as the concrete node
-     * behind the facade and answers getTypeName() instead. So no geometry is
-     * ever recognised and this whole pass is, in practice, bounding boxes only.
-     *
-     * Teaching it the second name is one line, and doing so is not a small
-     * change: the triangle reader below then runs for the first time, and it
-     * does not work either - fieldValue() on a Coordinate's `point` returns
-     * X_ITE's flat internal storage rather than a list of vectors, so every
-     * vertex reads as the origin and every shape becomes untouchable. Fixing
-     * the narrow phase properly changes what every world's rays answer, which
-     * is the collision gate's subject as much as Outlands', so it belongs to a
-     * lane that can re-run those gates. Recorded here so the next reader does
-     * not have to find it twice.
+     * Nodes walked out of `children` arrive as the SAI facade and answer
+     * getNodeTypeName(); a node read out of a field - a Shape's `geometry`
+     * above all - arrives as the concrete node behind the facade and answers
+     * getTypeName() instead. Both must be asked, in that order, or no geometry
+     * is ever recognised and the whole pass degrades to bounding boxes.
      */
     function typeName(node) {
-        try { return node.getNodeTypeName() } catch (err) { return '' }
+        try { return node.getNodeTypeName() } catch (err) { /* concrete node */ }
+        try { return node.getTypeName() } catch (err) { /* not a node */ }
+        return ''
     }
 
     /* ---- 4x4 matrices, row-major, applied as row-vector * matrix ---- */
@@ -167,15 +159,21 @@
         var center = vec3(fieldValue(node, 'center'), [0, 0, 0])
         var scaleOrientation = vec4(fieldValue(node, 'scaleOrientation'), [0, 0, 1, 0])
 
-        var m = translationMatrix(translation)
-        m = multiply(m, translationMatrix(center))
-        m = multiply(m, rotationMatrix(rotation))
-        m = multiply(m, rotationMatrix(scaleOrientation))
-        m = multiply(m, scaleMatrix(scale))
+        /* Row-vector composition applies the left factor first, so the chain
+         * is written in application order: -C, -SR, S, SR, R, C, T. The old
+         * version wrote it in the spec's column order, which applied the
+         * translation before the rotation and scale - every unrotated
+         * Transform hid it, and any rotated-and-translated one moved its
+         * geometry to the wrong place. */
+        var m = translationMatrix([-center[0], -center[1], -center[2]])
         m = multiply(m, rotationMatrix([
             scaleOrientation[0], scaleOrientation[1], scaleOrientation[2], -scaleOrientation[3],
         ]))
-        m = multiply(m, translationMatrix([-center[0], -center[1], -center[2]]))
+        m = multiply(m, scaleMatrix(scale))
+        m = multiply(m, rotationMatrix(scaleOrientation))
+        m = multiply(m, rotationMatrix(rotation))
+        m = multiply(m, translationMatrix(center))
+        m = multiply(m, translationMatrix(translation))
         return m
     }
 
@@ -241,6 +239,18 @@
 
     /* ---- geometry reading ---- */
 
+    /* A multi-value field read for element access, not for its value.
+     *
+     * getValue() on an MF field hands back X_ITE's internal storage - for
+     * MFVec3f a padded flat Float32Array whose layout is a renderer detail -
+     * so it must never be read that way here. The field object itself is the
+     * scene-graph representation: SAI array access, `field.length` for the
+     * logical count and `field[i]` for a typed element, is stable public
+     * behaviour and is what this reader uses. */
+    function mfField(node, name) {
+        try { return node.getField(name) } catch (err) { return null }
+    }
+
     /* Coordinates and triangles of the geometries CTR content actually uses.
      * Anything else falls back to its bounding box, which is the same answer
      * the historical HUD gave for geometry it could not tessellate. */
@@ -248,21 +258,25 @@
         var type = typeName(geometry)
         var coordNode = fieldValue(geometry, 'coord')
         if (!coordNode) { return null }
-        var pointField = fieldValue(coordNode, 'point')
+        var pointField = mfField(coordNode, 'point')
         if (!pointField || !pointField.length) { return null }
 
         var points = []
         for (var i = 0; i < pointField.length; i += 1) {
-            points.push(vec3(pointField[i], [0, 0, 0]))
+            /* A vertex that cannot be read is a reason to refuse the mesh,
+             * never a zero vector - a mesh of origins swallows every ray. */
+            var pv = vec3(pointField[i], null)
+            if (!pv) { return null }
+            points.push(pv)
         }
 
         var faces = []
         if (type === 'IndexedFaceSet') {
-            var index = fieldValue(geometry, 'coordIndex')
+            var index = mfField(geometry, 'coordIndex')
             if (!index || !index.length) { return null }
             var polygon = []
             for (var j = 0; j < index.length; j += 1) {
-                var value = typeof index[j] === 'number' ? index[j] : index[j].getValue()
+                var value = typeof index[j] === 'number' ? index[j] : Number(index[j])
                 if (value < 0) {
                     /* Fan-triangulate. VRML97 faces are planar and convex in
                      * practice, which is what a fan assumes. */
@@ -281,7 +295,7 @@
         }
 
         if (type === 'IndexedTriangleSet') {
-            var ti = fieldValue(geometry, 'index')
+            var ti = mfField(geometry, 'index')
             if (!ti || !ti.length) { return null }
             for (var t = 0; t + 2 < ti.length; t += 3) {
                 var p0 = points[ti[t]], p1 = points[ti[t + 1]], p2 = points[ti[t + 2]]
