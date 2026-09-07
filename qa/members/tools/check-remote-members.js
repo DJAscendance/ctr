@@ -146,9 +146,41 @@ const remotes = page => page.evaluate(() => {
   return { registry: reg, users };
 });
 
+/*
+ * Where the local citizen actually is, in the world's own coordinates.
+ *
+ * This used to read browser.viewpointPosition, which is not world space. That
+ * accessor returns the bound Viewpoint's getUserPosition() - the camera in the
+ * *Viewpoint's* coordinate system, after whatever Transforms it hangs below. In
+ * a world whose Viewpoints sit at the scene root, Plaza and Mall among them,
+ * that happens to equal world space and the difference never shows.
+ *
+ * The Antique Shop has no scene-root Viewpoint at all. Both of its Viewpoints
+ * live inside the ObjectDirectory PROTO, and its only instance sits under a
+ * Transform translated 0 0 -11.2, so the reading came back with a Z 11.2
+ * larger than the citizen's real position. The gate then compared that against
+ * the remote member's world-space position and reported a member who was
+ * placed correctly as 11.2 units wrong.
+ *
+ * The page never uses that value to move anybody. WorldBrowserPage adds a
+ * ProximitySensor with addRootNode, so its position_changed is in the scene
+ * root's coordinates, keeps it on `position`, and it is the `position` watcher
+ * that emits AV.pos. Reading the same field compares like with like - in every
+ * world, with nothing said here about any particular one.
+ */
 const camera = page => page.evaluate(() => {
-  const p = X3D.getBrowser(document.querySelector('#world x3d-canvas')).viewpointPosition;
-  return [p.x, p.y, p.z];
+  const app = document.querySelector('#app').__vue__;
+  const find = c => { if (c.users) return c; for (const k of c.$children) { const r = find(k); if (r) return r; } return null; };
+  const comp = find(app);
+  if (!comp || !comp.position) return null;
+  /* World space only holds while the sensor really is a root node, so that is
+   * checked rather than assumed: if anything ever nests it, this returns null
+   * and the position checks fail, instead of quietly comparing two different
+   * coordinate systems and calling the difference a placement bug. */
+  const browser = X3D.getBrowser(document.querySelector('#world x3d-canvas'));
+  const sensor = comp.proximitySensor;
+  if (!sensor || browser.currentScene.rootNodes.indexOf(sensor) < 0) return null;
+  return comp.position.slice();
 });
 
 /* Walk the member forward with the keyboard, the way a person moves. */
@@ -207,7 +239,8 @@ const dist = (a, b) => Math.sqrt((a[0] - b[0]) ** 2 + (a[2] - b[2]) ** 2);
     const after = (await remotes(red)).users[0];
     record[world.name].movement = { before, blueAt, after };
     check(`${world.name}: the observer sees the remote member at their real position`,
-      !!after && !!after.pos && dist(after.pos, blueAt) < 3 && dist(after.pos, [0, 0, 0]) > 0.5,
+      !!blueAt && !!after && !!after.pos && dist(after.pos, blueAt) < 3
+      && dist(after.pos, [0, 0, 0]) > 0.5,
       { seen: after && after.pos, actual: blueAt });
     check(`${world.name}: the movement was observed, not a stale entry`,
       !!before && !!after && !!after.pos && dist(after.pos, before) > 0.5,
