@@ -748,8 +748,24 @@ export default Vue.extend({
         }
       }
     },
+    /*
+     * Drop one remote member's entry when the server says they left.
+     *
+     * The id is not guaranteed to be in `users`. A member can be removed
+     * twice - a late or duplicated AV:del - and a world change now clears the
+     * whole registry, so any AV:del still in flight for the old room arrives
+     * after its entry is already gone. Neither case has anything to clean up.
+     *
+     * It has to be a quiet return rather than a throw, because socket.io
+     * dispatches one event to its listeners in a plain loop: a listener that
+     * throws stops every later listener for that same event.
+     */
     onAvatarRemoved(event): void {
       const { id } = event;
+
+      if (!this.users[id]) {
+        return;
+      }
 
       if (this.users[id].inline) {
         const browser = X3D.getBrowser(this.browser);
