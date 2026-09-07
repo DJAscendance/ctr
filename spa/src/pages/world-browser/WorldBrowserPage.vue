@@ -425,23 +425,27 @@ export default Vue.extend({
     async joinPlace(): Promise<void> {
       await this.$socket.joinRoom(this.$store.data.place.id, this.$store.data.user.token);
       this.debugMsg("joined room success", this.$store.data.place.id);
-      if(this.$store.data.view3d){
-        // The viewpoint is not necessarily bound yet when the room is joined, so
-        // fall back to the last sensor reading rather than dereferencing null.
-        const { viewpointPosition, viewpointOrientation } = X3D.getBrowser(this.browser);
-        const pos = viewpointPosition
-          ? [viewpointPosition.x, viewpointPosition.y, viewpointPosition.z]
-          : this.position;
-        const rot = viewpointOrientation
-          ? [
-            viewpointOrientation.x,
-            viewpointOrientation.y,
-            viewpointOrientation.z,
-            viewpointOrientation.angle,
-          ]
-          : this.rotation;
-        this.$socket.emit("AV", { detail: { pos, rot } });
-      }
+      /*
+       * No initial position is published here.
+       *
+       * This used to emit an `AV` whose payload was nested one level deep,
+       * `{ detail: { pos, rot } }`. Nothing on either end read that shape: the
+       * server's AV handler guards on `msg.pos` / `msg.rot`, and a receiving
+       * client's onAvatarMoved reads `event.pos` / `event.rot`, so every field
+       * was undefined. It updated no server state and placed no avatar.
+       *
+       * The root ProximitySensor added by startX3DListeners owns the position.
+       * It fires position_changed by itself shortly after JOIN - 32ms in the
+       * measured Antique Shop entry, with no key press - which sets
+       * `this.position` and lets the watcher publish the flat `{ pos }` that
+       * the server and the receivers both agree on.
+       *
+       * Do not put a hand-built payload back. `viewpointPosition` is
+       * viewpoint-local: the Antique Shop reads Z = 25 there where world space
+       * is Z = 13.8. `this.position` is world space but can still hold the
+       * previous world's reading at this point, because the new scene's sensor
+       * may not have fired yet.
+       */
     },
     moveObject(objectId): void {
       this.sharedObjectsMap.get(objectId).startMove = true;
