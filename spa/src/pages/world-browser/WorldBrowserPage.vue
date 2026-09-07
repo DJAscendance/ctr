@@ -57,6 +57,7 @@ import {
 } from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
 import { sharedEventNodes } from "../../libs/shared-events";
+import { clearRemoteMembers } from "../../libs/remote-members";
 
 export default Vue.extend({
   name: "WorldBrowserPage",
@@ -315,6 +316,14 @@ export default Vue.extend({
       this.force2d = false;
 
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
+      /*
+       * The world being left takes its remote members with it. This is the
+       * only point where the old room has been left and the new one has not
+       * been joined, so no AV:new for the new room can have arrived yet and
+       * none can arrive until joinPlace() at the end of this run. It runs
+       * before the first await for that reason. See @/libs/remote-members.
+       */
+      clearRemoteMembers(this.users, this.browser && X3D.getBrowser(this.browser));
       await this.getPlace(generation);
       if (generation !== this.worldGeneration) {
         return;
@@ -408,6 +417,9 @@ export default Vue.extend({
     async unloadPlace(): Promise<void> {
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
       const browser = X3D.getBrowser(this.browser);
+      /* Same boundary as loadAndJoinPlace, reached by routing away from the
+       * world instead of into another one: the members go with the world. */
+      clearRemoteMembers(this.users, browser);
       browser.replaceWorld(null);
     },
     async joinPlace(): Promise<void> {
