@@ -4,9 +4,10 @@
  * Remote-member registry cleanup at a world change.
  *
  * WorldBrowserPage keeps one `users` entry per remote member in the room. The
- * entry holds that member's X_ITE nodes: the `inline` that was added as a root
- * node of the world's scene, and the `import` node inside it that carries the
- * member's position and gestures. Both belong to the scene they were built in.
+ * entry holds that member's X_ITE nodes: the `collision` wrapper that was added
+ * as a root node of the world's scene, the `inline` inside it, and the `import`
+ * node inside that, which carries the member's position and gestures. All three
+ * belong to the scene they were built in.
  *
  * The component outlives the world. A place change replaces the scene under it
  * (`browser.replaceWorld(null)`, then a fresh loadURL), but `users` was never
@@ -57,13 +58,19 @@ function disposeRemoteMember(entry, browser) {
     return;
   }
   let firstError = null;
-  if (entry.inline && browser) {
+  /* What is attached to the scene is the member's collision wrapper - the
+   * Collision { collide FALSE } that keeps a remote citizen out of the local
+   * WALK test - and the Inline hangs below it, so removing the wrapper removes
+   * both. An entry built before the wrapper existed still carries only the
+   * Inline, and is detached the old way. */
+  const attached = entry.collision || entry.inline;
+  if (attached && browser) {
     try {
       if (typeof browser.unregisterBlaxxunAvatar === 'function') {
-        browser.unregisterBlaxxunAvatar(entry.inline);
+        browser.unregisterBlaxxunAvatar(attached);
       }
       if (browser.currentScene) {
-        browser.currentScene.removeRootNode(entry.inline);
+        browser.currentScene.removeRootNode(attached);
       }
     } catch (error) {
       firstError = error;

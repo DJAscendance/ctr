@@ -592,7 +592,30 @@ export default Vue.extend({
       const loadInlineAsync = (browser, url) => {
         const inline = browser.currentScene.createNode("Inline");
         inline.url = new X3D.MFString(url);
-        browser.currentScene.addRootNode(inline);
+
+        /*
+         * The member goes into the scene inside a Collision node with `collide`
+         * FALSE, not as a bare root node.
+         *
+         * X_ITE's WALK viewer collides the local camera against every solid
+         * thing in the scene, and a remote member added as a root Inline is one
+         * of them. Two citizens on the same spawn viewpoint therefore stand
+         * inside one another and neither can walk forward: measured in the
+         * Plaza, a 2500 ms ArrowUp moved the camera 0.000 with a peer on the
+         * spot and 17.4 without one. The Mall and the Club have no RandomEntry
+         * script, so there every pair of citizens shares the spawn and this is
+         * not a matter of luck.
+         *
+         * `collide FALSE` takes the subtree out of the collision test and
+         * nothing else: the member is still drawn, still moved by AV, and -
+         * because the wrapper is the node the page registers as the member -
+         * still found by the Outlands ray. The Inline is attached only through
+         * the wrapper, which is enough to start the fetch.
+         */
+        const collision = browser.currentScene.createNode("Collision");
+        collision.collide = false;
+        collision.children = [inline];
+        browser.currentScene.addRootNode(collision);
 
         /* The loaded content sits on the concrete node behind X_ITE 16's SAI
          * facade, found by capability rather than by symbol position, the same
@@ -618,7 +641,7 @@ export default Vue.extend({
           const tick = () => {
             const scene = internal.getInternalScene();
             if (scene && scene.rootNodes && scene.rootNodes.length) {
-              resolve({ inline, scene });
+              resolve({ inline, collision, scene });
               return;
             }
             waited += step;
@@ -646,7 +669,7 @@ export default Vue.extend({
         const avURL = `/assets/avatars/${directory}/${filename}`;
 
         this.users[event.id].loading = true;
-        loadInlineAsync(browser, avURL).then(({ inline: avInline, scene: avScene }) => {
+        loadInlineAsync(browser, avURL).then(({ inline: avInline, scene: avScene, collision }) => {
           /*
            * The node that carries the member: its position, its facing, and
            * its gestures.
@@ -675,12 +698,22 @@ export default Vue.extend({
           this.users[event.id].loading = false;
           this.users[event.id].loaded = true;
           this.users[event.id]["inline"] = avInline;
+          this.users[event.id]["collision"] = collision;
           this.users[event.id]["import"] = avatarNode;
           /* Outlands shoots at people, not at models: fire() walks the ray's
            * hit path for a node that answers to 'Avatar' and sends the
-           * nickname it finds there. This is where that node gets its name. */
+           * nickname it finds there. This is where that node gets its name.
+           *
+           * It is the collision wrapper that is named, not the Inline inside
+           * it. bxx_rayhit builds its hit path out of what a grouping node's
+           * `children` field hands back, and X_ITE 16 hands back a fresh
+           * wrapper object each time rather than the node the page holds, so
+           * an Inline one level down is no longer the same object the registry
+           * was keyed on. A root node is: the wrapper comes back out of
+           * `scene.rootNodes` as itself, and it stands for the member exactly
+           * as the bare Inline used to. */
           if (typeof browser.registerBlaxxunAvatar === "function") {
-            browser.registerBlaxxunAvatar(avInline, event.username);
+            browser.registerBlaxxunAvatar(collision, event.username);
           }
 
           if (this.users[event.id]["inline"]) {
@@ -767,12 +800,17 @@ export default Vue.extend({
         return;
       }
 
-      if (this.users[id].inline) {
+      /* The node in the scene is the collision wrapper the member was built
+       * inside; taking it out takes the Inline with it, so no empty wrapper is
+       * left behind. `inline` is still honoured for an entry that predates the
+       * wrapper. */
+      const attached = this.users[id].collision || this.users[id].inline;
+      if (attached) {
         const browser = X3D.getBrowser(this.browser);
         if (typeof browser.unregisterBlaxxunAvatar === "function") {
-          browser.unregisterBlaxxunAvatar(this.users[id].inline);
+          browser.unregisterBlaxxunAvatar(attached);
         }
-        browser.currentScene.removeRootNode(this.users[id].inline);
+        browser.currentScene.removeRootNode(attached);
       }
 
       if (this.users[id].import) {
