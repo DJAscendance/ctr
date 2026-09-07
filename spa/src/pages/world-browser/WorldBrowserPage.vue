@@ -56,6 +56,7 @@ import {
   forgetAvatarBeforeOutlands,
 } from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
+import { sharedEventNodes } from "../../libs/shared-events";
 
 export default Vue.extend({
   name: "WorldBrowserPage",
@@ -900,7 +901,7 @@ export default Vue.extend({
 
       this.eventNodeMap = new Map();
 
-      for (const eventNode of Array.from<any>(sharedZone.events)) {
+      for (const eventNode of sharedEventNodes(sharedZone.events)) {
         for (const typeName of Object.keys(this.TYPES)) {
           eventNode.addFieldCallback({}, `${typeName  }ToServer`, val => {
             // TODO: confirm validity of adding to possibly non-existent field
