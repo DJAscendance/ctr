@@ -379,11 +379,17 @@ export default Vue.extend({
         }
       }
 
-      if(this.browser) {
-        const browser = X3D.getBrowser(this.browser);
-        browser.replaceWorld(null);
-      }
       if(this.$store.data.view3d && !this.force2d) {
+        /*
+         * The old world is not replaced here. X_ITE 16.2.0 keeps one active
+         * replaceWorld slot: startX3D()'s loadURL() chains into its own
+         * replaceWorld(scene), which evicts whatever is waiting in that slot
+         * and rejects it with "Replacing world aborted.". An explicit
+         * replaceWorld(null) on this path was always the evicted one, so every
+         * 3D-to-3D change raised that rejection for a replacement that bought
+         * nothing - loadURL's own replacement tears the old world down. The 2D
+         * branch below still needs it, because nothing supersedes it there.
+         */
         const browser = await this.startX3D();
         if (generation !== this.worldGeneration) {
           return;
@@ -392,6 +398,14 @@ export default Vue.extend({
         this.startX3DListeners(browser, generation);
         this.applyTemporaryOutlandsSpawn(browser);
       } else {
+        /*
+         * Leaving 3D with no world load behind it. This is the teardown the 3D
+         * branch above hands to loadURL; on this path there is no loadURL, so
+         * the old world is only released if it is asked for here.
+         */
+        if(this.browser) {
+          X3D.getBrowser(this.browser).replaceWorld(null);
+        }
 
         if(this.outlandsTeamNeeded){
           this.mainComponent = () => import(
