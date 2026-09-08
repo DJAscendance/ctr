@@ -390,7 +390,7 @@ export default Vue.extend({
          * nothing - loadURL's own replacement tears the old world down. The 2D
          * branch below still needs it, because nothing supersedes it there.
          */
-        const browser = await this.startX3D();
+        const browser = await this.startX3D(generation);
         if (generation !== this.worldGeneration) {
           return;
         }
@@ -1187,7 +1187,35 @@ export default Vue.extend({
         return fallback;
       }
     },
-    async startX3D(): Promise<any> {
+    /*
+     * The one X_ITE rejection that means "a newer load took this browser
+     * over", rather than "this world is broken".
+     *
+     * X3DBrowser.loadURL keeps a single current FileLoader. A second loadURL
+     * installs its own and, when the first file finally arrives, the first
+     * load sees that it is no longer the current one and rejects with exactly
+     * this message. It is a cancellation signal, not a load failure, and it is
+     * the only message that may be treated as one.
+     */
+    supersededWorldLoad(error: any): boolean {
+      const message = error && error.message ? error.message : String(error);
+      return message.indexOf("Loading of X3D file aborted.") !== -1;
+    },
+    /*
+     * A supersession message on a run that is still the current one. Nothing
+     * inside loadAndJoinPlace() can produce that, so it is a real fault and is
+     * re-raised by the caller; it is only recorded here so a QA run can read
+     * back which world it happened on.
+     */
+    recordUnexpectedLoadAbort(generation: number): void {
+      (window as any).ctrUnexpectedWorldLoadAbort = {
+        generation,
+        worldGeneration: this.worldGeneration,
+        url: this.worldUrl,
+      };
+      console.error("a current world load was aborted by nothing this page started");
+    },
+    async startX3D(generation: number): Promise<any> {
       if (!this.browser) {
         this.browser = X3D.createBrowser();
         document.querySelector("#world").appendChild(this.browser);
@@ -1206,28 +1234,77 @@ export default Vue.extend({
         browser.installBlaxxunEventDelivery();
       }
       this.applyAvatarIdentity(browser);
-      browser.loadURL(new X3D.MFString(this.worldUrl), new X3D.MFString());
+      /*
+       * This run owns the promise loadURL hands back. Dropping it was the
+       * defect: the browser callback below is keyed by the component, so a
+       * second navigation replaces this run's callback, and INITIALIZED_EVENT
+       * for this world is then delivered to the newer run instead. Without the
+       * loadURL promise this run has no second way out and stays pending for
+       * the life of the page, and so does the loadAndJoinPlace() awaiting it.
+       */
+      const load = browser.loadURL(new X3D.MFString(this.worldUrl), new X3D.MFString());
       return new Promise((resolve, reject) => {
+        /*
+         * One run, one settlement. Two independent paths can end this run -
+         * the browser callback and the loadURL promise - and on a real load
+         * failure X_ITE walks both: it calls INITIALIZED_ERROR first and then
+         * rejects loadURL. Whichever arrives first is the answer.
+         */
+        let settled = false;
+        const settleOnce = (settle, value = undefined) => {
+          if (settled) return;
+          settled = true;
+          settle(value);
+        };
+
         /*
          * X_ITE keys browser callbacks by their first argument. A fresh {} on
          * every place load registered a new callback and kept every earlier
          * one, each holding the scene it was created for, so the tab died after
          * roughly fifty loads. Passing the component keys them all to one slot,
-         * so the newest load replaces the previous one.
+         * so the newest load replaces the previous one. A superseded run must
+         * therefore never remove it: the slot it would clear is the live run's.
          */
         browser.addBrowserCallback(this, eventType => {
           switch (eventType) {
           case X3D.X3DConstants.INITIALIZED_EVENT:
             this.resetGravity(browser);
             this.applyNavigationDefaults(browser);
-            resolve(browser);
+            settleOnce(resolve, browser);
             break;
           case X3D.X3DConstants.CONNECTION_ERROR:
           case X3D.X3DConstants.INITIALIZED_ERROR:
-            reject();
+            settleOnce(reject);
             break;
           }
         });
+
+        load.then(
+          () => {
+            /*
+             * The success path is the callback's: X_ITE calls INITIALIZED_EVENT
+             * immediately before it resolves loadURL, so this run has already
+             * settled. It only lands here unsettled if the world arrived for a
+             * generation nobody is waiting on any more.
+             */
+            if (generation !== this.worldGeneration) settleOnce(resolve, null);
+          },
+          error => {
+            /*
+             * A cancellation has to prove itself twice: X_ITE's own supersession
+             * message, and a generation that a later run has already claimed.
+             * Anything else is a real failure and is re-raised, including an
+             * abort reported while this run is still the current one, which
+             * would mean something outside loadAndJoinPlace() is loading worlds.
+             */
+            if (this.supersededWorldLoad(error) && generation !== this.worldGeneration) {
+              settleOnce(resolve, null);
+              return;
+            }
+            if (this.supersededWorldLoad(error)) this.recordUnexpectedLoadAbort(generation);
+            settleOnce(reject, error);
+          },
+        );
       });
     },
     /*
