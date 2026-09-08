@@ -100,7 +100,8 @@ const UNLOAD_OPEN = '    async unloadPlace(): Promise<void> {';
 const loadSource = cut(LOAD_OPEN, UNLOAD_OPEN);
 const unloadSource = cut(UNLOAD_OPEN, '    async joinPlace(): Promise<void> {');
 const startX3DSource = cut(
-  '    async startX3D(): Promise<any> {', '    resetGravity(browser: any): void {');
+  '    async startX3D(generation: number): Promise<any> {',
+  '    resetGravity(browser: any): void {');
 
 const DEPENDENCIES = ['X3D', 'isOutlands', 'outlandsTeamOfAvatar', 'clearRemoteMembers'];
 
@@ -249,11 +250,15 @@ function makeContext(recorder, scope, view3d, hasBrowser) {
     resetGravity: function () {},
     applyNavigationDefaults: function () {},
     joinPlace: function () { recorder.joined += 1; return Promise.resolve(); },
+    supersededWorldLoad: function (error) {
+      const message = error && error.message ? error.message : String(error);
+      return message.indexOf('Loading of X3D file aborted.') !== -1;
+    },
     startX3D: function () {
       const startX3D = compile(
-        startX3DSource, '    async startX3D(): Promise<any> {',
-        'async function startX3D() {', 'startX3D', scope);
-      return startX3D.call(this);
+        startX3DSource, '    async startX3D(generation: number): Promise<any> {',
+        'async function startX3D(generation) {', 'startX3D', scope);
+      return startX3D.call(this, this.worldGeneration);
     },
   };
 }
@@ -331,7 +336,7 @@ check('the surviving replacement is inside the 2D branch',
 check('loadAndJoinPlace breaks none of the replacement rules',
   sourceViolations(loadSource).length === 0, sourceViolations(loadSource));
 check('the 3D branch still starts X_ITE',
-  loadCode.indexOf('await this.startX3D()') !== -1, loadCode);
+  loadCode.indexOf('await this.startX3D(generation)') !== -1, loadCode);
 check('startX3D still owns the 3D replacement, through loadURL',
   startCode.indexOf('browser.loadURL(') !== -1, startCode);
 check('startX3D replaces no world itself',
