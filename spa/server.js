@@ -232,9 +232,21 @@ io.on("connection", async function(socket) {
     // is a rebind (reconnect / redundant JOIN) - preserve its transform so a
     // restarted socket server (or a reconnecting client) doesn't snap the
     // avatar back to the origin, and don't re-announce it.
+    //
+    // A presence that has never reported a world-space transform is stored
+    // with NO pos/rot at all, rather than a fabricated origin. "No valid
+    // position yet" and "standing at [0,0,0]" are different facts, and only
+    // the first one is true here: the client has not yet bound a viewpoint,
+    // and where it will appear is decided by the world's own Viewpoint, which
+    // this server knows nothing about. Writing [0,0,0] turns the unknown into
+    // a confident lie that every consumer then believes - a remote citizen
+    // rendered at the world origin, a collision wrapper parked in a doorway,
+    // and an Outlands ray that "hits" a member who is not there. Absent stays
+    // absent until a real AV transform arrives; `[0,0,0]` sent as a genuine
+    // authored position is stored normally, because then it is true.
     const existingForKey = PRESENCE.get(key);
-    let pos = [0, 0, 0];
-    let rot = [0, 1, 0, 0];
+    let pos;
+    let rot;
     if (existingForKey) {
       if (`${existingForKey.room}` === `${room}`) {
         pos = existingForKey.pos;
@@ -422,11 +434,24 @@ io.on("connection", async function(socket) {
     }
   });
 
-  socket.on("unsubscribe", () => {
+  socket.on("unsubscribe", (data) => {
     const user = USERS.get(socket);
     if (!user?.room) {
       // Nothing to leave - e.g. unsubscribe called without a prior
       // successful JOIN.
+      return;
+    }
+    // The client's teardown is room-scoped (`unsubscribe { room }`), so honour
+    // that scope. SocketManager.leaveRoom emits this unconditionally while its
+    // intent-side guard (clearRoomIntent) is room-checked, so during a rapid
+    // A -> B navigation a late teardown for A can still arrive after the socket
+    // has already joined B. Applying it room-blind would remove the member from
+    // B while the client still believes it is present there: no AV:del reaches
+    // the departed member, peers stop seeing them, and the member sees a room
+    // they are no longer in. A teardown for a room this socket is not currently
+    // in is therefore ignored. A payload-less unsubscribe keeps the old
+    // behaviour, so no existing caller changes meaning.
+    if (data && data.room !== undefined && `${data.room}` !== `${user.room}`) {
       return;
     }
     const room = user.room;
