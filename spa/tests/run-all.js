@@ -13,6 +13,7 @@ const SUITES = [
   "tests/.compiled/tests/remote-members.test.js",
   "tests/.compiled/tests/beta-outlands-presence.test.js",
   "tests/.compiled/tests/xite-16-migration.test.js",
+  "tests/.compiled/tests/outlands-freeplay.test.js",
   "tests/.compiled/tests/map-background-selector.test.js",
   "tests/.compiled/tests/hood-map-background-selector.test.js",
   "tests/.compiled/tests/bxx-ray.test.js",
