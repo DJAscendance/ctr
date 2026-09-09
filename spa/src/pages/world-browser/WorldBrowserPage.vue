@@ -34,6 +34,10 @@
 </template>
 
 <script lang="ts">
+// X_ITE publishes its runtime as the browser global X3D; it is loaded from the
+// CDN in spa/public/index.html, not imported, so declare it for the linter.
+/* global X3D */
+
 import Vue from "vue";
 
 import * as avatarsDataJson from "../../libs/data/avatars.json";
