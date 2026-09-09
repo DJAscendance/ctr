@@ -11,7 +11,6 @@ export interface WorldBrowserData {
     worldsData: any;
     avatarsData: any;
     browser: any;
-    uniqValue: number;
     place?: {
         name: string;
         assets_dir: string;
