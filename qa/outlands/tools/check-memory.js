@@ -30,6 +30,10 @@ const OUT_DIR = process.argv[2]
 const N = Number(process.env.CTR_TRANSITIONS || 100);
 /* The brief's budget. A cycle is one Outlands entry plus one exit. */
 const SLOPE_BUDGET_MB = Number(process.env.CTR_HEAP_SLOPE || 1.5);
+/* Worlds that may still be reachable at the end whatever the visit count is:
+ * bxx_auth.js's one-deep `worldStartScene_` slot, and the world of the cycle
+ * just measured, whose WeakRef needs a collection pass to clear. */
+const MAX_HELD_WORLDS = 2;
 
 const results = [];
 function check(name, pass, detail) {
@@ -56,8 +60,44 @@ const held = page => page.evaluate(() => {
       ? Object.keys(socket._callbacks).reduce((n, k) => n + socket._callbacks[k].length, 0) : null,
     rendererAlive: !!(b && b.getBrowserProperty && true),
     unexpectedAbort: window.ctrUnexpectedWorldLoadAbort || null,
+    /*
+     * Worlds this run has left, and how many of them the collector still cannot
+     * take. Tracked weakly, so asking the question does not answer it.
+     *
+     * One may survive: bxx_auth.js holds the scene it last read a world start
+     * time for in a single `worldStartScene_` slot, which the next world
+     * overwrites. What must not happen is a count that follows the visits.
+     */
+    oldWorldsTracked: (window.__ctrOldWorlds || []).length,
+    oldWorldsAlive: (window.__ctrOldWorlds || []).filter(r => r.deref() !== undefined).length,
+    heldByWorldStartSlot: (window.__ctrOldWorlds || [])
+      .filter(r => b && r.deref() !== undefined && r.deref() === b.worldStartScene_).length,
   };
 });
+
+/* Remember the world about to be left, weakly. */
+const trackWorld = page => page.evaluate(() => {
+  const canvas = document.querySelector('#world x3d-canvas');
+  const b = canvas ? X3D.getBrowser(canvas) : null;
+  if (!b || !b.currentScene) return null;
+  if (!window.__ctrOldWorlds) window.__ctrOldWorlds = [];
+  window.__ctrOldWorlds.push(new WeakRef(b.currentScene));
+  return b.currentScene.worldURL;
+});
+
+/*
+ * The number of `unload` listeners on the window.
+ *
+ * This is the leak's own counter. X_ITE registers one per Script that defines
+ * shutdown(), and the window's listener list is a GC root, so before the fix it
+ * rose by one per Outlands visit and every old world came with it. Read through
+ * CDP: `addEventListener` leaves nothing a script can enumerate.
+ */
+async function unloadListeners(cdp) {
+  const { result } = await cdp.send('Runtime.evaluate', { expression: 'window' });
+  const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId });
+  return listeners.filter(l => l.type === 'unload').length;
+}
 
 (async () => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -79,15 +119,19 @@ const held = page => page.evaluate(() => {
 
   const baseline = await heap();
   const first = await held(page);
-  process.stdout.write(`baseline heap ${baseline.toFixed(2)} MB\n`);
+  const baseListeners = await unloadListeners(cdp);
+  process.stdout.write(`baseline heap ${baseline.toFixed(2)} MB  unload listeners ${baseListeners}\n`);
 
   const samples = [];
+  const listenerSamples = [];
+  const worldSamples = [];
   const sides = ['redm', 'redf', 'bluem', 'bluef'];
   let completed = 0;
   const started = Date.now();
   for (let i = 0; i < N; i += 1) {
     try {
       await O.enterOutlandsThroughEntrance(page, sides[i % sides.length], 90000);
+      await trackWorld(page);
       await enterPlace(page, '#/place/enter', 'enter.wrl', 60000);
     } catch (e) {
       process.stdout.write(`  cycle ${i + 1} FAILED: ${e.message.slice(0, 90)}\n`);
@@ -97,12 +141,16 @@ const held = page => page.evaluate(() => {
     if (completed % 10 === 0) {
       const mb = await heap();
       const st = await held(page);
+      const ul = await unloadListeners(cdp);
       samples.push([completed, mb]);
+      listenerSamples.push([completed, ul]);
+      worldSamples.push([completed, st.oldWorldsAlive]);
       process.stdout.write(
         `  ${String(completed).padStart(3)} cycles  heap ${mb.toFixed(2)} MB`
         + `  canvases ${st.canvases}  citizens ${st.renderedCitizens}`
         + `  routes ${st.browserEventRoutes}  mask ${st.eventMask}`
-        + `  socket ${st.socketListeners}\n`,
+        + `  socket ${st.socketListeners}  unload ${ul}`
+        + `  oldWorlds ${st.oldWorldsAlive}/${st.oldWorldsTracked}\n`,
       );
     }
   }
@@ -132,9 +180,33 @@ const held = page => page.evaluate(() => {
     { before: first.socketListeners, after: final.socketListeners });
   check('no world load was aborted by anything the page did not start',
     final.unexpectedAbort === null, final.unexpectedAbort);
+  const finalListeners = await unloadListeners(cdp);
+  check('the window unload listener count is unchanged from the baseline',
+    finalListeners === baseListeners,
+    { baseline: baseListeners, final: finalListeners, samples: listenerSamples });
+  /*
+   * Not "none survives", and deliberately so.
+   *
+   * bxx_auth.js keeps the scene it last read a world start time for in one
+   * `worldStartScene_` slot, which the next world overwrites; and the world
+   * left in the cycle just measured may still be waiting on a collection pass,
+   * because a WeakRef is only cleared once the collector has been round. Both
+   * are one world deep and neither follows the visit count.
+   *
+   * What this gate exists to catch is the count that does: before the outgoing
+   * world's Scripts were released, every visit left a world alive - 50 of 50.
+   */
+  const firstAlive = worldSamples.length ? worldSamples[0][1] : final.oldWorldsAlive;
+  check('the worlds left behind do not accumulate',
+    final.oldWorldsTracked === completed
+      && final.oldWorldsAlive <= firstAlive
+      && final.oldWorldsAlive <= MAX_HELD_WORLDS,
+    { visits: final.oldWorldsTracked, stillAlive: final.oldWorldsAlive,
+      heldByWorldStartSlot: final.heldByWorldStartSlot, samples: worldSamples });
 
   fs.writeFileSync(path.join(OUT_DIR, 'memory.json'), JSON.stringify({
     results, renderer: browser.ctrRenderer, baseline, samples, slope, first, final, minutes,
+    listenerSamples, worldSamples, baseListeners, finalListeners,
   }, null, 2));
 
   const passed = results.filter(r => r.pass).length;
