@@ -30,6 +30,8 @@ export interface WorldBrowserData {
     showUpdateWarning: boolean;
     mainComponent: any;
     force2d: boolean;
+    /** Outlands asked for, no side worn yet: the historical entrance is up. */
+    outlandsTeamNeeded: boolean;
     pet: any;
     clickId: string;
 }

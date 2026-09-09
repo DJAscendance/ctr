@@ -364,6 +364,32 @@
       this.blaxxunEventHandlers_ = handlers
     }
 
+    /*
+     * Drops everything the world being replaced left on the BROWSER.
+     *
+     * A blaxxun world claims two pieces of browser-level state in initialize():
+     * the event mask, and a route from the browser's own `event_changed` into
+     * one of its Scripts. Both are meant to be given back by shutdown(), and
+     * X_ITE does not run a VRML97 Script's shutdown() when the world it lives
+     * in is replaced, so both would otherwise outlive the world.
+     *
+     * writeToRoutes() already drops a dead route the first time it throws, so
+     * nothing GROWS without bound - but that is lazy: it needs a key press to
+     * happen, which means the world after Outlands starts holding a route into
+     * a scene that is gone, and the Outlands mask. This is the eager half, and
+     * it is what makes "old Script callbacks cannot affect the next world" true
+     * at the moment of the change rather than at the next key press.
+     *
+     * The DOM listeners are deliberately NOT touched: they belong to the
+     * canvas, not to the world, and are installed once per browser.
+     */
+    b.releaseBlaxxunWorldState = function () {
+      this.browserEventRoutes_ = [];
+      this.eventMask = 0;
+      const queue = this.blaxxunEventQueue_;
+      if (queue) { queue.items_.length = 0; }
+    };
+
     b.removeBlaxxunEventDelivery = function () {
       var handlers = this.blaxxunEventHandlers_
       if (!handlers) return
