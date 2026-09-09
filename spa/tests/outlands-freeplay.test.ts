@@ -453,10 +453,63 @@ test("the page releases the outgoing world's browser state before the next load"
     "the release happens after loadURL, so the new world's initialize would be undone");
 });
 
-test("leaving 3D altogether also releases it", () => {
-  const unload = PAGE.slice(PAGE.indexOf("async unloadPlace("));
-  const body = unload.slice(0, unload.indexOf("async joinPlace("));
-  assert.ok(/replaceWorld\(null\);\s*\n\s*this\.releaseWorldScriptState\(browser\);/.test(body));
+/*
+ * The unloadPlace teardown rule, written over source text so the negative
+ * control below can feed it the ordering this page used to have. Returns the
+ * fault it found, or null.
+ *
+ * The release has to name the outgoing world, and it can only do that through
+ * browser.currentScene. replaceWorld(null) puts an empty scene there, so a
+ * release asked for afterwards disposes nothing and ne_game.wrl's Scripts stay
+ * on the window's unload listener with the whole scene behind them.
+ *
+ * The prose around these two calls names both of them, so the rule reads the
+ * page with its comments taken out; a comment must not be able to satisfy it.
+ */
+const withoutComments = (source: string): string => source
+  .replace(/\/\*[\s\S]*?\*\//g, " ")
+  .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+function unloadTeardownFault(page: string): string | null {
+  const at = page.indexOf("async unloadPlace(");
+  if (at === -1) return "unloadPlace is gone";
+  const rest = page.slice(at);
+  const body = rest.slice(0, rest.indexOf("async joinPlace("));
+  if (!body) return "could not isolate unloadPlace";
+  const release = body.indexOf("this.releaseWorldScriptState(browser)");
+  const replace = body.indexOf("browser.replaceWorld(null)");
+  if (release === -1) return "unloadPlace no longer releases the outgoing world";
+  if (replace === -1) return "unloadPlace no longer replaces the outgoing world";
+  if (release > replace) return "the world is replaced before it is released";
+  return null;
+}
+
+test("leaving 3D altogether also releases it, and releases it first", () => {
+  assert.strictEqual(unloadTeardownFault(withoutComments(PAGE)), null);
+});
+
+test("NEGATIVE CONTROL: replacing the world before releasing it is caught", () => {
+  const page = withoutComments(PAGE);
+  const at = page.indexOf("async unloadPlace(");
+  const swapped = page.slice(0, at) + page.slice(at).replace(
+    /this\.releaseWorldScriptState\(browser\);(\s*)browser\.replaceWorld\(null\);/,
+    "browser.replaceWorld(null);$1this.releaseWorldScriptState(browser);",
+  );
+  assert.notStrictEqual(swapped, page, "the fixture changed nothing, so it proves nothing");
+  assert.strictEqual(unloadTeardownFault(swapped), "the world is replaced before it is released");
+});
+
+test("the incoming world is never the one released", () => {
+  const page = withoutComments(PAGE);
+  const at = page.indexOf("async startX3D(");
+  const body = page.slice(at, page.indexOf("startX3DListeners(", at));
+  const release = body.indexOf("this.releaseWorldScriptState(browser)");
+  const load = body.indexOf("browser.loadURL(");
+  assert.ok(release > -1 && load > -1, "startX3D no longer releases and loads");
+  assert.ok(release < load,
+    "the release runs after loadURL, so it would undo the incoming world's initialize()");
+  assert.strictEqual(/replaceWorld/.test(body), false,
+    "startX3D replaces the world itself; loadURL's own replacement evicts it (O4/O6)");
 });
 
 test("the entrance listener is taken off again when the page goes away", () => {

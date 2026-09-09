@@ -279,10 +279,85 @@ test("the 3D path performs no world replacement of its own (O4/O6)", () => {
     "the 3D branch still calls replaceWorld; loadURL's own replacement evicts it");
 });
 
+/*
+ * The 2D teardown rule, written over source text rather than over one regex, so
+ * a negative control below can feed it the ordering this branch used to have.
+ * Returns the fault it found, or null when the branch honours the contract.
+ *
+ * releaseWorldScriptState() names the outgoing world through
+ * browser.currentScene, and replaceWorld(null) puts an empty scene there. A
+ * release asked for after the replacement therefore has nothing left to name,
+ * and the outgoing world's Scripts stay on the window's unload listener.
+ */
+function twoDTeardownFault(page: string): string | null {
+  const branchAt = page.indexOf("if(this.$store.data.view3d && !this.force2d) {");
+  if (branchAt === -1) return "could not find the 3D/2D branch";
+  const elseAt = page.indexOf("} else {", branchAt);
+  const endAt = page.indexOf("async unloadPlace(");
+  if (elseAt === -1 || endAt === -1 || endAt < elseAt) return "could not isolate the 2D branch";
+  const twoD = page.slice(elseAt, endAt);
+  const release = twoD.indexOf("this.releaseWorldScriptState(browser)");
+  const replace = twoD.indexOf("browser.replaceWorld(null)");
+  if (release === -1) return "leaving 3D no longer releases the world";
+  if (replace === -1) return "leaving 3D no longer replaces the world";
+  if (release > replace) return "the world is replaced before it is released";
+  return null;
+}
+
+/** The same source with that one pair of calls put back in the old order. */
+function replaceBeforeRelease(page: string): string {
+  return page.replace(
+    /this\.releaseWorldScriptState\(browser\);(\s*)browser\.replaceWorld\(null\);/,
+    "browser.replaceWorld(null);$1this.releaseWorldScriptState(browser);",
+  );
+}
+
 test("the 2D path still tears the old world down, because nothing supersedes it", () => {
+  assert.strictEqual(twoDTeardownFault(code(WORLD_PAGE)), null);
+});
+
+test("NEGATIVE CONTROL: replacing the 2D world before releasing it is caught", () => {
   const page = code(WORLD_PAGE);
-  assert.ok(/X3D\.getBrowser\(this\.browser\)\.replaceWorld\(null\);/.test(page),
-    "leaving 3D no longer releases the world");
+  const swapped = replaceBeforeRelease(page);
+  assert.notStrictEqual(swapped, page, "the fixture changed nothing, so it proves nothing");
+  assert.strictEqual(twoDTeardownFault(swapped), "the world is replaced before it is released");
+});
+
+/*
+ * Inside the release itself the Scripts go first. X_ITE's Script.dispose() runs
+ * the world's own shutdown(), and ne_game.wrl's shutdown() hands the blaxxun
+ * event mask and the browser event route back. Sweeping the browser first would
+ * be undone by that shutdown a moment later, and the next world would inherit
+ * the mask and the route.
+ */
+function releaseOrderFault(page: string): string | null {
+  const at = page.indexOf("releaseWorldScriptState(browser: any): void {");
+  if (at === -1) return "releaseWorldScriptState is gone";
+  const rest = page.slice(at);
+  const body = rest.slice(0, rest.indexOf("resetGravity(browser: any)"));
+  const scripts = body.indexOf("releaseWorldScripts(browser.currentScene)");
+  const sweep = body.indexOf("browser.releaseBlaxxunWorldState()");
+  if (scripts === -1) return "the outgoing world's Scripts are no longer disposed";
+  if (sweep === -1) return "the browser-level blaxxun state is no longer swept";
+  if (scripts > sweep) return "the browser is swept before the Scripts shut down";
+  return null;
+}
+
+test("the outgoing world's Scripts are released before the browser-state sweep", () => {
+  assert.strictEqual(releaseOrderFault(code(WORLD_PAGE)), null);
+});
+
+test("NEGATIVE CONTROL: sweeping the browser before Script shutdown is caught", () => {
+  const page = code(WORLD_PAGE);
+  const scripts = "releaseWorldScripts(browser.currentScene);";
+  const sweep = "browser.releaseBlaxxunWorldState();";
+  const swapped = page
+    .replace(scripts, "__SWEEP__")
+    .replace(sweep, scripts)
+    .replace("__SWEEP__", sweep);
+  assert.notStrictEqual(swapped, page, "the fixture changed nothing, so it proves nothing");
+  assert.strictEqual(releaseOrderFault(swapped),
+    "the browser is swept before the Scripts shut down");
 });
 
 test("a NULL-declared SharedEvent list is filtered rather than iterated", () => {
