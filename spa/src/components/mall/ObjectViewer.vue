@@ -258,7 +258,7 @@ export default Vue.extend({
       const sensor = scene.createNode("LoadSensor");
       sensor.timeOut = LOAD_TIMEOUT_SECONDS;
       sensor.watchList = new X3D.MFNode(object);
-      sensor.addFieldCallback("isLoaded", key, (loaded: any) => {
+      sensor.addFieldCallback(key, "isLoaded", (loaded: any) => {
         if (!this.isCurrent(generation)) {
           return; // belongs to an object the checker has already moved past
         }
@@ -292,7 +292,7 @@ export default Vue.extend({
 
       try {
         if (key) {
-          sensor.removeFieldCallback("isLoaded", key);
+          sensor.removeFieldCallback(key, "isLoaded");
         }
         if (scene) {
           scene.removeRootNode(sensor);

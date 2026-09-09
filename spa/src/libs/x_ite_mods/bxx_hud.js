@@ -3,7 +3,7 @@
 
   // Blaxxun `HUD`. A built-in grouping node of blaxxun Contact 4.0 and later
   // whose children are drawn in the viewer's coordinate system. X_ITE has no
-  // equivalent - no Layer, no LayerSet, no ScreenGroup in the 4.7.0 bundle the
+  // equivalent - no Layer, no LayerSet, no ScreenGroup in the 16.2.0 bundle the
   // SPA loads - so a world that writes `HUD { ... }` dies in the parser with
   // "Unkown node type or proto 'HUD'" before any of it runs.
   //
@@ -34,9 +34,29 @@
   // name, no team, no score and no weapon logic - a HUD is a HUD. The clearance
   // scale is measured, never hard-coded, so a HUD that already clears the plane
   // is left untouched.
+  //
+  // X_ITE 16 PORT. Two things moved between 4.7.0 and 16.2.0 and nothing else
+  // in this file had to change:
+  //
+  //   1. `x_ite/Configuration/SupportedNodes` was REMOVED. The registry is now
+  //      the global `X3D.ConcreteNodes`, and `ConcreteNodes.add(name, Klass)`
+  //      replaces `SupportedNodes.addType(name, Klass)`. It also does the work
+  //      the old call did not: it derives `X3DConstants.HUD` from the class's
+  //      static `typeName`, and registers the type with the HTML parser. The
+  //      module id is dropped from the require list below rather than resolved
+  //      to null.
+  //   2. Class metadata moved from the PROTOTYPE to STATIC properties on the
+  //      constructor. `X3DObject.prototype.getTypeName()` now returns
+  //      `this.constructor.typeName`, `X3DNode.prototype.getContainerField()`
+  //      returns `this.constructor.containerField`, and `X3DBaseNode` reads
+  //      `this.constructor.fieldDefinitions` when it builds the node's fields.
+  //      The old prototype `getTypeName`/`getComponentName`/`getContainerField`
+  //      are therefore gone: `getComponentName` no longer exists anywhere in
+  //      16 (it is `getComponentInfo`), and the other two would only shadow the
+  //      base implementations with the same answers the statics already give.
 
   // The near-plane clearance arithmetic lives in the pure helper so the shipped
-  // rule and the unit-tested rule are literally the same function. `bxx_ray.js`
+  // rule and the unit-tested rule are literally the same function. `bxx_rayhit.js`
   // already requires this module the same way.
   const hud = require("../../helpers/bxx-hud.helper");
 
@@ -49,7 +69,6 @@
     "x_ite/Components/Grouping/X3DGroupingNode",
     "x_ite/Bits/X3DConstants",
     "x_ite/Bits/TraverseType",
-    "x_ite/Configuration/SupportedNodes",
     "standard/Math/Numbers/Matrix4",
     "standard/Math/Numbers/Vector3",
     "standard/Math/Geometry/Box3",
@@ -60,15 +79,27 @@
     X3DGroupingNode,
     X3DConstants,
     TraverseType,
-    SupportedNodes,
     Matrix4,
     Vector3,
     Box3,
   ) {
 
+    // The registry every X_ITE 16 browser copies at construction time. This
+    // patch runs from `App.vue` `mounted()`, before any `X3D.createBrowser()`,
+    // so the copy each browser takes already carries HUD.
+    const concreteNodes = X3D.ConcreteNodes;
+    if (!concreteNodes || typeof concreteNodes.add !== "function") {
+      console.warn("[bxx_hud] X3D.ConcreteNodes is unavailable; HUD not registered");
+      return;
+    }
+
     // Idempotent: `App.vue` requires this module once, but a hot reload or a
-    // second import must not register the type twice.
-    if (SupportedNodes.getType("HUD")) { return; }
+    // second import must not register the type twice - `ConcreteNodesArray.add`
+    // throws on a duplicate key rather than replacing it.
+    const registered = typeof concreteNodes.has === "function"
+      ? concreteNodes.has("HUD")
+      : Boolean(typeof concreteNodes.get === "function" && concreteNodes.get("HUD"));
+    if (registered) { return; }
 
     // The numeric TraverseType constants, keyed back to the names the pure
     // helper reasons about.
@@ -151,40 +182,34 @@
       }
     }
 
+    // X_ITE 16 node classes are still ES5 constructor functions, so the base
+    // call is unchanged from 4.7.
     function HUD(executionContext) {
       X3DGroupingNode.call(this, executionContext);
-      this.addType(X3DConstants.HUD);
+
+      // Read lazily, never captured at require time: the constant does not
+      // exist until `ConcreteNodes.add` below derives it from `HUD.typeName`,
+      // and that happens after this function is defined. A HUD is only ever
+      // constructed by a world, long after registration, so this is satisfied
+      // in practice - the guard is here for the case where it is not.
+      const type = X3D.X3DConstants && X3D.X3DConstants.HUD;
+      if (type === undefined) {
+        console.warn("[bxx_hud] X3DConstants.HUD is undefined; HUD type not added");
+      } else {
+        this.addType(type);
+      }
+
       this.bxxMatrix = new Matrix4();
     }
 
     HUD.prototype = Object.assign(Object.create(X3DGroupingNode.prototype), {
       constructor: HUD,
 
-      // The five historical fields, plus the three every X_ITE grouping node
-      // needs from its base classes (`metadata`, `visible`, `bboxDisplay`).
-      // Those three are machinery, not restored blaxxun surface: no historical
-      // world sets them, because blaxxun's HUD never had them.
-      fieldDefinitions: new FieldDefinitionArray([
-        new X3DFieldDefinition(X3DConstants.inputOutput, "metadata", new Fields.SFNode()),
-        new X3DFieldDefinition(X3DConstants.inputOutput, "visible", new Fields.SFBool(true)),
-        new X3DFieldDefinition(X3DConstants.inputOutput, "bboxDisplay", new Fields.SFBool()),
-        new X3DFieldDefinition(
-          X3DConstants.initializeOnly, "bboxSize", new Fields.SFVec3f(-1, -1, -1),
-        ),
-        new X3DFieldDefinition(X3DConstants.initializeOnly, "bboxCenter", new Fields.SFVec3f()),
-        new X3DFieldDefinition(X3DConstants.inputOnly, "addChildren", new Fields.MFNode()),
-        new X3DFieldDefinition(X3DConstants.inputOnly, "removeChildren", new Fields.MFNode()),
-        new X3DFieldDefinition(X3DConstants.inputOutput, "children", new Fields.MFNode()),
-      ]),
-
-      getTypeName: function () { return "HUD"; },
-      getComponentName: function () { return "Grouping"; },
-      getContainerField: function () { return "children"; },
-
-      // Read by the `computeRayHit` walk in `bxx_ray.js`. It means "my matrix
-      // replaces the accumulated one", which keeps a nested HUD - such as the
-      // turret panel in `ne_game.wrl`, which sits under a Transform inside a
-      // Switch - in camera space for picking as well as for drawing.
+      // Read by the `computeRayHit` walk in `bxx_rayhit.js`. It means "my
+      // matrix replaces the accumulated one", which keeps a nested HUD - such
+      // as the turret panel in `ne_game.wrl`, which sits under a Transform
+      // inside a Switch - in camera space for picking as well as for drawing.
+      // `isViewRelative()` in `helpers/bxx-hud.helper.ts` is the reader.
       bxxViewRelative: true,
 
       // The camera-space matrix, exposed under the name the ray walk already
@@ -236,7 +261,43 @@
       },
     });
 
-    SupportedNodes.addType("HUD", HUD);
+    // STATIC class metadata, the X_ITE 16 shape. `typeName` is what
+    // `getTypeName()` returns - and therefore what the SFNode facade's
+    // `getNodeTypeName()` returns, which is the string `bxx_rayhit.js` tests
+    // when it skips HUD subtrees while picking. `fieldDefinitions` must be
+    // static too: `X3DBaseNode` reads `this.constructor.fieldDefinitions`, so a
+    // prototype copy would be ignored and the node would get no fields at all.
+    HUD.typeName = "HUD";
+    HUD.componentInfo = { name: "Grouping", level: 1 };
+    HUD.containerField = "children";
+    HUD.specificationRange = { from: "2.0", to: "Infinity" };
+
+    // The five historical fields, plus the three every X_ITE grouping node
+    // needs from its base classes (`metadata`, `visible`, `bboxDisplay`).
+    // Those three are machinery, not restored blaxxun surface: no historical
+    // world sets them, because blaxxun's HUD never had them. The list and its
+    // order are identical to X_ITE 16's own `Group.fieldDefinitions`.
+    HUD.fieldDefinitions = new FieldDefinitionArray([
+      new X3DFieldDefinition(X3DConstants.inputOutput, "metadata", new Fields.SFNode()),
+      new X3DFieldDefinition(X3DConstants.inputOutput, "visible", new Fields.SFBool(true)),
+      new X3DFieldDefinition(X3DConstants.inputOutput, "bboxDisplay", new Fields.SFBool()),
+      new X3DFieldDefinition(
+        X3DConstants.initializeOnly, "bboxSize", new Fields.SFVec3f(-1, -1, -1),
+      ),
+      new X3DFieldDefinition(X3DConstants.initializeOnly, "bboxCenter", new Fields.SFVec3f()),
+      new X3DFieldDefinition(X3DConstants.inputOnly, "addChildren", new Fields.MFNode()),
+      new X3DFieldDefinition(X3DConstants.inputOnly, "removeChildren", new Fields.MFNode()),
+      new X3DFieldDefinition(X3DConstants.inputOutput, "children", new Fields.MFNode()),
+    ]);
+
+    // Registration. This is also what creates `X3DConstants.HUD`, from
+    // `HUD.typeName` - so every static above must be in place before it runs.
+    try {
+      concreteNodes.add("HUD", HUD);
+    } catch (error) {
+      console.warn("[bxx_hud] could not register the HUD node type", error);
+      return;
+    }
 
     // Exposed so a test or a later lane can reach the constructor without
     // re-deriving it from the parser.

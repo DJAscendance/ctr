@@ -494,28 +494,46 @@ export default Vue.extend({
         console.error(error);
       },
     );
-    require("./libs/x_ite_mods/spec_color.js");
-    require("./libs/x_ite_mods/relax_route.js");
-    require("./libs/x_ite_mods/relax_is.js");
-    require("./libs/x_ite_mods/arrow_keys.js");
-    require("./libs/x_ite_mods/viewpoint_bind.js");
-    require("./libs/x_ite_mods/allow_sf_string.js");
-    //require('./libs/x_ite_mods/speed_multiplier.js');
-    require("./libs/x_ite_mods/bxx_speed_avatar.js");
-    require("./libs/x_ite_mods/default_gravity.js");
-    require("./libs/x_ite_mods/extend_context_menu.js");
-    require("./libs/x_ite_mods/bxx_auth.js");
-    require("./libs/x_ite_mods/bxx_hud.js");
-    require("./libs/x_ite_mods/bxx_ray.js");
-    require("./libs/x_ite_mods/bxx_script.js");
-    require("./libs/x_ite_mods/bxx_node.js");
-    require("./libs/x_ite_mods/bxx_sfnode.js");
-    require("./libs/x_ite_mods/bxx_events.js");
-    require("./libs/x_ite_mods/bxx_identity.js");
-    // Must stay last of the loadURL wrappers: bxx_auth.js and bxx_events.js both
-    // wrap loadURL, and a suppressed legacy call must not reach either of them.
-    require("./libs/x_ite_mods/bxx_url.js");
-    //require('./libs/x_ite_mods/fix_stairs.js');
+    // Compatibility shim must run before any patch so the patches can rely
+    // on X3D.require and X3D.fieldDefs regardless of the X_ITE version.
+    require("./libs/x_ite_mods/x_ite_compat.js");
+
+    // Each patch is isolated: one failing patch must not stop the others.
+    const x3dPatches = [
+      "vrml_scalar_types.js",
+      "vrml_texture_color.js",
+      "vrml_nav_default.js",
+      "relax_route.js",
+      "relax_is.js",
+      "arrow_keys.js",
+      "viewpoint_bind.js",
+      "allow_sf_string.js",
+      "bxx_node_name.js",
+      "bxx_auth.js",
+      "bxx_events.js",
+      "bxx_rayhit.js",
+      // Wraps the computeRayHit that bxx_rayhit.js installs, so it must follow it.
+      "bxx_avatars.js",
+      "bxx_hud.js",
+      "bxx_script.js",
+      "bxx_sfnode.js",
+      // After bxx_auth.js, whose myAvatarURL/myAvatarName this replaces with the
+      // provider seam the Beta avatar identity is published through.
+      "bxx_identity.js",
+      "scene_cache.js",
+      // Must stay last of the loadURL wrappers: bxx_auth.js and bxx_events.js both
+      // wrap loadURL, and a suppressed legacy call must not reach either of them.
+      "bxx_url.js",
+      //'speed_multiplier.js',
+      //'fix_stairs.js',
+    ];
+    for (const patch of x3dPatches) {
+      try {
+        require(`./libs/x_ite_mods/${patch}`);
+      } catch (error) {
+        console.warn(`failed to load X_ITE patch ${patch}`, error);
+      }
+    }
   },
   watch: {
     "$store.data.isUser"(isUser: boolean): void {
