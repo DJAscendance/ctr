@@ -434,6 +434,8 @@ test("the browser hands back the event mask and the event routes on request", ()
   assert.ok(/b\.releaseBlaxxunWorldState = function \(\)/.test(EVENTS));
   assert.ok(/this\.browserEventRoutes_ = \[\]/.test(EVENTS), "the routes are not dropped");
   assert.ok(/this\.eventMask = 0/.test(EVENTS), "the event mask is not given back");
+  assert.ok(/this\.blaxxunEventPool_ = null/.test(EVENTS),
+    "the pooled event nodes are kept, and they belong to the scene that built them");
 });
 
 test("the DOM listeners are NOT dropped with the world; they belong to the canvas", () => {

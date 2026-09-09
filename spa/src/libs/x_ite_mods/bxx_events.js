@@ -388,6 +388,15 @@
       this.eventMask = 0;
       const queue = this.blaxxunEventQueue_;
       if (queue) { queue.items_.length = 0; }
+      /*
+       * The pooled event nodes go too. newEventNode() builds them with
+       * createVrmlFromString, so each one belongs to the execution context that
+       * was current when it was made - keeping the pool across a world change
+       * would hold nodes from a scene that no longer exists. The pool is capped
+       * and rebuilt on demand, so dropping it costs one Group per event on the
+       * first few keystrokes in the new world and nothing after that.
+       */
+      this.blaxxunEventPool_ = null;
     };
 
     b.removeBlaxxunEventDelivery = function () {
