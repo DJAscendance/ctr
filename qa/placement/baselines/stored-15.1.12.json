@@ -1,0 +1,1869 @@
+{
+  "layer": "stored",
+  "engine": "15.1.12",
+  "commit": "ee238a61867554916aa9336655469b7395b09c6d",
+  "database": "cybertown",
+  "capturedAt": "2026-09-05T03:16:23.866Z",
+  "records": [
+    {
+      "source": "mall_object",
+      "id": 1,
+      "stored": {
+        "placeId": 815,
+        "placeType": "shop",
+        "placeSlug": "electronicsstore",
+        "objectId": 4,
+        "memberId": null,
+        "url": "/assets/object/96faf339-017b-429f-817f-805e7d452a67/8c18e9c63aef26ea.wrl",
+        "position": {
+          "x": 0,
+          "y": 1.75,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":0.0,\"y\":1.75,\"z\":0.0}",
+        "rawRotation": "{\"x\":0,\"y\":0,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-04 19:22:34"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 12,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 36,
+        "memberId": null,
+        "url": "/assets/object/qafix/aurora-kinetic-art/aurora-kinetic-art.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 13,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 37,
+        "memberId": null,
+        "url": "/assets/object/qafix/velvet-thornwing/velvet-thornwing.wrl",
+        "position": {
+          "x": 3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        },
+        "rawPosition": "{\"x\":3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 14,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 38,
+        "memberId": null,
+        "url": "/assets/object/qafix/galactic-prep-island/galactic-prep-island.wrl",
+        "position": {
+          "x": -3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        },
+        "rawPosition": "{\"x\":-3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":-1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 15,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 39,
+        "memberId": null,
+        "url": "/assets/object/qafix/cyberchef-corner-kitchen/cyberchef-corner-kitchen.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.141592653589793}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 16,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 40,
+        "memberId": null,
+        "url": "/assets/object/qafix/comet-crown-spin-top/comet-crown-spin-top.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": -4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.7853981633974483
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":-4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0.7853981633974483}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 17,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 41,
+        "memberId": null,
+        "url": "/assets/object/qafix/zero-g-ring-toss/zero-g-ring-toss.wrl",
+        "position": {
+          "x": 1.125,
+          "y": 1.75,
+          "z": -2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 2.356194490192345
+        },
+        "rawPosition": "{\"x\":1.125,\"y\":1.75,\"z\":-2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":2.356194490192345}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 18,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 42,
+        "memberId": null,
+        "url": "/assets/object/qafix/pocket-moon-playset/pocket-moon-playset.wrl",
+        "position": {
+          "x": -7.875,
+          "y": -1.25,
+          "z": -9.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.9269908169872414
+        },
+        "rawPosition": "{\"x\":-7.875,\"y\":-1.25,\"z\":-9.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.9269908169872414}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 19,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 43,
+        "memberId": null,
+        "url": "/assets/object/qafix/chronos-orrery/chronos-orrery.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":0,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 20,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 44,
+        "memberId": null,
+        "url": "/assets/object/qafix/echo-cabinet/echo-cabinet.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 0.82,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":0.82,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "mall_object",
+      "id": 21,
+      "stored": {
+        "placeId": 807,
+        "placeType": "shop",
+        "placeSlug": "antiqueshop",
+        "objectId": 45,
+        "memberId": null,
+        "url": "/assets/object/qafix/starlight-zoetrope/starlight-zoetrope.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 1.64,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":1.64,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 1,
+      "stored": {
+        "placeId": 1,
+        "placeType": "public",
+        "placeSlug": "enter",
+        "objectId": 1,
+        "memberId": 1,
+        "url": "/assets/object/qa-electronics/flux-tape-deck/flux-tape-deck.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": null,
+        "rawRotation": null,
+        "createdAt": "2026-09-04 18:40:17"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 2,
+      "stored": {
+        "placeId": 1,
+        "placeType": "public",
+        "placeSlug": "enter",
+        "objectId": 2,
+        "memberId": 1,
+        "url": "/assets/object/qa-electronics/signal-storm-globe/signal-storm-globe.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": null,
+        "rawRotation": null,
+        "createdAt": "2026-09-04 18:40:17"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 3,
+      "stored": {
+        "placeId": 1,
+        "placeType": "public",
+        "placeSlug": "enter",
+        "objectId": 3,
+        "memberId": 1,
+        "url": "/assets/object/qa-electronics/pulse-prism-console/pulse-prism-console.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": null,
+        "rawRotation": null,
+        "createdAt": "2026-09-04 18:40:17"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 4,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 4,
+        "memberId": 1,
+        "url": "/assets/object/96faf339-017b-429f-817f-805e7d452a67/8c18e9c63aef26ea.wrl",
+        "position": {
+          "x": 18.510206479792842,
+          "y": 1.6000000127534366,
+          "z": -5.537815135201809
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 5.344663704667898
+        },
+        "rawPosition": "{\"x\":18.510206479792842,\"y\":1.6000000127534366,\"z\":-5.537815135201809}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":5.344663704667898}",
+        "createdAt": "2026-09-04 19:23:58"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 40,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 30,
+        "memberId": 1,
+        "url": "/assets/object/qafix/ct-table/Table_finished.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 41,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 31,
+        "memberId": 1,
+        "url": "/assets/object/qafix/advenbed1/advenbed1.wrl",
+        "position": {
+          "x": 3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        },
+        "rawPosition": "{\"x\":3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 42,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 32,
+        "memberId": 1,
+        "url": "/assets/object/qafix/black-willow-bed/black-willow-bed.wrl",
+        "position": {
+          "x": -3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        },
+        "rawPosition": "{\"x\":-3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":-1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 43,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 33,
+        "memberId": 1,
+        "url": "/assets/object/qafix/flux-tape-deck/flux-tape-deck.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.141592653589793}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 44,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 34,
+        "memberId": 1,
+        "url": "/assets/object/qafix/signal-storm-globe/signal-storm-globe.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": -4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.7853981633974483
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":-4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0.7853981633974483}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 45,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 35,
+        "memberId": 1,
+        "url": "/assets/object/qafix/pulse-prism-console/pulse-prism-console.wrl",
+        "position": {
+          "x": 1.125,
+          "y": 1.75,
+          "z": -2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 2.356194490192345
+        },
+        "rawPosition": "{\"x\":1.125,\"y\":1.75,\"z\":-2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":2.356194490192345}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 46,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 36,
+        "memberId": 1,
+        "url": "/assets/object/qafix/aurora-kinetic-art/aurora-kinetic-art.wrl",
+        "position": {
+          "x": -7.875,
+          "y": -1.25,
+          "z": -9.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.9269908169872414
+        },
+        "rawPosition": "{\"x\":-7.875,\"y\":-1.25,\"z\":-9.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.9269908169872414}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 47,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 37,
+        "memberId": 1,
+        "url": "/assets/object/qafix/velvet-thornwing/velvet-thornwing.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":0,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 48,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 38,
+        "memberId": 1,
+        "url": "/assets/object/qafix/galactic-prep-island/galactic-prep-island.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 0.82,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":0.82,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 49,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 39,
+        "memberId": 1,
+        "url": "/assets/object/qafix/cyberchef-corner-kitchen/cyberchef-corner-kitchen.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 1.64,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":1.64,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 50,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 40,
+        "memberId": 1,
+        "url": "/assets/object/qafix/comet-crown-spin-top/comet-crown-spin-top.wrl",
+        "position": {
+          "x": 0,
+          "y": 1.4,
+          "z": -9.95
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":0,\"y\":1.4,\"z\":-9.95}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 51,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 41,
+        "memberId": 1,
+        "url": "/assets/object/qafix/zero-g-ring-toss/zero-g-ring-toss.wrl",
+        "position": {
+          "x": 0,
+          "y": 1.4,
+          "z": 9.95
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        },
+        "rawPosition": "{\"x\":0,\"y\":1.4,\"z\":9.95}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.141592653589793}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 52,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 42,
+        "memberId": 1,
+        "url": "/assets/object/qafix/pocket-moon-playset/pocket-moon-playset.wrl",
+        "position": {
+          "x": 9.95,
+          "y": 1.4,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        },
+        "rawPosition": "{\"x\":9.95,\"y\":1.4,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":1.5707963267948966}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 53,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 43,
+        "memberId": 1,
+        "url": "/assets/object/qafix/chronos-orrery/chronos-orrery.wrl",
+        "position": {
+          "x": -9.95,
+          "y": 1.4,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        },
+        "rawPosition": "{\"x\":-9.95,\"y\":1.4,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":-1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 54,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 44,
+        "memberId": 1,
+        "url": "/assets/object/qafix/echo-cabinet/echo-cabinet.wrl",
+        "position": {
+          "x": 4.4,
+          "y": 0.5,
+          "z": -1.1
+        },
+        "rotation": {
+          "x": 1,
+          "y": 0,
+          "z": 0,
+          "angle": 0.5235987755982988
+        },
+        "rawPosition": "{\"x\":4.4,\"y\":0.5,\"z\":-1.1}",
+        "rawRotation": "{\"x\":1,\"y\":0,\"z\":0,\"angle\":0.5235987755982988}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 55,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 45,
+        "memberId": 1,
+        "url": "/assets/object/qafix/starlight-zoetrope/starlight-zoetrope.wrl",
+        "position": {
+          "x": -4.4,
+          "y": 0.5,
+          "z": 1.1
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 1,
+          "angle": -0.5235987755982988
+        },
+        "rawPosition": "{\"x\":-4.4,\"y\":0.5,\"z\":1.1}",
+        "rawRotation": "{\"x\":0,\"y\":0,\"z\":1,\"angle\":-0.5235987755982988}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 56,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 46,
+        "memberId": 1,
+        "url": "/assets/object/qafix/meridian-time-chest/meridian-time-chest.wrl",
+        "position": {
+          "x": 1.7320508,
+          "y": 0.9,
+          "z": -1.7320508
+        },
+        "rotation": {
+          "x": 0.5773503,
+          "y": 0.5773503,
+          "z": 0.5773503,
+          "angle": 2.0943951
+        },
+        "rawPosition": "{\"x\":1.7320508,\"y\":0.9,\"z\":-1.7320508}",
+        "rawRotation": "{\"x\":0.5773503,\"y\":0.5773503,\"z\":0.5773503,\"angle\":2.0943951}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 57,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 47,
+        "memberId": 1,
+        "url": "/assets/object/qafix/orbitwash-washer/orbitwash-washer.wrl",
+        "position": {
+          "x": -2.2,
+          "y": 2.2,
+          "z": 3.3
+        },
+        "rotation": {
+          "x": 0.7071068,
+          "y": 0.7071068,
+          "z": 0,
+          "angle": 1.0471975511965976
+        },
+        "rawPosition": "{\"x\":-2.2,\"y\":2.2,\"z\":3.3}",
+        "rawRotation": "{\"x\":0.7071068,\"y\":0.7071068,\"z\":0,\"angle\":1.0471975511965976}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 58,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 48,
+        "memberId": 1,
+        "url": "/assets/object/qafix/orbitcool-smart-refrigerator/orbitcool-smart-refrigerator.wrl",
+        "position": {
+          "x": 18.510206479792842,
+          "y": 1.6000000127534366,
+          "z": -5.537815135201809
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 5.344663704667898
+        },
+        "rawPosition": "{\"x\":18.510206479792842,\"y\":1.6000000127534366,\"z\":-5.537815135201809}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":5.344663704667898}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 59,
+      "stored": {
+        "placeId": 836,
+        "placeType": "home",
+        "placeSlug": null,
+        "objectId": 49,
+        "memberId": 1,
+        "url": "/assets/object/qafix/patiochef-e-grill/patiochef-e-grill.wrl",
+        "position": {
+          "x": 0.0001,
+          "y": 0.0002,
+          "z": -0.0003
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.0001
+        },
+        "rawPosition": "{\"x\":0.0001,\"y\":0.0002,\"z\":-0.0003}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0.0001}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 60,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 50,
+        "memberId": 1,
+        "url": "/assets/object/qafix/cipher-heart-locket/cipher-heart-locket.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 61,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 51,
+        "memberId": 1,
+        "url": "/assets/object/qafix/aether-crown-display/aether-crown-display.wrl",
+        "position": {
+          "x": 3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        },
+        "rawPosition": "{\"x\":3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 62,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 52,
+        "memberId": 1,
+        "url": "/assets/object/qafix/by-the-sea/by-the-sea.wrl",
+        "position": {
+          "x": -3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        },
+        "rawPosition": "{\"x\":-3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":-1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 63,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 53,
+        "memberId": 1,
+        "url": "/assets/object/qafix/rainbow-room/rainbow-room.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.141592653589793}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 64,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 30,
+        "memberId": 1,
+        "url": "/assets/object/qafix/ct-table/Table_finished.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": -4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.7853981633974483
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":-4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0.7853981633974483}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 65,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 31,
+        "memberId": 1,
+        "url": "/assets/object/qafix/advenbed1/advenbed1.wrl",
+        "position": {
+          "x": 1.125,
+          "y": 1.75,
+          "z": -2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 2.356194490192345
+        },
+        "rawPosition": "{\"x\":1.125,\"y\":1.75,\"z\":-2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":2.356194490192345}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 66,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 32,
+        "memberId": 1,
+        "url": "/assets/object/qafix/black-willow-bed/black-willow-bed.wrl",
+        "position": {
+          "x": -7.875,
+          "y": -1.25,
+          "z": -9.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.9269908169872414
+        },
+        "rawPosition": "{\"x\":-7.875,\"y\":-1.25,\"z\":-9.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.9269908169872414}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 67,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 33,
+        "memberId": 1,
+        "url": "/assets/object/qafix/flux-tape-deck/flux-tape-deck.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":0,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 68,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 34,
+        "memberId": 1,
+        "url": "/assets/object/qafix/signal-storm-globe/signal-storm-globe.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 0.82,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":0.82,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 69,
+      "stored": {
+        "placeId": 837,
+        "placeType": "club",
+        "placeSlug": "personalclub",
+        "objectId": 35,
+        "memberId": 1,
+        "url": "/assets/object/qafix/pulse-prism-console/pulse-prism-console.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 1.64,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":1.64,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 70,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 46,
+        "memberId": 1,
+        "url": "/assets/object/qafix/meridian-time-chest/meridian-time-chest.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 71,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 47,
+        "memberId": 1,
+        "url": "/assets/object/qafix/orbitwash-washer/orbitwash-washer.wrl",
+        "position": {
+          "x": 3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        },
+        "rawPosition": "{\"x\":3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 72,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 48,
+        "memberId": 1,
+        "url": "/assets/object/qafix/orbitcool-smart-refrigerator/orbitcool-smart-refrigerator.wrl",
+        "position": {
+          "x": -3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        },
+        "rawPosition": "{\"x\":-3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":-1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 73,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 49,
+        "memberId": 1,
+        "url": "/assets/object/qafix/patiochef-e-grill/patiochef-e-grill.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.141592653589793}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 74,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 50,
+        "memberId": 1,
+        "url": "/assets/object/qafix/cipher-heart-locket/cipher-heart-locket.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": -4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.7853981633974483
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":-4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0.7853981633974483}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 75,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 51,
+        "memberId": 1,
+        "url": "/assets/object/qafix/aether-crown-display/aether-crown-display.wrl",
+        "position": {
+          "x": 1.125,
+          "y": 1.75,
+          "z": -2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 2.356194490192345
+        },
+        "rawPosition": "{\"x\":1.125,\"y\":1.75,\"z\":-2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":2.356194490192345}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 76,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 52,
+        "memberId": 1,
+        "url": "/assets/object/qafix/by-the-sea/by-the-sea.wrl",
+        "position": {
+          "x": -7.875,
+          "y": -1.25,
+          "z": -9.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.9269908169872414
+        },
+        "rawPosition": "{\"x\":-7.875,\"y\":-1.25,\"z\":-9.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.9269908169872414}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 77,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 53,
+        "memberId": 1,
+        "url": "/assets/object/qafix/rainbow-room/rainbow-room.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 0,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":0,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 78,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 30,
+        "memberId": 1,
+        "url": "/assets/object/qafix/ct-table/Table_finished.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 0.82,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":0.82,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 79,
+      "stored": {
+        "placeId": 4,
+        "placeType": "public",
+        "placeSlug": "fleamarket",
+        "objectId": 31,
+        "memberId": 1,
+        "url": "/assets/object/qafix/advenbed1/advenbed1.wrl",
+        "position": {
+          "x": 2.5,
+          "y": 1.64,
+          "z": 2.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":2.5,\"y\":1.64,\"z\":2.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 80,
+      "stored": {
+        "placeId": 1,
+        "placeType": "public",
+        "placeSlug": "enter",
+        "objectId": 32,
+        "memberId": 1,
+        "url": "/assets/object/qafix/black-willow-bed/black-willow-bed.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 81,
+      "stored": {
+        "placeId": 1,
+        "placeType": "public",
+        "placeSlug": "enter",
+        "objectId": 33,
+        "memberId": 1,
+        "url": "/assets/object/qafix/flux-tape-deck/flux-tape-deck.wrl",
+        "position": {
+          "x": 3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 1.5707963267948966
+        },
+        "rawPosition": "{\"x\":3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 82,
+      "stored": {
+        "placeId": 1,
+        "placeType": "public",
+        "placeSlug": "enter",
+        "objectId": 34,
+        "memberId": 1,
+        "url": "/assets/object/qafix/signal-storm-globe/signal-storm-globe.wrl",
+        "position": {
+          "x": -3.25,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": -1.5707963267948966
+        },
+        "rawPosition": "{\"x\":-3.25,\"y\":0,\"z\":0}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":-1.5707963267948966}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 83,
+      "stored": {
+        "placeId": 1,
+        "placeType": "public",
+        "placeSlug": "enter",
+        "objectId": 35,
+        "memberId": 1,
+        "url": "/assets/object/qafix/pulse-prism-console/pulse-prism-console.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 3.141592653589793
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":3.141592653589793}",
+        "createdAt": "2003-06-14 12:00:00"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    },
+    {
+      "source": "object_instance",
+      "id": 84,
+      "stored": {
+        "placeId": 1,
+        "placeType": "public",
+        "placeSlug": "enter",
+        "objectId": 36,
+        "memberId": 1,
+        "url": "/assets/object/qafix/aurora-kinetic-art/aurora-kinetic-art.wrl",
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": -4.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "angle": 0.7853981633974483
+        },
+        "rawPosition": "{\"x\":0,\"y\":0,\"z\":-4.5}",
+        "rawRotation": "{\"x\":0,\"y\":1,\"z\":0,\"angle\":0.7853981633974483}",
+        "createdAt": "2026-09-05 03:13:28"
+      },
+      "impliedScale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      }
+    }
+  ]
+}

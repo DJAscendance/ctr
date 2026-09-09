@@ -1,0 +1,1435 @@
+{
+  "generatedBy": "qa/placement/tools/build-fixture-set.js",
+  "note": "Synthetic placement fixtures. No citizen data. Seed into a disposable QA database only.",
+  "itemLibrary": "/home/ryan/Projects/cybertown/new-items/item-categories (read-only source)",
+  "objects": [
+    {
+      "objectRef": "qafix-1",
+      "category": "furniture",
+      "slug": "ct-table",
+      "filename": "Table_finished.wrl",
+      "directory": "qafix/ct-table",
+      "animated": false,
+      "name": "QAFIX ct-table"
+    },
+    {
+      "objectRef": "qafix-2",
+      "category": "furniture",
+      "slug": "advenbed1",
+      "filename": "advenbed1.wrl",
+      "directory": "qafix/advenbed1",
+      "animated": false,
+      "name": "QAFIX advenbed1"
+    },
+    {
+      "objectRef": "qafix-3",
+      "category": "furniture",
+      "slug": "black-willow-bed",
+      "filename": "black-willow-bed.wrl",
+      "directory": "qafix/black-willow-bed",
+      "animated": false,
+      "name": "QAFIX black-willow-bed"
+    },
+    {
+      "objectRef": "qafix-5",
+      "category": "electronics",
+      "slug": "flux-tape-deck",
+      "filename": "flux-tape-deck.wrl",
+      "directory": "qafix/flux-tape-deck",
+      "animated": true,
+      "name": "QAFIX flux-tape-deck"
+    },
+    {
+      "objectRef": "qafix-6",
+      "category": "electronics",
+      "slug": "signal-storm-globe",
+      "filename": "signal-storm-globe.wrl",
+      "directory": "qafix/signal-storm-globe",
+      "animated": true,
+      "name": "QAFIX signal-storm-globe"
+    },
+    {
+      "objectRef": "qafix-7",
+      "category": "electronics",
+      "slug": "pulse-prism-console",
+      "filename": "pulse-prism-console.wrl",
+      "directory": "qafix/pulse-prism-console",
+      "animated": true,
+      "name": "QAFIX pulse-prism-console"
+    },
+    {
+      "objectRef": "qafix-8",
+      "category": "decorative",
+      "slug": "aurora-kinetic-art",
+      "filename": "aurora-kinetic-art.wrl",
+      "directory": "qafix/aurora-kinetic-art",
+      "animated": true,
+      "name": "QAFIX aurora-kinetic-art"
+    },
+    {
+      "objectRef": "qafix-9",
+      "category": "decorative",
+      "slug": "velvet-thornwing",
+      "filename": "velvet-thornwing.wrl",
+      "directory": "qafix/velvet-thornwing",
+      "animated": false,
+      "name": "QAFIX velvet-thornwing"
+    },
+    {
+      "objectRef": "qafix-10",
+      "category": "kitchens",
+      "slug": "galactic-prep-island",
+      "filename": "galactic-prep-island.wrl",
+      "directory": "qafix/galactic-prep-island",
+      "animated": false,
+      "name": "QAFIX galactic-prep-island"
+    },
+    {
+      "objectRef": "qafix-11",
+      "category": "kitchens",
+      "slug": "cyberchef-corner-kitchen",
+      "filename": "cyberchef-corner-kitchen.wrl",
+      "directory": "qafix/cyberchef-corner-kitchen",
+      "animated": false,
+      "name": "QAFIX cyberchef-corner-kitchen"
+    },
+    {
+      "objectRef": "qafix-12",
+      "category": "toys",
+      "slug": "comet-crown-spin-top",
+      "filename": "comet-crown-spin-top.wrl",
+      "directory": "qafix/comet-crown-spin-top",
+      "animated": true,
+      "name": "QAFIX comet-crown-spin-top"
+    },
+    {
+      "objectRef": "qafix-13",
+      "category": "toys",
+      "slug": "zero-g-ring-toss",
+      "filename": "zero-g-ring-toss.wrl",
+      "directory": "qafix/zero-g-ring-toss",
+      "animated": false,
+      "name": "QAFIX zero-g-ring-toss"
+    },
+    {
+      "objectRef": "qafix-14",
+      "category": "toys",
+      "slug": "pocket-moon-playset",
+      "filename": "pocket-moon-playset.wrl",
+      "directory": "qafix/pocket-moon-playset",
+      "animated": false,
+      "name": "QAFIX pocket-moon-playset"
+    },
+    {
+      "objectRef": "qafix-15",
+      "category": "antiques",
+      "slug": "chronos-orrery",
+      "filename": "chronos-orrery.wrl",
+      "directory": "qafix/chronos-orrery",
+      "animated": true,
+      "name": "QAFIX chronos-orrery"
+    },
+    {
+      "objectRef": "qafix-16",
+      "category": "antiques",
+      "slug": "echo-cabinet",
+      "filename": "echo-cabinet.wrl",
+      "directory": "qafix/echo-cabinet",
+      "animated": false,
+      "name": "QAFIX echo-cabinet"
+    },
+    {
+      "objectRef": "qafix-17",
+      "category": "antiques",
+      "slug": "starlight-zoetrope",
+      "filename": "starlight-zoetrope.wrl",
+      "directory": "qafix/starlight-zoetrope",
+      "animated": true,
+      "name": "QAFIX starlight-zoetrope"
+    },
+    {
+      "objectRef": "qafix-18",
+      "category": "antiques",
+      "slug": "meridian-time-chest",
+      "filename": "meridian-time-chest.wrl",
+      "directory": "qafix/meridian-time-chest",
+      "animated": false,
+      "name": "QAFIX meridian-time-chest"
+    },
+    {
+      "objectRef": "qafix-19",
+      "category": "appliances",
+      "slug": "orbitwash-washer",
+      "filename": "orbitwash-washer.wrl",
+      "directory": "qafix/orbitwash-washer",
+      "animated": false,
+      "name": "QAFIX orbitwash-washer"
+    },
+    {
+      "objectRef": "qafix-20",
+      "category": "appliances",
+      "slug": "orbitcool-smart-refrigerator",
+      "filename": "orbitcool-smart-refrigerator.wrl",
+      "directory": "qafix/orbitcool-smart-refrigerator",
+      "animated": false,
+      "name": "QAFIX orbitcool-smart-refrigerator"
+    },
+    {
+      "objectRef": "qafix-21",
+      "category": "appliances",
+      "slug": "patiochef-e-grill",
+      "filename": "patiochef-e-grill.wrl",
+      "directory": "qafix/patiochef-e-grill",
+      "animated": false,
+      "name": "QAFIX patiochef-e-grill"
+    },
+    {
+      "objectRef": "qafix-22",
+      "category": "jewelry",
+      "slug": "cipher-heart-locket",
+      "filename": "cipher-heart-locket.wrl",
+      "directory": "qafix/cipher-heart-locket",
+      "animated": false,
+      "name": "QAFIX cipher-heart-locket"
+    },
+    {
+      "objectRef": "qafix-23",
+      "category": "jewelry",
+      "slug": "aether-crown-display",
+      "filename": "aether-crown-display.wrl",
+      "directory": "qafix/aether-crown-display",
+      "animated": false,
+      "name": "QAFIX aether-crown-display"
+    },
+    {
+      "objectRef": "qafix-24",
+      "category": "art",
+      "slug": "by-the-sea",
+      "filename": "by-the-sea.wrl",
+      "directory": "qafix/by-the-sea",
+      "animated": false,
+      "name": "QAFIX by-the-sea"
+    },
+    {
+      "objectRef": "qafix-25",
+      "category": "art",
+      "slug": "rainbow-room",
+      "filename": "rainbow-room.wrl",
+      "directory": "qafix/rainbow-room",
+      "animated": false,
+      "name": "QAFIX rainbow-room"
+    }
+  ],
+  "fixtures": [
+    {
+      "fixtureRef": "home-01",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-1",
+      "trait": "origin-floor",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "home-02",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-2",
+      "trait": "pos-x-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "home-03",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-3",
+      "trait": "neg-x-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": -3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": -1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "home-04",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-5",
+      "trait": "pos-z-floor",
+      "era": "historical",
+      "animated": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.141592653589793
+      }
+    },
+    {
+      "fixtureRef": "home-05",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-6",
+      "trait": "neg-z-floor",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0.7853981633974483
+      }
+    },
+    {
+      "fixtureRef": "home-06",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-7",
+      "trait": "raised-y",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 1.125,
+        "y": 1.75,
+        "z": -2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 2.356194490192345
+      }
+    },
+    {
+      "fixtureRef": "home-07",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-8",
+      "trait": "deep-negative",
+      "era": "historical",
+      "animated": true,
+      "position": {
+        "x": -7.875,
+        "y": -1.25,
+        "z": -9.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.9269908169872414
+      }
+    },
+    {
+      "fixtureRef": "home-08",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-9",
+      "trait": "stack-base",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 2.5,
+        "y": 0,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "home-09",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-10",
+      "trait": "stack-mid",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 2.5,
+        "y": 0.82,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "home-10",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-11",
+      "trait": "stack-top",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 2.5,
+        "y": 1.64,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "home-11",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-12",
+      "trait": "wall-north",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 0,
+        "y": 1.4,
+        "z": -9.95
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "home-12",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-13",
+      "trait": "wall-south",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 1.4,
+        "z": 9.95
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.141592653589793
+      }
+    },
+    {
+      "fixtureRef": "home-13",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-14",
+      "trait": "wall-east",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 9.95,
+        "y": 1.4,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "home-14",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-15",
+      "trait": "wall-west",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": -9.95,
+        "y": 1.4,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": -1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "home-15",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-16",
+      "trait": "tilt-x-axis",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 4.4,
+        "y": 0.5,
+        "z": -1.1
+      },
+      "rotation": {
+        "x": 1,
+        "y": 0,
+        "z": 0,
+        "angle": 0.5235987755982988
+      }
+    },
+    {
+      "fixtureRef": "home-16",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-17",
+      "trait": "tilt-z-axis",
+      "era": "historical",
+      "animated": true,
+      "position": {
+        "x": -4.4,
+        "y": 0.5,
+        "z": 1.1
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 1,
+        "angle": -0.5235987755982988
+      }
+    },
+    {
+      "fixtureRef": "home-17",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-18",
+      "trait": "oblique-axis",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 1.7320508,
+        "y": 0.9,
+        "z": -1.7320508
+      },
+      "rotation": {
+        "x": 0.5773503,
+        "y": 0.5773503,
+        "z": 0.5773503,
+        "angle": 2.0943951
+      }
+    },
+    {
+      "fixtureRef": "home-18",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-19",
+      "trait": "axis-xy",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": -2.2,
+        "y": 2.2,
+        "z": 3.3
+      },
+      "rotation": {
+        "x": 0.7071068,
+        "y": 0.7071068,
+        "z": 0,
+        "angle": 1.0471975511965976
+      }
+    },
+    {
+      "fixtureRef": "home-19",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-20",
+      "trait": "high-precision",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 18.510206479792842,
+        "y": 1.6000000127534366,
+        "z": -5.537815135201809
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 5.344663704667898
+      }
+    },
+    {
+      "fixtureRef": "home-20",
+      "group": "home",
+      "source": "object_instance",
+      "placeKey": "home",
+      "memberKey": "owner",
+      "objectRef": "qafix-21",
+      "trait": "tiny-offset",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 0.0001,
+        "y": 0.0002,
+        "z": -0.0003
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0.0001
+      }
+    },
+    {
+      "fixtureRef": "club-01",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-22",
+      "trait": "origin-floor",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "club-02",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-23",
+      "trait": "pos-x-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "club-03",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-24",
+      "trait": "neg-x-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": -3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": -1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "club-04",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-25",
+      "trait": "pos-z-floor",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.141592653589793
+      }
+    },
+    {
+      "fixtureRef": "club-05",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-1",
+      "trait": "neg-z-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0.7853981633974483
+      }
+    },
+    {
+      "fixtureRef": "club-06",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-2",
+      "trait": "raised-y",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 1.125,
+        "y": 1.75,
+        "z": -2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 2.356194490192345
+      }
+    },
+    {
+      "fixtureRef": "club-07",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-3",
+      "trait": "deep-negative",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": -7.875,
+        "y": -1.25,
+        "z": -9.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.9269908169872414
+      }
+    },
+    {
+      "fixtureRef": "club-08",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-5",
+      "trait": "stack-base",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 2.5,
+        "y": 0,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "club-09",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-6",
+      "trait": "stack-mid",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 2.5,
+        "y": 0.82,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "club-10",
+      "group": "club",
+      "source": "object_instance",
+      "placeKey": "club",
+      "memberKey": "owner",
+      "objectRef": "qafix-7",
+      "trait": "stack-top",
+      "era": "historical",
+      "animated": true,
+      "position": {
+        "x": 2.5,
+        "y": 1.64,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "shop-01",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-8",
+      "trait": "origin-floor",
+      "era": "historical",
+      "animated": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "shop-02",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-9",
+      "trait": "pos-x-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "shop-03",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-10",
+      "trait": "neg-x-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": -3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": -1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "shop-04",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-11",
+      "trait": "pos-z-floor",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.141592653589793
+      }
+    },
+    {
+      "fixtureRef": "shop-05",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-12",
+      "trait": "neg-z-floor",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0.7853981633974483
+      }
+    },
+    {
+      "fixtureRef": "shop-06",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-13",
+      "trait": "raised-y",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 1.125,
+        "y": 1.75,
+        "z": -2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 2.356194490192345
+      }
+    },
+    {
+      "fixtureRef": "shop-07",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-14",
+      "trait": "deep-negative",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": -7.875,
+        "y": -1.25,
+        "z": -9.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.9269908169872414
+      }
+    },
+    {
+      "fixtureRef": "shop-08",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-15",
+      "trait": "stack-base",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 2.5,
+        "y": 0,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "shop-09",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-16",
+      "trait": "stack-mid",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 2.5,
+        "y": 0.82,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "shop-10",
+      "group": "shop",
+      "source": "mall_object",
+      "placeKey": "shop",
+      "memberKey": null,
+      "objectRef": "qafix-17",
+      "trait": "stack-top",
+      "era": "historical",
+      "animated": true,
+      "position": {
+        "x": 2.5,
+        "y": 1.64,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "place-01",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-18",
+      "trait": "origin-floor",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "place-02",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-19",
+      "trait": "pos-x-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "place-03",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-20",
+      "trait": "neg-x-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": -3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": -1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "place-04",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-21",
+      "trait": "pos-z-floor",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.141592653589793
+      }
+    },
+    {
+      "fixtureRef": "place-05",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-22",
+      "trait": "neg-z-floor",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0.7853981633974483
+      }
+    },
+    {
+      "fixtureRef": "place-06",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-23",
+      "trait": "raised-y",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 1.125,
+        "y": 1.75,
+        "z": -2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 2.356194490192345
+      }
+    },
+    {
+      "fixtureRef": "place-07",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-24",
+      "trait": "deep-negative",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": -7.875,
+        "y": -1.25,
+        "z": -9.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.9269908169872414
+      }
+    },
+    {
+      "fixtureRef": "place-08",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-25",
+      "trait": "stack-base",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 2.5,
+        "y": 0,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "place-09",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-1",
+      "trait": "stack-mid",
+      "era": "recent",
+      "animated": false,
+      "position": {
+        "x": 2.5,
+        "y": 0.82,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "place-10",
+      "group": "place",
+      "source": "object_instance",
+      "placeKey": "fleamarket",
+      "memberKey": "owner",
+      "objectRef": "qafix-2",
+      "trait": "stack-top",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 2.5,
+        "y": 1.64,
+        "z": 2.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "public-01",
+      "group": "public",
+      "source": "object_instance",
+      "placeKey": "plaza",
+      "memberKey": "owner",
+      "objectRef": "qafix-3",
+      "trait": "origin-floor",
+      "era": "historical",
+      "animated": false,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0
+      }
+    },
+    {
+      "fixtureRef": "public-02",
+      "group": "public",
+      "source": "object_instance",
+      "placeKey": "plaza",
+      "memberKey": "owner",
+      "objectRef": "qafix-5",
+      "trait": "pos-x-floor",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "public-03",
+      "group": "public",
+      "source": "object_instance",
+      "placeKey": "plaza",
+      "memberKey": "owner",
+      "objectRef": "qafix-6",
+      "trait": "neg-x-floor",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": -3.25,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": -1.5707963267948966
+      }
+    },
+    {
+      "fixtureRef": "public-04",
+      "group": "public",
+      "source": "object_instance",
+      "placeKey": "plaza",
+      "memberKey": "owner",
+      "objectRef": "qafix-7",
+      "trait": "pos-z-floor",
+      "era": "historical",
+      "animated": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 3.141592653589793
+      }
+    },
+    {
+      "fixtureRef": "public-05",
+      "group": "public",
+      "source": "object_instance",
+      "placeKey": "plaza",
+      "memberKey": "owner",
+      "objectRef": "qafix-8",
+      "trait": "neg-z-floor",
+      "era": "recent",
+      "animated": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -4.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "angle": 0.7853981633974483
+      }
+    }
+  ]
+}
