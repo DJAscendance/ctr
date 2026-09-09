@@ -23,6 +23,7 @@ export CTR_QA_USER2=outlandsqa2 CTR_QA_PASS2=testqa
 
 DISPLAY=:1 node qa/outlands/tools/check-freeplay.js
 DISPLAY=:1 node qa/outlands/tools/check-lifecycle.js
+DISPLAY=:1 node qa/outlands/tools/check-stale-place.js
 CTR_TRANSITIONS=100 DISPLAY=:1 node qa/outlands/tools/check-memory.js
 ```
 
@@ -36,6 +37,7 @@ Both accounts need the Outlands team avatars in the `avatar` table
 | `check-freeplay.js` | the historical entrance, the four choices, red/blue mapping, the world's own spawn, W/D/A, the ammunition contract, Beamer, Repulsor, AAPD, ammo dispensers, beam-out, respawn and friendly fire — two authenticated citizens, on opposite sides |
 | `check-lifecycle.js` | two presences of ONE member as two targets, room state, leaving, returning, rapid Plaza/Outlands navigation, and what the outgoing world gives back |
 | `check-memory.js` | 100 entrance-to-battle-to-Plaza cycles: heap slope, one canvas, no retained citizen, no retained gameplay browser state, flat socket listeners |
+| `check-stale-place.js` | that a navigation vue-router cancelled cannot write `appStore.data.place`: after a fast Plaza/Outlands pair and after seven rapid navigations, the store, the socket room, `Browser.myAvatarName` and `Browser.myAvatarURL` all still describe Outlands, the world's own avatar-swap line stays quiet, and a real Beamer hit still lands |
 
 `lib/outlands-client.js` is the shared driver. Two rules it keeps:
 

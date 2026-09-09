@@ -24,6 +24,7 @@ const SUITES = [
   "tests/.compiled/tests/bxx-sfnode.test.js",
   "tests/.compiled/tests/shared-event-codec.test.js",
   "tests/.compiled/tests/legacy-url-policy.test.js",
+  "tests/.compiled/tests/navigation-place.test.js",
   "tests/.compiled/tests/site-config.test.js",
 ];
 
