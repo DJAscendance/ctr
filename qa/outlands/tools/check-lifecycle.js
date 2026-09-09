@@ -32,6 +32,9 @@ const USER = process.env.CTR_QA_USER || 'testqa';
 const PASS = process.env.CTR_QA_PASS || 'testqa';
 const SHOOTER = { user: process.env.CTR_QA_USER2 || 'outlandsqa2', pass: process.env.CTR_QA_PASS2 || 'testqa' };
 
+/* Held so the failure path can close it - see the catch at the bottom. */
+let openBrowser = null;
+
 const results = [];
 function check(name, pass, detail) {
   results.push({ name, pass: !!pass, detail: detail === undefined ? null : detail });
@@ -89,6 +92,9 @@ const gameplayLive = page => page.evaluate(() => {
 (async () => {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const browser = await launch();
+  /* A gate that dies mid-run must not leave its citizens standing in the room:
+   * the next run would see them as ghosts and fail for the wrong reason. */
+  openBrowser = browser;
   process.stdout.write(`renderer: ${browser.ctrRenderer}\n`);
   const record = { renderer: browser.ctrRenderer };
 
@@ -357,12 +363,26 @@ const gameplayLive = page => page.evaluate(() => {
   await O.stand(shooter, [at[0], at[1], at[2] + 12], [0, 1, 0, 0]);
   await shooter.waitForTimeout(5000);
   await O.selectWeapon(shooter, 'beamer');
+  /*
+   * Stand them up and aim, and be willing to do it again. The world rebinds
+   * battle_view of its own accord a few seconds after a citizen enters, so a
+   * single attempt can be set up while the target is still being moved by
+   * their own Script - which is a gate that measured the wrong instant, not a
+   * product that missed.
+   */
   let midAim = null;
-  for (const drop of [0.4, 0, 0.8, 0.2]) {
-    await O.aimAt(shooter, await O.camera(tabB), drop);
-    await shooter.waitForTimeout(1500);
-    midAim = await O.fireRay(shooter);
-    if (midAim && midAim.nicknames.indexOf(tabBNow.self) > -1) break;
+  for (let attempt = 0; attempt < 3 && !(midAim && midAim.nicknames.indexOf(tabBNow.self) > -1); attempt += 1) {
+    await O.stand(tabB, [spawns[1][0][0], spawns[1][0][1], spawns[1][0][2] - 13], [0, 1, 0, Math.PI]);
+    await tabB.waitForTimeout(5000);
+    const target = await O.camera(tabB);
+    await O.stand(shooter, [target[0], target[1], target[2] + 12], [0, 1, 0, 0]);
+    await shooter.waitForTimeout(5000);
+    for (const drop of [0.4, 0, 0.8, 0.2]) {
+      await O.aimAt(shooter, await O.camera(tabB), drop);
+      await shooter.waitForTimeout(1500);
+      midAim = await O.fireRay(shooter);
+      if (midAim && midAim.nicknames.indexOf(tabBNow.self) > -1) break;
+    }
   }
   check('the shooter has the returning tab, and only it, in the ray',
     !!midAim && midAim.nicknames.length === 1 && midAim.nicknames[0] === tabBNow.self,
@@ -402,4 +422,8 @@ const gameplayLive = page => page.evaluate(() => {
   process.stdout.write(`\n${passed}/${results.length} checks passed\n`);
   await browser.close();
   process.exit(passed === results.length ? 0 : 1);
-})().catch(e => { console.error('FATAL', e); process.exit(1); });
+})().catch(async (e) => {
+  console.error('FATAL', e);
+  if (openBrowser) { try { await openBrowser.close(); } catch (x) { /* already gone */ } }
+  process.exit(1);
+});

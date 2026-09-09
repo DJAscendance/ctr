@@ -45,6 +45,9 @@ const BLUE = {
   side: 'bluem', team: 2,
 };
 
+/* Held so the failure path can close it - see the catch at the bottom. */
+let openBrowser = null;
+
 const results = [];
 function check(name, pass, detail) {
   results.push({ name, pass: !!pass, detail: detail === undefined ? null : detail });
@@ -65,6 +68,9 @@ function watch(page, tag) {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const spawns = O.spawnPoints(REPO);
   const browser = await launch();
+  /* A gate that dies mid-run must not leave its citizens standing in the room:
+   * the next run would see them as ghosts and fail for the wrong reason. */
+  openBrowser = browser;
   process.stdout.write(`renderer: ${browser.ctrRenderer}\n`);
   const record = { renderer: browser.ctrRenderer };
 
@@ -614,4 +620,8 @@ function watch(page, tag) {
   process.stdout.write(`\n${passed}/${results.length} checks passed\n`);
   await browser.close();
   process.exit(passed === results.length ? 0 : 1);
-})().catch(e => { console.error('FATAL', e); process.exit(1); });
+})().catch(async (e) => {
+  console.error('FATAL', e);
+  if (openBrowser) { try { await openBrowser.close(); } catch (x) { /* already gone */ } }
+  process.exit(1);
+});

@@ -51,12 +51,19 @@ function spawnPoints(repoRoot) {
  * would otherwise have left from an earlier run.
  */
 async function wearOrdinaryAvatar(page, avatarId = 1) {
+  /* The store's user arrives over HTTP after login, so wait for it rather than
+   * racing it: a page that is still booting has no `user.avatar` to write to. */
+  await page.waitForFunction(() => {
+    const app = document.querySelector('#app') && document.querySelector('#app').__vue__;
+    return !!(app && app.$store.data.isUser && app.$store.data.user.avatar);
+  }, undefined, { timeout: 60000 });
   await page.evaluate(async id => {
     const app = document.querySelector('#app').__vue__;
     const res = await app.$http.post('/member/update_avatar', { avatarId: id });
     app.$store.methods.setToken(res.data.token);
     const list = await app.$http.get('/avatar');
-    Object.assign(app.$store.data.user.avatar, list.data.avatars.find(a => a.id === id));
+    const row = (list.data.avatars || []).find(a => a.id === id);
+    if (row) Object.assign(app.$store.data.user.avatar, row);
     localStorage.removeItem('outlandsPreviousAvatarId');
   }, avatarId);
 }
