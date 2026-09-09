@@ -33,9 +33,19 @@
  *      over a real twenty-four-node shared-event set, then the seven routes.
  *   5. CORPUS - the same shape found in the shipped worlds, proving the rule is
  *      general and needs no per-world exception.
- *   6. WIRING - asserted against the source of `libs/x_ite_mods/bxx_node.js`
- *      and `App.vue`: still loaded, still free of a prototype patch, still free
- *      of any world knowledge.
+ *   6. WIRING - asserted against the source of
+ *      `libs/x_ite_mods/bxx_node_name.js` and `App.vue`: still loaded, still
+ *      narrow, still free of any world knowledge.
+ *
+ * The X_ITE 16.2.0 port replaced the cache-wrapping `bxx_node.js` with
+ * `bxx_node_name.js`. The old rule was "never patch SFNode.prototype", because
+ * a blanket override binds a Script's sandbox variables under the DEF name of
+ * the node a field holds instead of under the field's own name, and the field
+ * vanishes from its own Script. The new shim DOES define
+ * `SFNode.prototype.getName`, but only falls through to the DEF name when the
+ * inherited getName answers with nothing - so a named field keeps its name and
+ * sandbox binding is preserved. That narrower rule is what section 6 asserts,
+ * and sections 2 and 3 still prove the behaviour it has to produce.
  */
 import assert from "assert";
 import {
@@ -51,7 +61,7 @@ const zlib = require("zlib");
 
 const SPA = path.resolve(__dirname, "../../..");
 const SPA_SRC = path.join(SPA, "src");
-const NODE_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_node.js");
+const NODE_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_node_name.js");
 const NODE_HELPER = path.join(SPA_SRC, "helpers/bxx-node.helper.ts");
 const APP = path.join(SPA_SRC, "App.vue");
 const WORLDS = path.join(SPA, "assets/worlds");
@@ -732,37 +742,81 @@ function codeOf(file: string): string {
 }
 
 test("App.vue loads the shim", () => {
+  // The mods are no longer a flat list of `require("...")` lines: App.vue
+  // requires `x_ite_compat.js` first and then loops over the `x3dPatches`
+  // array, so being loaded means being named in that array.
   const app = fs.readFileSync(APP, "utf8");
+  const list = app.slice(app.indexOf("const x3dPatches = ["));
   assert.ok(
-    /require\("\.\/libs\/x_ite_mods\/bxx_node\.js"\);/.test(app),
-    "bxx_node.js must be required alongside the other X_ITE mods",
+    /"bxx_node_name\.js",/.test(list.slice(0, list.indexOf("];"))),
+    "bxx_node_name.js must be listed alongside the other X_ITE mods",
+  );
+  assert.ok(
+    /require\(`\.\/libs\/x_ite_mods\/\$\{patch\}`\)/.test(app),
+    "and the list must still be what App.vue requires",
   );
 });
 
-test("the shim never patches SFNode.prototype", () => {
-  for (const file of [NODE_MOD, NODE_HELPER]) {
-    const code = codeOf(file);
-    assert.ok(
-      !/SFNode\s*\.\s*prototype/.test(code),
-      `${path.basename(file)} must not reach for SFNode.prototype`,
-    );
-    assert.ok(
-      !/prototype\s*\.\s*getName/.test(code),
-      `${path.basename(file)} must not replace a prototype getName`,
-    );
-  }
+test("the shim only falls back when the field has no name of its own", () => {
+  // This is the hard gate, rewritten for the shim that replaced the cache
+  // wrapper. A BLANKET `SFNode.prototype.getName` override is still the failure
+  // OUTLANDS-1e measured: X_ITE binds a Script's sandbox variables under each
+  // field's getName(), so a named `field SFNode shared` would bind under the
+  // DEF name of the node it holds and vanish from its own Script. Answering the
+  // DEF name only for an ANONYMOUS wrapper is what keeps that binding intact,
+  // and it is exactly the case blaxxun's extension described.
+  const code = codeOf(NODE_MOD);
+  assert.ok(
+    /var inherited = SFNode\.prototype\.getName/.test(code),
+    "X_ITE's own getName must be captured, not discarded",
+  );
+  assert.ok(
+    /var own = inherited\.call\(this\)/.test(code),
+    "and asked first, on every call",
+  );
+  assert.ok(
+    /if \(own\) \{ return own \}/.test(code),
+    "a field that has its own name keeps it - this is the whole safety rule",
+  );
+  assert.ok(
+    code.indexOf("if (own) { return own }") < code.indexOf("this.getNodeName()"),
+    "the DEF name is only ever reached after that guard",
+  );
+  assert.ok(
+    /getNodeName\(\) \|\| own/.test(code),
+    "and a node with no DEF name still answers with the empty inherited name",
+  );
+  assert.ok(
+    /if \(SFNode\.prototype\.ctrBlaxxunNodeName_\) \{ return \}/.test(code),
+    "installing twice must be installing once",
+  );
+  // The helper is the pure statement of the same rule and stays clear of the
+  // prototype altogether.
+  assert.ok(
+    !/SFNode\s*\.\s*prototype/.test(codeOf(NODE_HELPER)),
+    "bxx-node.helper.ts must not reach for SFNode.prototype",
+  );
 });
 
-test("the shim hooks the cache and nothing wider", () => {
+test("the shim hooks getName and nothing wider", () => {
   const code = codeOf(NODE_MOD);
-  assert.ok(/SFNodeCache/.test(code), "the cache is the seam");
+  const defined = (code.match(/Object\.defineProperty\(SFNode\.prototype, '(\w+)'/g) || [])
+    .map((call: string) => call.slice(call.indexOf("'") + 1, -1));
+  assert.deepStrictEqual(
+    defined, ["getName", "ctrBlaxxunNodeName_"],
+    "getName and the idempotence marker are the only two properties defined",
+  );
   assert.ok(!/new Proxy/.test(code), "no new proxy layer belongs here");
+  assert.ok(
+    !/X3DObject|X3DBaseNode|SFNodeCache|X3DField/.test(code),
+    "and no other X_ITE class is reached for",
+  );
   assert.ok(!/getNodeName/.test(codeOf(NODE_HELPER)), "the DEF name comes from the base node");
 });
 
 test("the shim does not touch the OUTLANDS-1b or 1d surfaces", () => {
   const code = codeOf(NODE_MOD) + codeOf(NODE_HELPER);
-  assert.ok(!/bxx_hud|bxx_ray|bxx_script/.test(code), "no cross-mod reach");
+  assert.ok(!/bxx_hud|bxx_rayhit|bxx_avatars|bxx_script/.test(code), "no cross-mod reach");
   assert.ok(!/computeRayHit/.test(code));
 });
 

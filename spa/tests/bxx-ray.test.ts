@@ -11,10 +11,17 @@
  *      the adapter chain - so the contract is tested there rather than through
  *      a mocked renderer.
  *
- *   2. WIRING, asserted against the source of `libs/x_ite_mods/bxx_ray.js` and
- *      `App.vue`. These catch the two drifts this lane exists to prevent: a
- *      shim that stops being loaded, and a shim that starts overriding X_ITE's
- *      own node `getType()`, which the renderer dispatches on.
+ *   2. WIRING, asserted against the source of `libs/x_ite_mods/bxx_rayhit.js`,
+ *      `libs/x_ite_mods/bxx_avatars.js` and `App.vue`. These catch the two
+ *      drifts this lane exists to prevent: a shim that stops being loaded, and
+ *      a shim that starts overriding X_ITE's own node `getType()`, which the
+ *      renderer dispatches on.
+ *
+ *      The X_ITE 16.2.0 port split the old `bxx_ray.js` in two. `bxx_rayhit.js`
+ *      is the ray engine - a real Moller-Trumbore narrow phase behind a
+ *      bounding-box broad phase - and `bxx_avatars.js` wraps the `computeRayHit`
+ *      it installs to label registered nodes as blaxxun `Avatar`s. The adapter
+ *      seam OUTLANDS-2 registers through therefore lives in the second file.
  *
  * Historical anchors checked here come from the decompressed
  * `places/ne_game/vrml/ne_game.wrl`:
@@ -32,7 +39,8 @@ const fs = require("fs");
 const path = require("path");
 
 const SPA_SRC = path.resolve(__dirname, "../../../src");
-const RAY_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_ray.js");
+const RAY_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_rayhit.js");
+const AVATARS_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_avatars.js");
 const AUTH_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_auth.js");
 const APP = path.join(SPA_SRC, "App.vue");
 
@@ -79,6 +87,30 @@ function codeOf(file: string): string {
   return read(file)
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/^\s*\/\/.*$/gm, " ");
+}
+
+/**
+ * The `x3dPatches` array out of `App.vue` `mounted()`, in load order.
+ *
+ * The flat `require("./libs/x_ite_mods/NAME.js")` lines this suite used to
+ * measure offsets in are gone: every patch but `x_ite_compat.js` is now named
+ * in one list and required through a template literal, so load ORDER is read
+ * off the list rather than off the position of a require call.
+ */
+function patchOrder(): string[] {
+  const source = read(APP);
+  const start = at(source, "const x3dPatches = [");
+  const list = source.slice(start, source.indexOf("];", start));
+  const names = list.match(/"[a-z0-9_]+\.js"/g);
+  assert.ok(names && names.length > 0, "App.vue must still list its X_ITE patches");
+  return (names as string[]).map(name => name.slice(1, -1));
+}
+
+/** The load position of a patch, having first PROVED it is loaded at all. */
+function patchIndex(patch: string): number {
+  const index = patchOrder().indexOf(patch);
+  assert.notStrictEqual(index, -1, `expected App.vue to load: ${patch}`);
+  return index;
 }
 
 function view(name: string, type: string): BxxNodeView {
@@ -246,34 +278,52 @@ test("a node with no resolvable type still returns a string", () => {
 // --------------------------------------------------------------------- wiring
 
 test("the ray shim is loaded by App.vue after the base bxx shim", () => {
-  const app = read(APP);
   assert.ok(
-    at(app, "libs/x_ite_mods/bxx_auth.js") < at(app, "libs/x_ite_mods/bxx_ray.js"),
-    "bxx_ray extends bxx_auth, so it must load after it",
+    patchIndex("bxx_auth.js") < patchIndex("bxx_rayhit.js"),
+    "bxx_rayhit extends the browser bxx_auth set up, so it must load after it",
+  );
+  assert.ok(
+    patchIndex("bxx_rayhit.js") < patchIndex("bxx_avatars.js"),
+    "bxx_avatars wraps the computeRayHit bxx_rayhit installs, so it must follow it",
   );
 });
 
 test("the shim never overrides X_ITE's own node getType()", () => {
-  const source = read(RAY_MOD);
-  assert.strictEqual(
-    /X3DBaseNode\s*\.\s*prototype\s*\.\s*getType/.test(source),
-    false,
-    "X_ITE dispatches on the numeric getType() array; patching it breaks the renderer",
+  for (const file of [RAY_MOD, AVATARS_MOD]) {
+    assert.strictEqual(
+      /prototype\s*\.\s*getType\s*=/.test(read(file)),
+      false,
+      "X_ITE dispatches on the numeric getType() array; patching it breaks the renderer",
+    );
+  }
+  // The blaxxun type string is applied at the edge instead, on the way out of
+  // computeRayHit, and only to the nodes the page registered as members.
+  const avatars = read(AVATARS_MOD);
+  assert.ok(
+    avatars.includes("function avatarFacade(node, nickname)"),
+    "the Blaxxun type string is produced by a per-node facade instead",
   );
   assert.ok(
-    source.includes("resolveNodeType"),
-    "the Blaxxun type string is produced by the adapter chain instead",
+    avatars.includes("if (prop === 'getType') return function () { return 'Avatar' }"),
+    "and only that facade ever answers 'Avatar'",
   );
 });
 
 test("the shim exposes an adapter seam rather than hard-coding Outlands rules", () => {
-  const source = read(RAY_MOD);
-  assert.ok(source.includes("X3D.bxx.nodeAdapters"), "OUTLANDS-2 has somewhere to register");
-  assert.strictEqual(
-    /redm\.wrl|bluem\.wrl|ne_game|Outlands/i.test(codeOf(RAY_MOD)),
-    false,
-    "no Outlands identity may leak into the generic ray engine",
+  const avatars = read(AVATARS_MOD);
+  assert.ok(avatars.includes("b.registerBlaxxunAvatar"), "OUTLANDS-2 has somewhere to register");
+  assert.ok(avatars.includes("b.unregisterBlaxxunAvatar"), "and somewhere to unregister again");
+  assert.ok(
+    avatars.includes("if (!avatars || !avatars.size) return hit"),
+    "a world that registers nothing gets back exactly the path bxx_rayhit built",
   );
+  for (const file of [RAY_MOD, AVATARS_MOD]) {
+    assert.strictEqual(
+      /redm\.wrl|bluem\.wrl|ne_game|Outlands/i.test(codeOf(file)),
+      false,
+      "no Outlands identity may leak into the generic ray engine",
+    );
+  }
 });
 
 test("computeRayHit hands back real SFVec3f points", () => {
@@ -291,7 +341,11 @@ test("getWorldStartTime no longer returns the unassigned `wst`", () => {
     false,
     "`wst` was never assigned, so every timer seeded from it was undefined",
   );
-  assert.ok(source.includes("_bxxWorldStartTime"), "a per-world stamp replaces it");
+  assert.ok(source.includes("this.worldStartTime_"), "a per-world stamp replaces it");
+  assert.ok(
+    source.includes("this.worldStartScene_ !== scene"),
+    "and it is re-stamped per scene, so a second world cannot inherit the first clock",
+  );
 });
 
 test("setCollisionDetection no longer throws", () => {
@@ -305,7 +359,13 @@ test("setCollisionDetection no longer throws", () => {
     false,
     "the historical call must not raise",
   );
-  assert.ok(body.includes("avatarSize"), "collision distance is the lever X_ITE actually exposes");
+  // X_ITE 16 decides collision from the Collision nodes in the scene and has no
+  // global switch, so the flag is recorded rather than pushed at avatarSize.
+  assert.ok(body.includes("this.collisionDetection_"), "the flag is recorded instead");
+  assert.ok(
+    source.includes("this.collisionDetection_ === undefined ? true"),
+    "and an unset flag still reads as collision ON, which is what the worlds expect",
+  );
 });
 
 // --------------------------------------------------------------------- runner
