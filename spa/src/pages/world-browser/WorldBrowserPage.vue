@@ -44,6 +44,7 @@ import {
   environment,
 } from "@/helpers";
 import { PresenceStore, Presence, presenceKey, isSelfPresence, isPresenceEventForRoom, avTransformPayload } from "@/presence";
+import { RemoteMemberRegistry } from "@/remote-members";
 import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
@@ -55,6 +56,10 @@ export default Vue.extend({
       loaded: false,
       chatReady: false,
       presenceStore: new PresenceStore(),
+      // The Outlands-facing view of presenceStore: remote citizens only, keyed by
+      // logical presence key, plus the node<->citizen binding a weapon ray needs.
+      // It owns no state of its own - presenceStore stays authoritative.
+      remoteMembers: null,
       loadGeneration: 0,
       sharedEventListenerRegistered: false,
       worldsData: worldDataJson,
@@ -242,6 +247,7 @@ export default Vue.extend({
       // key seen in a previous room must not suppress a real render here.
       this.presenceStore = new PresenceStore();
       this.users = {};
+      this.attachRemoteMembers();
       await this.getPlace();
       if (this.loadGeneration !== generation) return;
 
@@ -302,6 +308,7 @@ export default Vue.extend({
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
       this.presenceStore = new PresenceStore();
       this.users = {};
+      this.attachRemoteMembers();
       if (this.browser) {
         const browser = X3D.getBrowser(this.browser);
         browser.replaceWorld(null);
@@ -508,6 +515,11 @@ export default Vue.extend({
         this.users[key].loaded = true;
         this.users[key]["inline"] = avInline;
         this.users[key]["import"] = avImport;
+        // Tell the registry which scene node now stands for this citizen. An
+        // Outlands ray comes back as a node, not an id, and this is the only
+        // place that mapping can be recorded truthfully - at the moment the
+        // node is actually attached to the scene.
+        if (this.remoteMembers) this.remoteMembers.bindRemoteNode(key, avInline);
 
         if (this.users[key]["inline"]) {
           if (
@@ -572,6 +584,10 @@ export default Vue.extend({
     },
     /** Removes a presence's rendered avatar, if it was ever rendered. */
     renderPresenceRemoved(key: string): void {
+      // Released first and unconditionally: a citizen with no `users` entry may
+      // still hold a binding from a render that was in flight, and a ray must
+      // never resolve to somebody who has left.
+      if (this.remoteMembers) this.remoteMembers.unbindNode(key);
       if (!this.users[key]) return;
 
       if (this.users[key].inline) {
@@ -843,6 +859,23 @@ export default Vue.extend({
     /** True if `presence` is this page's own local user. */
     isSelf(presence: Presence): boolean {
       return isSelfPresence(presence, this.$store.data.user.id, this.$socket.presenceId);
+    },
+    /**
+     * Points the remote-member registry at the room's current presenceStore.
+     *
+     * A fresh store is built for every place load, and every node binding
+     * belongs to the scene it was made in, so re-attaching here is what stops
+     * world A's avatar nodes from still answering to a citizen in world B.
+     * The registry reads identity lazily, so this is safe before login.
+     */
+    attachRemoteMembers(): void {
+      if (!this.remoteMembers) {
+        this.remoteMembers = new RemoteMemberRegistry(() => ({
+          memberId: this.$store.data.user?.id,
+          presenceId: this.$socket.presenceId,
+        }));
+      }
+      this.remoteMembers.attach(this.presenceStore);
     },
     /**
      * Drains whatever presence state already accumulated in presenceStore

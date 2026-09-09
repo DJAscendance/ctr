@@ -1,9 +1,11 @@
 import { PresenceStore } from "@/presence";
+import { RemoteMemberRegistry } from "@/remote-members";
 
 export interface WorldBrowserData {
     loaded: boolean;
     chatReady: boolean;
     presenceStore: PresenceStore;
+    remoteMembers: RemoteMemberRegistry | null;
     loadGeneration: number;
     sharedEventListenerRegistered: boolean;
     worldsData: any;
