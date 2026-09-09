@@ -64,6 +64,7 @@ import {
   avatarToRestoreAfterOutlands,
   forgetAvatarBeforeOutlands,
 } from "@/libs/outlands";
+import { releaseWorldScripts } from "@/libs/world-scripts";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -425,7 +426,13 @@ export default Vue.extend({
          * the old world is only released if it is asked for here.
          */
         if(this.browser) {
-          X3D.getBrowser(this.browser).replaceWorld(null);
+          const browser = X3D.getBrowser(this.browser);
+          /* The 3D branch releases the outgoing world inside startX3D(), before
+           * its loadURL. This branch has no loadURL, so the same release is
+           * asked for here - and, like there, before the world is replaced,
+           * while browser.currentScene still names it. */
+          this.releaseWorldScriptState(browser);
+          browser.replaceWorld(null);
         }
 
         if(this.outlandsTeamNeeded){
@@ -456,8 +463,11 @@ export default Vue.extend({
       this.attachRemoteMembers();
       if (this.browser) {
         const browser = X3D.getBrowser(this.browser);
-        browser.replaceWorld(null);
+        /* Before the replacement, not after: releaseWorldScriptState names the
+         * outgoing world through browser.currentScene, and replaceWorld has
+         * already put an empty scene there by the time it returns. */
         this.releaseWorldScriptState(browser);
+        browser.replaceWorld(null);
       }
     },
     async joinPlace(): Promise<void> {
@@ -1383,17 +1393,31 @@ export default Vue.extend({
      * off switches it off itself, as those four do.
      */
     /*
-     * Gives back what the outgoing world took from the browser.
+     * Gives back what the outgoing world took, both from X_ITE and from the
+     * browser. Called on every path that replaces a world, and always while the
+     * outgoing scene is still the current one - after the replacement it can no
+     * longer be named.
      *
-     * Gameplay lives in the world's own Scripts, and those Scripts are
-     * disposed with the scene - their timers, their sensors and their routes
-     * all go with it. What does NOT go with it is the state a Script wrote
-     * onto the browser: the blaxxun event mask, and the route from the
-     * browser's `event_changed` into the Script. ne_game.wrl's shutdown()
-     * returns both, but X_ITE does not run shutdown() on a VRML97 Script when
-     * the world is replaced, so the next world would inherit them.
+     * The world's own Scripts go first. X_ITE does not dispose them on
+     * `replaceWorld`, and each one that defines shutdown() is registered on the
+     * window's `unload` event, which held the Script - and through it the whole
+     * scene - for the life of the page. `releaseWorldScripts` runs X_ITE's own
+     * `Script.dispose()` on them, which calls shutdown() and takes the listener
+     * off the window; see @/libs/world-scripts.
+     *
+     * The browser state goes second, and stays. A Script writes two things onto
+     * the browser that are not part of any scene: the blaxxun event mask, and
+     * the route from the browser's `event_changed` into itself. ne_game.wrl's
+     * shutdown() hands both back and now genuinely runs, but a world that never
+     * defined shutdown() still cannot, so the sweep below is what guarantees the
+     * next world does not inherit them.
      */
     releaseWorldScriptState(browser: any): void {
+      try {
+        releaseWorldScripts(browser.currentScene);
+      } catch (error) {
+        console.warn("could not release the previous world's scripts", error);
+      }
       try {
         if (typeof browser.releaseBlaxxunWorldState === "function") {
           browser.releaseBlaxxunWorldState();
