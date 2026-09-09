@@ -745,18 +745,46 @@ test("the shipped Outlands worlds really do use the idiom", () => {
 console.log("\n-- wiring --");
 
 test("the shim is loaded by App.vue", () => {
-  assert.ok(/x_ite_mods\/bxx_sfnode\.js/.test(codeOf(APP)), "bxx_sfnode.js is required");
+  // The mods are no longer a flat list of `require("...")` lines: App.vue
+  // requires `x_ite_compat.js` first and then loops over the `x3dPatches`
+  // array, so being loaded means being named in that array.
+  const app = codeOf(APP);
+  const list = app.slice(app.indexOf("const x3dPatches = ["));
+  assert.ok(
+    /"bxx_sfnode\.js",/.test(list.slice(0, list.indexOf("];"))),
+    "bxx_sfnode.js is required",
+  );
 });
 
 test("the shim hooks the Script sandbox and nothing wider", () => {
+  // `x_ite/Configuration/SupportedNodes` and its addType/getType pair are gone
+  // in 16.2.0; `X3D.ConcreteNodes` is the registry every component hands its
+  // node classes to, and `getGlobal` is now `createGlobalObject`.
   const code = codeOf(SFNODE_MOD);
-  assert.ok(/SupportedNodes/.test(code), "the addType seam is used");
-  assert.ok(/getGlobal/.test(code), "the sandbox is the boundary");
+  assert.ok(/const registry = X3D\.ConcreteNodes;/.test(code), "the add seam is used");
+  assert.ok(
+    /proto\.createGlobalObject = function/.test(code),
+    "the sandbox is the boundary",
+  );
+  assert.ok(
+    /if \(typeName === "Script"\) patch\(Type\)/.test(code),
+    "and only the Script class is ever patched",
+  );
   assert.ok(!/Components\/Scripting\/Script/.test(code), "the lazy component is never required");
 });
 
 test("the shim uses X_ITE's own internal SFNode for the null value", () => {
-  assert.ok(/x_ite\/Fields\/SFNode/.test(codeOf(SFNODE_MOD)), "the internal class is required");
+  // 16.2.0 exports the field classes straight off the global `X3D`, and this is
+  // the very class the sandbox constructor closes over: verified on 16.2.0, the
+  // sandbox `SFNode.prototype === X3D.SFNode.prototype`. The 4.7.0 module id
+  // `x_ite/Fields/SFNode` no longer resolves.
+  const code = codeOf(SFNODE_MOD);
+  assert.ok(/const NativeSFNode = X3D\.SFNode;/.test(code), "the internal class is taken");
+  assert.ok(
+    /installBlaxxunNullSFNode\(\s*originalCreateGlobalObject\.call\(this\),\s*NativeSFNode,/
+      .test(code),
+    "and it is the class the NULL value is built from",
+  );
 });
 
 test("the shim does not change the parser", () => {

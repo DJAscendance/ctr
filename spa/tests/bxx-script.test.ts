@@ -460,17 +460,40 @@ function codeOf(file: string): string {
 }
 
 test("App.vue loads the shim", () => {
+  // The mods are no longer a flat list of `require("...")` lines: App.vue
+  // requires `x_ite_compat.js` first and then loops over the `x3dPatches`
+  // array, so being loaded means being named in that array.
   const app = fs.readFileSync(APP, "utf8");
+  const list = app.slice(app.indexOf("const x3dPatches = ["));
   assert.ok(
-    /require\("\.\/libs\/x_ite_mods\/bxx_script\.js"\);/.test(app),
-    "bxx_script.js must be required alongside the other X_ITE mods",
+    /"bxx_script\.js",/.test(list.slice(0, list.indexOf("];"))),
+    "bxx_script.js must be listed alongside the other X_ITE mods",
+  );
+  assert.ok(
+    /require\(`\.\/libs\/x_ite_mods\/\$\{patch\}`\)/.test(app),
+    "and the list must still be what App.vue requires",
   );
 });
 
 test("the shim wraps the Script sandbox, not the window", () => {
   const code = codeOf(SCRIPT_MOD);
-  assert.ok(/getGlobal/.test(code), "the sandbox object is the only thing extended");
-  assert.ok(/getContext/.test(code), "the source text decides, so getContext must be seen");
+  // 16.2.0 renamed both seams and inverted their order. `getGlobal` is now
+  // `createGlobalObject`, and `getContext (text)` no longer builds the sandbox
+  // - `initialize__ (sourceText)` runs `createGlobalObject` BEFORE
+  // `createContext`, so the source text has to be read in `initialize__` or the
+  // decision is taken after the sandbox is already built and memoised.
+  assert.ok(
+    /proto\.createGlobalObject = function/.test(code),
+    "the sandbox object is the only thing extended",
+  );
+  assert.ok(
+    /proto\.initialize__ = function \(text\)/.test(code),
+    "the source text decides, so the seam that receives it must be seen",
+  );
+  assert.ok(
+    /originalInitialize\.apply\(this, arguments\)/.test(code),
+    "and X_ITE's own initialize still runs",
+  );
   assert.ok(
     !/window\.(t|v)\s*=/.test(code),
     "no compatibility name may be installed on window",
@@ -487,11 +510,20 @@ test("the shim asks for no X_ITE module the CDN bundle lacks", () => {
     !/Components\/Scripting\/Script/.test(code),
     "requiring the lazily loaded Scripting component breaks every world",
   );
+  // `x_ite/Configuration/SupportedNodes` and its addType/getType pair are gone
+  // in 16.2.0. `X3D.ConcreteNodes` is the core registry every component hands
+  // its node classes to, so wrapping `add` catches the real Script class at the
+  // moment the component arrives and needs nothing that is not already loaded.
   assert.ok(
-    /Configuration\/SupportedNodes/.test(code),
+    /X3D\.ConcreteNodes/.test(code),
     "the Script class must be taken where the component registers it",
   );
-  assert.ok(/addType/.test(code));
+  assert.ok(/registry\.add = function \(typeName, Type\)/.test(code));
+  assert.ok(
+    /if \(typeName === "Script"\) patch\(Type\)/.test(code),
+    "and only the Script class is ever patched",
+  );
+  assert.ok(!/X3D\.require/.test(code), "no module id is asked for at all");
 });
 
 test("the shim uses no global free-name trap", () => {

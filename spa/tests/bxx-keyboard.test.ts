@@ -27,6 +27,7 @@ const path = require("path");
 
 const SPA_SRC = path.resolve(__dirname, "../../../src");
 const EVENTS_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_events.js");
+const AUTH_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_auth.js");
 const IDENTITY_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_identity.js");
 const APP = path.join(SPA_SRC, "App.vue");
 
@@ -67,6 +68,33 @@ function at(haystack: string, token: string): number {
   const index = haystack.indexOf(token);
   assert.notStrictEqual(index, -1, `expected to find: ${token}`);
   return index;
+}
+
+/**
+ * The `x3dPatches` array out of `App.vue` `mounted()`, in load order. The flat
+ * `require("./libs/x_ite_mods/NAME.js")` lines this suite used to measure
+ * offsets in are gone: every patch but `x_ite_compat.js` is now named in one
+ * list and required through a template literal.
+ */
+function patchOrder(): string[] {
+  const source = read(APP);
+  const start = at(source, "const x3dPatches = [");
+  const list = source.slice(start, source.indexOf("];", start));
+  const names = list.match(/"[a-z0-9_]+\.js"/g);
+  assert.ok(names && names.length > 0, "App.vue must still list its X_ITE patches");
+  return (names as string[]).map(name => name.slice(1, -1));
+}
+
+/** The load position of a patch, having first PROVED it is loaded at all. */
+function patchIndex(patch: string): number {
+  const index = patchOrder().indexOf(patch);
+  assert.notStrictEqual(index, -1, `expected App.vue to load: ${patch}`);
+  return index;
+}
+
+/** The event names a `*EventListener` call list names, in source order. */
+function listenerNames(calls: RegExpMatchArray | null): string[] {
+  return (calls ?? []).map(call => call.slice(call.indexOf("'") + 1));
 }
 
 // ------------------------------------------------------------------ behaviour
@@ -193,20 +221,31 @@ test("shouldDeliver combines all three reasons to drop an event", () => {
 // --------------------------------------------------------------------- wiring
 
 test("the keyboard and identity shims are loaded by App.vue", () => {
-  const app = read(APP);
   assert.ok(
-    at(app, "libs/x_ite_mods/bxx_auth.js") < at(app, "libs/x_ite_mods/bxx_events.js"),
-    "bxx_events wraps addRoute defined against the same prototype",
+    patchIndex("bxx_auth.js") < patchIndex("bxx_events.js"),
+    "bxx_auth records the browser event routes bxx_events then delivers to",
   );
-  assert.ok(app.includes("libs/x_ite_mods/bxx_identity.js"), "the identity surface is loaded");
+  assert.ok(
+    patchIndex("bxx_auth.js") < patchIndex("bxx_identity.js"),
+    "the identity surface layers over the bxx_auth accessors, so it loads after them",
+  );
 });
 
 test("only the Browser event_changed route is intercepted", () => {
-  const source = read(EVENTS_MOD);
-  assert.ok(source.includes("isBrowserEventRoute"), "the special case is named");
+  // The 16.2 port moved the interception itself into `bxx_auth.js`: addRoute is
+  // not declared on X3DBrowser, so the shim has to go on whichever prototype
+  // actually owns it, which is only reachable from a live browser.
+  // `bxx_events.js` is now the delivery half alone.
+  const auth = read(AUTH_MOD);
+  assert.ok(auth.includes("function isBrowserNode"), "the special case is named");
   assert.ok(
-    source.includes("originalAddRoute.call") && source.includes("originalDeleteRoute.call"),
+    auth.includes("originalAddRoute.apply") && auth.includes("originalDeleteRoute.apply"),
     "every other route still reaches X_ITE, so other worlds are unaffected",
+  );
+  const source = read(EVENTS_MOD);
+  assert.ok(
+    source.includes("if (route.field !== 'event_changed')"),
+    "and only an event_changed route is ever written an event",
   );
 });
 
@@ -217,20 +256,33 @@ test("listeners are scoped to the X_ITE element, never to window or document", (
     false,
     "a global listener would outlive the world and eat CTR's own input",
   );
-  assert.ok(source.includes("elementOf"), "the element is resolved from the browser");
+  assert.ok(
+    source.includes("var element = this.getElement()"),
+    "the element is resolved from the browser",
+  );
+  assert.strictEqual(
+    listenerNames(source.match(/[^.\w]addEventListener\('\w+'/g)).length,
+    0,
+    "every listener is attached to that element and to nothing else",
+  );
 });
 
 test("listeners are removed again, and cannot be attached twice", () => {
   const source = read(EVENTS_MOD);
   assert.ok(source.includes("removeEventListener"), "cleanup exists");
   assert.ok(
-    source.includes("if (wanted && !s.listeners)"),
+    source.includes("if (this.blaxxunEventHandlers_) return"),
     "a second attach is refused while one is already bound",
   );
-  assert.ok(
-    at(source, "b.loadURL = function") < at(source, "originalLoadURL.apply"),
-    "a world reload detaches before loading the next world",
-  );
+  // The 16.2 port binds once per browser rather than once per world - the page
+  // keeps one browser and replaces the world inside it - so the detach is no
+  // longer hung off loadURL. What keeps the listener count flat across a
+  // hundred world transitions is now the guard above plus this symmetry: every
+  // listener the install adds is one the remove takes away again.
+  const added = listenerNames(source.match(/element\.addEventListener\('\w+'/g));
+  const removed = listenerNames(source.match(/element\.removeEventListener\('\w+'/g));
+  assert.ok(added.length >= 4, "the three historical event types plus the focus click");
+  assert.deepStrictEqual(added, removed, "install and remove name the same listeners");
 });
 
 test("the identity shim supplies the surface but not an Outlands team", () => {

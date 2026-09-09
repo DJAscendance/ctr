@@ -471,20 +471,45 @@ test("SAFETY GATE: a pass-through call forwards the original arguments", () => {
 
 test("SAFETY GATE: a suppressed call never reaches the original loadURL", () => {
   const source = fs.readFileSync(BINDING, "utf8");
+  // X_ITE 16's loadURL returns a promise, and WorldBrowserPage.startX3D now
+  // owns and awaits the one it is handed, so a suppressed call has to settle
+  // like a completed one instead of returning undefined. It still must not
+  // call through: the branch below contains no reference to originalLoadURL.
+  const suppressed = source.slice(
+    source.indexOf("if (decision.keptUrls.length === 0)"),
+    source.indexOf("// A mixed list keeps its fallback behaviour"),
+  );
+  assert.ok(suppressed.length > 0, "the all-legacy branch must still exist");
   assert.ok(
-    /keptUrls\.length === 0[\s\S]{0,300}return undefined;/.test(source),
+    /return Promise\.resolve\(\);/.test(suppressed),
+    "an all-legacy call must settle without loading anything",
+  );
+  assert.ok(
+    !/originalLoadURL/.test(suppressed),
     "an all-legacy call must return without calling through",
   );
 });
 
 test("the binding is required after every other loadURL wrapper", () => {
+  // The mods are no longer a flat list of `require("...")` lines: App.vue
+  // requires `x_ite_compat.js` first and then loops over the `x3dPatches`
+  // array, so load order is the order of that array.
   const source = fs.readFileSync(APP, "utf8");
-  const url = source.indexOf("x_ite_mods/bxx_url.js");
-  const auth = source.indexOf("x_ite_mods/bxx_auth.js");
-  const events = source.indexOf("x_ite_mods/bxx_events.js");
+  const start = source.indexOf("const x3dPatches = [");
+  assert.notStrictEqual(start, -1, "App.vue must still list its X_ITE patches");
+  const list = source.slice(start, source.indexOf("];", start));
+  const patches = (list.match(/"[a-z0-9_]+\.js"/g) || [])
+    .map((name: string) => name.slice(1, -1));
+  const url = patches.indexOf("bxx_url.js");
+  const auth = patches.indexOf("bxx_auth.js");
+  const events = patches.indexOf("bxx_events.js");
   assert.ok(url !== -1, "bxx_url.js is not registered in App.vue");
   assert.ok(url > auth, "bxx_url.js must be required after bxx_auth.js");
   assert.ok(url > events, "bxx_url.js must be required after bxx_events.js");
+  assert.strictEqual(
+    url, patches.length - 1,
+    "and it must be the last patch of all, so it is the outermost loadURL wrapper",
+  );
 });
 
 test("no other module carries a copy of the host policy", () => {

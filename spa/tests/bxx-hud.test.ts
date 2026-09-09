@@ -16,11 +16,19 @@
  *      which nodes replace rather than extend their parent matrix.
  *
  *   3. WIRING, asserted against the source of `libs/x_ite_mods/bxx_hud.js`,
- *      `libs/x_ite_mods/bxx_ray.js` and `App.vue`. These catch the drifts this
- *      lane exists to prevent: a node that stops being registered, a shim that
- *      stops being loaded, an Outlands-specific special case creeping into a
- *      generic compatibility node, and a historical world being "fixed" in
+ *      `libs/x_ite_mods/bxx_rayhit.js` and `App.vue`. These catch the drifts
+ *      this lane exists to prevent: a node that stops being registered, a shim
+ *      that stops being loaded, an Outlands-specific special case creeping into
+ *      a generic compatibility node, and a historical world being "fixed" in
  *      place instead of the runtime.
+ *
+ *      The X_ITE 16.2.0 port changed two things these assertions read.
+ *      `x_ite/Configuration/SupportedNodes` no longer exists: the registry is
+ *      the global `X3D.ConcreteNodes`, and node class metadata moved from the
+ *      prototype to STATIC properties on the constructor. And the ray walk,
+ *      now `bxx_rayhit.js`, no longer consults the shared `isViewRelative`
+ *      predicate - it refuses a HUD subtree outright by type name, which is a
+ *      stricter version of the same rule.
  */
 import assert from "assert";
 
@@ -31,7 +39,7 @@ const zlib = require("zlib");
 const SPA = path.resolve(__dirname, "../../..");
 const SPA_SRC = path.join(SPA, "src");
 const HUD_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_hud.js");
-const RAY_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_ray.js");
+const RAY_MOD = path.join(SPA_SRC, "libs/x_ite_mods/bxx_rayhit.js");
 const APP = path.join(SPA_SRC, "App.vue");
 
 const WORLDS = path.join(SPA, "assets/worlds");
@@ -205,24 +213,35 @@ test("the ray walk composes Transforms but resets on a HUD", () => {
 
 // --------------------------------------------------------------------- wiring
 
-test("the HUD shim is loaded by App.vue, before the ray shim reads its flag", () => {
+test("the HUD shim is loaded by App.vue, before any browser can be created", () => {
   const source = codeOf(APP);
-  const hudAt = source.indexOf("x_ite_mods/bxx_hud.js");
-  const rayAt = source.indexOf("x_ite_mods/bxx_ray.js");
-  assert.notStrictEqual(hudAt, -1, "App.vue must require bxx_hud.js");
-  assert.notStrictEqual(rayAt, -1, "App.vue must still require bxx_ray.js");
-  assert.ok(hudAt < rayAt, "the node type is registered before the ray walk loads");
+  assert.ok(/"bxx_hud\.js",/.test(source), "App.vue must require bxx_hud.js");
+  assert.ok(/"bxx_rayhit\.js",/.test(source), "App.vue must still require the ray walk");
+  // 16.2 dropped the load-order dependency between the two - the ray walk no
+  // longer reads a flag off the HUD node, it refuses the subtree by type name.
+  // What still has to hold is that registration happens from mounted(), ahead
+  // of every browser: an X_ITE 16 browser COPIES `X3D.ConcreteNodes` at
+  // construction time, so a HUD registered later is invisible to it.
+  assert.ok(
+    source.indexOf("mounted()") < source.indexOf("const x3dPatches = ["),
+    "the patch list is loaded from mounted()",
+  );
+  assert.ok(
+    !/createBrowser/.test(source),
+    "and App.vue creates no browser of its own, so no browser predates the registry",
+  );
 });
 
 test("the node is registered with X_ITE's own parser table", () => {
   const source = codeOf(HUD_MOD);
   assert.ok(
-    source.includes("x_ite/Configuration/SupportedNodes"),
-    "registration goes through SupportedNodes, which is what createNode reads",
+    source.includes("X3D.ConcreteNodes"),
+    "registration goes through ConcreteNodes, which is what createNode reads",
   );
-  assert.ok(source.includes("SupportedNodes.addType(\"HUD\", HUD)"), "the type name is HUD");
+  assert.ok(source.includes("concreteNodes.add(\"HUD\", HUD)"), "the type name is HUD");
   assert.ok(
-    source.includes("SupportedNodes.getType(\"HUD\")"),
+    source.includes("concreteNodes.has(\"HUD\")")
+      && source.includes("concreteNodes.get(\"HUD\")"),
     "registering twice must be a no-op",
   );
 });
@@ -233,7 +252,15 @@ test("the node is a grouping node, so a Switch can hold it and hide it", () => {
     source.includes("x_ite/Components/Grouping/X3DGroupingNode"),
     "X3DGroupingNode carries X3DChildNode, which Switch casts its choice to",
   );
-  assert.ok(source.includes("getContainerField: function () { return \"children\"; }"));
+  // 16.2 reads class metadata off the constructor, not the prototype:
+  // `X3DNode.prototype.getContainerField()` returns `this.constructor
+  // .containerField`, so a prototype method here would simply be ignored.
+  assert.ok(source.includes("HUD.containerField = \"children\";"));
+  assert.ok(source.includes("HUD.typeName = \"HUD\";"), "and the type name is a static too");
+  assert.ok(
+    source.includes("HUD.fieldDefinitions = new FieldDefinitionArray(["),
+    "X3DBaseNode reads this.constructor.fieldDefinitions, so a prototype copy gets no fields",
+  );
 });
 
 test("camera space comes from the viewpoint's own matrix, not a rebuilt one", () => {
@@ -243,10 +270,18 @@ test("camera space comes from the viewpoint's own matrix, not a rebuilt one", ()
   assert.ok(source.includes("modelViewMatrix.pop()"), "the stack is always restored");
 });
 
-test("the ray walk asks the helper, and still composes ordinary transforms", () => {
+test("the ray walk excludes a HUD, and still composes ordinary transforms", () => {
   const source = codeOf(RAY_MOD);
-  assert.ok(source.includes("hud.isViewRelative(node)"), "the seam is the shared predicate");
-  assert.ok(source.includes("matrix.multRight(modelMatrix)"), "Transforms still compose");
+  // The 16.2 rewrite replaced the shared `isViewRelative` predicate with a type
+  // test in the walk itself, and made it stricter: a HUD is the member's own
+  // overlay pinned to the viewpoint, not world geometry, so the ray refuses the
+  // subtree outright rather than re-basing it into camera space. Without this
+  // every Outlands shot struck the weapon model a centimetre from the camera.
+  assert.ok(source.includes("if (type === 'HUD') { return }"), "the seam is the type name");
+  assert.ok(
+    source.includes("multiply(transformMatrix(node), matrix)"),
+    "Transforms still compose",
+  );
 });
 
 test("the HUD node carries no Outlands knowledge", () => {
@@ -539,8 +574,8 @@ test("the ray walk keeps historical distances, unscaled", () => {
   );
   const ray = codeOf(RAY_MOD);
   assert.ok(
-    ray.includes("isViewRelative"),
-    "and the ray walk still treats a HUD as view-relative",
+    ray.includes("if (type === 'HUD') { return }"),
+    "and the ray walk still refuses to measure a HUD as world geometry",
   );
 });
 
