@@ -126,20 +126,29 @@ Future `.x3d`, `.glb` and `.obj` support must not collapse these. In particular
 |---|---|
 | `lib/contract.js` | field map, tolerances, stored-value parsing |
 | `lib/comparator.js` | baseline vs candidate comparison |
+| `lib/rendered-identity.js` | scene node to placement row, duplicate detection |
+| `lib/targets.js` | resolves each target's place id and route from the database |
 | `test/comparator.test.js` | proves the comparator fails when it should |
+| `test/cli.test.js` | proves `compare.js` refuses a duplicated key |
+| `test/rendered-identity.test.js` | proves a placement rendered twice fails |
+| `test/lifecycle.test.js` | proves an unobserved row is never a pass |
 | `test/run.js` | standalone runner (`node test/run.js`) |
 | `tools/build-fixture-set.js` | regenerates `fixtures/fixture-set.json` |
+| `tools/prepare-task-db.js` | emits the pre-fixture SQL that reproduces the baseline's row ids |
 | `tools/seed-fixtures.js` | emits fixture seed / purge SQL |
 | `tools/run-seed.sh` | guarded seed runner (`seed` \| `purge`) |
 | `tools/capture-stored.js` | read-only stored-layer capture |
 | `tools/capture-rendered.js` | live-browser rendered-layer capture |
-| `tools/check-lifecycle.js` | world-return and reload stability check |
+| `tools/check-lifecycle.js` | world-return and reload stability, and coverage reconciliation |
+| `tools/check-rendered-vs-stored.js` | rendered transform equals stored transform, one runtime |
+| `tools/check-cycles.js` | repeated visits never grow the live object count |
 | `tools/compare.js` | comparison CLI, exits non-zero on FAIL |
 
 ## Running it
 
 ```shell
-# one-time, disposable QA database only
+# one-time, disposable QA database only. Migrate and seed first, then:
+node qa/placement/tools/prepare-task-db.js | <mysql into the QA container>
 qa/placement/tools/run-seed.sh seed     # `purge` removes every QAFIX row again
 
 # capture the control baseline
@@ -153,8 +162,53 @@ node qa/placement/tools/compare.js qa/placement/baselines /tmp/candidate report.
 
 # supporting checks
 node qa/placement/test/run.js
-node qa/placement/tools/check-lifecycle.js
+node qa/placement/tools/check-lifecycle.js /tmp/candidate/rendered-16.2.0.json
+node qa/placement/tools/check-rendered-vs-stored.js /tmp/candidate
+DISPLAY=:1 node qa/placement/tools/check-cycles.js 10
 ```
+
+`check-lifecycle.js` and `check-cycles.js` fail on a row that never rendered.
+`CTR_QA_ACCEPT_PARSE_BLOCK=1` accepts `WORLD_PARSE_BLOCK` rows, and only those;
+they are still printed with their ids so an accepted block stays visible.
+
+## Reproducing the baseline's row ids
+
+Both baselines key every record on `<source>:<row id>`, and those ids come out
+of auto-increment counters. A rebuilt database hands out different ones, and the
+comparison then reports all sixty rows as missing rather than as unchanged.
+
+`tools/prepare-task-db.js` sets the counters, so a database that has been
+migrated and seeded lands the fixture rows on exactly the baseline's ids. It also
+creates the two QA accounts, the home place, and the five pre-existing rows the
+fixture seed does not own - reproducing their position and rotation bytes from
+what the baseline itself records. Run it before `run-seed.sh seed`.
+
+The object directories the pre-existing rows name are upload-area paths, and
+`spa/assets/object/` is gitignored, so those `.wrl` files are not in the
+repository and their `Inline` loads fail. That does not affect placement: the
+`SharedObject` PROTO instance carries the transform whether or not its geometry
+resolves, so the row is still measured. It does mean a placement screenshot shows
+fewer objects than the scene graph holds.
+
+## An unobserved row is never a pass
+
+The rendered capture emits one record per expected placement row, taken from the
+database, and marks each with what was actually seen:
+
+| Observation | Meaning |
+|---|---|
+| `RENDERED` | the node was found and its transform read |
+| `WORLD_PARSE_BLOCK` | the world's parse aborted, so nothing could render |
+| `WORLD_NOT_LOADED` | the place never became current, for some other reason |
+| `NOT_RENDERED` | the world loaded but this row produced no node |
+
+This matters because a failed load is invisible from the node list alone. When
+`GET /api/home/:username` rejects, `main.ts` never calls `setPlace`; when a world
+fails to parse, X_ITE keeps the previous scene. Either way the browser is still
+showing the last place, complete with its `SharedObject` nodes. A capture that
+read only the node list credited those to the place under test, which reads as a
+partial render rather than as a place that was never reached. Every phase now
+checks the current place id and the loaded world URL before any node counts.
 
 ## Duplicate input is refused, never deduplicated
 
@@ -222,6 +276,44 @@ screenshots are then not representative.
 `qa/` sits outside the `spa` and `api` ESLint projects, so `npm run lint` in
 either workspace does not reach it. No production SPA or API source is touched
 by this directory, so no build is required to use it.
+
+## Fixture defects this ruler had, and what they hid
+
+Two of them, both in QA setup rather than in the product. Recorded because each
+one produced a plausible-looking partial result rather than an error.
+
+- **The home place had no block.** `place` carries no parent column: the
+  home-to-block link lives in `map_location`, and `homeService.getHomeBlock`
+  walks it. A home place inserted without a claimed lot makes that walk
+  dereference an undefined row, `GET /api/home/:username` answers 400, and the
+  SPA silently stays in the place it was already in. The capture then read the
+  *previous* world's objects and reported them as a home that had partly
+  rendered. `seed-fixtures.js` now claims a free lot for an unlinked home.
+
+- **The club route was a written-down id.** `/club/837` is only the fixture club
+  on the database the baseline was captured from. Anywhere else that route
+  reaches another place or the club door, and ten real placements were recorded
+  as unobserved. Home and club ids are now resolved from the database by
+  `lib/targets.js`, never written down.
+
+`check-cycles.js` carried a third, quieter version of the same problem: because
+home and club had no slug, their expected count came from the first observation
+rather than from the database, so whatever the first cycle happened to see
+became the standard every later cycle was measured against. All targets now take
+their expected count from the database.
+
+## Shop on the beta X_ITE branch
+
+`spa/assets/worlds/shop/vrml/shop.wrl` carries a blaxxun multiuser
+`DEF S Script` at top level using `IS` statements, which is invalid outside a
+PROTO. X_ITE 16.2.0 aborts the parse at line 104:29 and the world never loads,
+so the 11 `mall_object` placements it holds cannot be observed at all. They stay
+in the 60-row stored comparison and are classified `WORLD_PARSE_BLOCK`, never
+merged into the stored rows and never counted as agreement.
+
+This is world content and it predates the engine work: the file's blob is
+identical at the PR 1 base, at the integrated reference, and at the branch head,
+and no commit on the branch touches it.
 
 ## Known baseline defects
 

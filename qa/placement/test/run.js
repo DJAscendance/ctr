@@ -13,6 +13,7 @@ const tests = [
   ...require('./comparator.test'),
   ...require('./cli.test'),
   ...require('./rendered-identity.test'),
+  ...require('./lifecycle.test'),
 ];
 
 let failed = 0;

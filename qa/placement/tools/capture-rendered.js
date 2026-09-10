@@ -8,6 +8,10 @@
  * three phases: the first world load, a return after leaving the place, and a
  * capture after a full page reload.
  *
+ * Every expected placement row gets a record, whether or not it rendered. A
+ * place that never loaded therefore reports blocked rows rather than a short
+ * list, so a comparison can never mistake "not observed" for "unchanged".
+ *
  * Rendering runs on the real GPU (ANGLE/OpenGL); software rasterisation is only
  * a fallback. Transforms are scene-graph values, so the rasteriser does not
  * affect them, but GPU rendering keeps the run fast and the screenshots honest.
@@ -18,49 +22,45 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { chromium } = require('playwright');
 const { launch: launchBrowser } = require('../../lib/browser');
 const { CONTROL_ENGINE_VERSION, CONTROL_COMMIT, IMPLIED_SCALE } = require('../lib/contract');
 const { resolveRenderedPlacements } = require('../lib/rendered-identity');
+const { resolveTargets, expectedPlacements, samePath } = require('../lib/targets');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
 const USER = process.env.CTR_QA_USER || 'testqa';
 const PASS = process.env.CTR_QA_PASS || 'testqa';
+const HOME_OWNER = process.env.CTR_QA_HOME_OWNER || 'XiteQA';
+const CLUB_SLUG = process.env.CTR_QA_CLUB_SLUG || 'personalclub';
 const OUT = process.argv[2] || path.join(__dirname, '..', 'baselines', 'rendered-15.1.12.json');
 const SHOTS = path.join(__dirname, '..', '..', '..', '..', 'artifacts', 'placement');
 const CONTAINER = process.env.CTR_QA_DB_CONTAINER || 'xite162qa-db-1';
 const DATABASE = process.env.CTR_QA_DB_NAME || 'cybertown';
+
+/** How long one phase may take to settle, in polls of POLL_MS. */
+const POLL_MS = 1000;
+const POLL_LIMIT = 45;
 
 /**
  * Capture targets.
  *
  * Routes matter: `/place/:id` resolves a place by **slug**, so a numeric place
  * id there leaves the store empty and the world never loads. Homes go through
- * `/home/:username` and clubs through `/club/:id`. Shop places serve
+ * `/home/:username` and clubs through `/club/:placeId`. Shop places serve
  * `mall_object` rows; everything else serves `object_instance`.
+ *
+ * Neither the home nor the club place has a stable id across databases, so both
+ * are looked up rather than written down. A hard-coded `/club/837` silently
+ * misses on any freshly seeded database: the route resolves to some other place
+ * or to the club door, and the capture then records nothing for ten real rows.
  */
 const TARGETS = [
-  { key: 'public', route: '/place/enter', source: 'object_instance' },
-  { key: 'home', route: '/home/XiteQA', source: 'object_instance' },
-  { key: 'club', route: '/club/837', source: 'object_instance' },
-  { key: 'place', route: '/place/fleamarket', source: 'object_instance' },
-  /*
-   * BETA PHASE 2: the two shop targets are not captured on this branch.
-   *
-   * Every `type = 'shop'` place shares assets/worlds/shop/vrml/shop.wrl, and on
-   * this branch that file still carries the blaxxun multiuser `DEF S Script` at
-   * top level, using IS statements outside a PROTO. The parse aborts there, so a
-   * shop renders nothing to compare on a return or a reload. That is world
-   * CONTENT and it predates the engine work - it is present unchanged at the
-   * fork point, under X_ITE 4.7.0, and the X_ITE 16.2.0 migration neither caused
-   * it nor is scoped to fix it. It is recorded, not repaired.
-   *
-   * The 49 object_instance placements above still cover home, club, place and
-   * public, which is what the migration can actually move.
-   *
-   * { key: 'shop', route: '/place/antiqueshop', source: 'mall_object', slug: 'antiqueshop' },
-   * { key: 'shop2', route: '/place/electronicsstore', source: 'mall_object', slug: 'electronicsstore' },
-   */
+  { key: 'public', route: '/place/enter', source: 'object_instance', slug: 'enter' },
+  { key: 'home', source: 'object_instance', slug: null, homeOwner: HOME_OWNER },
+  { key: 'club', source: 'object_instance', slug: null, clubSlug: CLUB_SLUG },
+  { key: 'place', route: '/place/fleamarket', source: 'object_instance', slug: 'fleamarket' },
+  { key: 'shop', route: '/place/antiqueshop', source: 'mall_object', slug: 'antiqueshop' },
+  { key: 'shop2', route: '/place/electronicsstore', source: 'mall_object', slug: 'electronicsstore' },
 ];
 
 /*
@@ -72,24 +72,44 @@ const TARGETS = [
  * placement row id. The stored layer keys on `mall_object.id`, so this tool
  * resolves `(place_id, object_id)` back to the real row id below. Nothing is
  * ever matched by scene order.
- *
- * Every `type = 'shop'` place shares one world, `assets/worlds/shop/vrml/shop.wrl`,
- * so the two shop targets above cover all 11 `mall_object` fixtures between them:
- * antiqueshop holds 10 and electronicsstore 1. Both are captured, because a
- * shared world means a per-place bug would otherwise hide behind a single pass.
  */
 
-/** Reads every SharedObject PROTO instance out of the live scene. */
+/**
+ * Reads the live scene, the place the SPA believes it is in, and the world the
+ * engine actually loaded.
+ *
+ * The last two are what stop a scene being credited to the wrong place. When a
+ * route fails - `/api/home/:username` rejecting, or a world whose parse aborts
+ * - Vue never swaps the place and X_ITE never swaps the world, so the previous
+ * world and its SharedObject nodes are still standing. Reading only the node
+ * list there reports the old place's objects as the new place's, which looks
+ * exactly like a partial render of the place under test.
+ */
 const READ_SCENE = () => {
+  const out = { ready: false, reason: null, placeId: null, worldURL: null, objects: [] };
+  try {
+    const app = document.querySelector('#app');
+    const store = app && app.__vue__ && app.__vue__.$store;
+    const place = store && store.data && store.data.place;
+    out.placeId = place && place.id !== undefined ? Number(place.id) : null;
+    out.expectedWorld = place && place.assets_dir !== null && place.assets_dir !== undefined
+      ? `/assets/worlds/${place.assets_dir}${place.world_filename}` : null;
+  } catch (e) {
+    out.storeError = e.message;
+  }
   if (typeof X3D === 'undefined') {
-    return { ready: false, reason: 'no X3D global', objects: [] };
+    out.reason = 'no X3D global';
+    return out;
   }
   const browser = X3D.getBrowser();
   if (!browser || !browser.currentScene) {
-    return { ready: false, reason: 'no currentScene', objects: [] };
+    out.reason = 'no currentScene';
+    return out;
   }
+  out.ready = true;
+  out.engine = browser.getVersion ? browser.getVersion() : null;
+  out.worldURL = browser.currentScene.worldURL || null;
   const roots = browser.currentScene.rootNodes;
-  const objects = [];
   for (let i = 0; i < roots.length; i += 1) {
     const node = roots[i];
     let typeName = null;
@@ -110,14 +130,9 @@ const READ_SCENE = () => {
     } catch (e) {
       record.error = e.message;
     }
-    objects.push(record);
+    out.objects.push(record);
   }
-  return {
-    ready: true,
-    engine: browser.getVersion ? browser.getVersion() : null,
-    worldURL: browser.currentScene.worldURL || null,
-    objects,
-  };
+  return out;
 };
 
 /** Runs a read-only query against the QA database. */
@@ -170,32 +185,112 @@ async function login(page) {
   await page.fill('input[type="text"], input[name="username"]', USER);
   await page.fill('input[type="password"]', PASS);
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(5000);
+  await page.waitForFunction(
+    () => !/#\/login/.test(window.location.hash), null, { timeout: 30000 });
 }
 
-/** Navigates to a place and waits until the scene stops gaining objects. */
-async function enter(page, route) {
-  await page.goto(`${BASE}/#${route}`, { waitUntil: 'domcontentloaded' });
+/**
+ * Observes one phase and reports what it actually saw.
+ *
+ * Settling is driven by application state, not by a fixed wait: the place the
+ * SPA holds, the world X_ITE loaded, and an object count that has stopped
+ * changing. The poll ceiling is only an upper bound on how long a real signal
+ * is waited for; reaching it is reported as `settled: false`, never as a pass.
+ */
+async function observe(page, target) {
   let previous = -1;
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    await page.waitForTimeout(1500);
-    const scene = await page.evaluate(READ_SCENE);
-    if (scene.ready && scene.objects.length > 0 && scene.objects.length === previous) {
-      return scene;
+  let stable = 0;
+  let scene = null;
+  for (let attempt = 0; attempt < POLL_LIMIT; attempt += 1) {
+    await page.waitForTimeout(POLL_MS);
+    scene = await page.evaluate(READ_SCENE);
+    const inPlace = scene.placeId === target.placeId;
+    const worldLoaded = inPlace && samePath(scene.worldURL, scene.expectedWorld);
+    if (!inPlace || !worldLoaded) {
+      previous = -1;
+      stable = 0;
+      continue;
     }
-    previous = scene.ready ? scene.objects.length : -1;
+    if (scene.objects.length === previous) {
+      stable += 1;
+      // Two identical reads after the world is up, and the count is the one the
+      // database holds: nothing further is going to arrive.
+      if (stable >= 2 || scene.objects.length === target.expected.length) {
+        break;
+      }
+    } else {
+      stable = 0;
+    }
+    previous = scene.objects.length;
   }
-  return page.evaluate(READ_SCENE);
+  const inPlace = scene && scene.placeId === target.placeId;
+  return {
+    ready: !!(scene && scene.ready),
+    inPlace,
+    worldURL: scene ? scene.worldURL : null,
+    expectedWorld: scene ? scene.expectedWorld : null,
+    worldLoaded: !!(inPlace && samePath(scene.worldURL, scene.expectedWorld)),
+    settled: !!(inPlace && scene && scene.objects.length === target.expected.length),
+    engine: scene ? scene.engine : null,
+    objects: scene ? scene.objects : [],
+  };
 }
 
-/** Forces a hash-route change so Vue tears the world down before we come back. */
-async function leave(page) {
+async function enter(page, target) {
+  await page.goto(`${BASE}/#${target.route}`, { waitUntil: 'domcontentloaded' });
+  return observe(page, target);
+}
+
+/**
+ * Forces a hash-route change so Vue tears the world down before we come back.
+ *
+ * The teardown is waited for, not assumed. The map page is 2D and never calls
+ * `setPlace`, so `$store.data.place` still names the place we just left; what
+ * does change is the loaded world, which the 2D branch replaces with an empty
+ * scene whose `worldURL` is the page itself. That replacement is the teardown,
+ * so it is the signal, and a return is only a real return once it has happened.
+ */
+async function leave(page, target) {
   await page.goto(`${BASE}/#/citymap`, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(4000);
+  await page.waitForFunction(
+    world => {
+      if (typeof X3D === 'undefined') {
+        return true;
+      }
+      const browser = X3D.getBrowser();
+      if (!browser || !browser.currentScene) {
+        return true;
+      }
+      const strip = value => String(value)
+        .replace(/^https?:\/\/[^/]+/, '').replace(/\/{2,}/g, '/');
+      return strip(browser.currentScene.worldURL || '') !== strip(world);
+    },
+    target.loadedWorld,
+    { timeout: 30000 });
+}
+
+/** Indexes one phase's nodes by placement row id, or reports why it has none. */
+function indexPhase(phase, target, mallRows) {
+  if (!phase || !phase.worldLoaded) {
+    return { byId: new Map(), blocked: true };
+  }
+  const resolved = resolveRenderedPlacements(phase.objects, target, mallRows);
+  const byId = new Map();
+  resolved.forEach(entry => byId.set(entry.id, entry));
+  return { byId, blocked: false };
+}
+
+function transformOf(entry) {
+  return entry ? { position: entry.node.position, rotation: entry.node.rotation } : null;
 }
 
 async function main() {
   fs.mkdirSync(SHOTS, { recursive: true });
+  const targets = resolveTargets(query, TARGETS);
+  const expected = expectedPlacements(query, targets);
+  targets.forEach(target => { target.expected = expected.get(target.key); });
+  const mallRows = mallRowIndex(targets.filter(t => t.source === 'mall_object').map(t => t.slug));
+
   const browser = await launchBrowser({ args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const consoleErrors = [];
@@ -207,7 +302,6 @@ async function main() {
 
   await login(page);
 
-  const phases = {};
   /*
    * The engine version is read from the runtime that actually produced this
    * capture, not from the contract constant. A capture labelled with the
@@ -222,75 +316,80 @@ async function main() {
     return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : 'unknown';
   });
 
-  for (const target of TARGETS) {
-    const initial = await enter(page, target.route);
+  const records = [];
+  const coverage = [];
+
+  for (const target of targets) {
+    const before = consoleErrors.length;
+    const initial = await enter(page, target);
     await page.screenshot({ path: path.join(SHOTS, `${target.key}-initial.png`) });
 
-    await leave(page);
-    const returned = await enter(page, target.route);
-
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    let returned = null;
     let reloaded = null;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      await page.waitForTimeout(1500);
-      reloaded = await page.evaluate(READ_SCENE);
-      if (reloaded.ready && reloaded.objects.length >= initial.objects.length) {
-        break;
-      }
+    if (initial.worldLoaded) {
+      target.loadedWorld = initial.worldURL;
+      await leave(page, target);
+      returned = await enter(page, target);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      reloaded = await observe(page, target);
+      await page.screenshot({ path: path.join(SHOTS, `${target.key}-reload.png`) });
     }
-    await page.screenshot({ path: path.join(SHOTS, `${target.key}-reload.png`) });
 
-    phases[target.key] = { target, initial, returned, reloaded };
-    if (!observedEngine && initial.engine) observedEngine = initial.engine;
-    console.log(`${target.key}: initial=${initial.objects.length} ` +
-      `return=${returned.objects.length} reload=${reloaded ? reloaded.objects.length : 0}`);
-  }
+    const phaseErrors = consoleErrors.slice(before);
+    const parseError = phaseErrors.find(text => /Parser error/i.test(text)) || null;
+    const initialIndex = indexPhase(initial, target, mallRows);
+    const returnIndex = indexPhase(returned, target, mallRows);
+    const reloadIndex = indexPhase(reloaded, target, mallRows);
 
-  await browser.close();
-
-  const mallRows = mallRowIndex(TARGETS.filter(t => t.slug).map(t => t.slug));
-
-  /*
-   * Every phase is resolved from its raw node list, so a world that rendered one
-   * saved placement twice fails here rather than quietly collapsing into a
-   * single record further down.
-   */
-  const records = [];
-  Object.keys(phases).forEach(key => {
-    const { target, initial, returned, reloaded } = phases[key];
-    const identity = Object.assign({ placeKey: key }, target);
-    [['initial', initial], ['return', returned], ['reload', reloaded]].forEach(([phase, scene]) => {
-      if (!scene) {
-        return;
+    target.expected.forEach(id => {
+      const entry = initialIndex.byId.get(id);
+      let observation = 'RENDERED';
+      if (!initial.worldLoaded) {
+        observation = parseError ? 'WORLD_PARSE_BLOCK' : 'WORLD_NOT_LOADED';
+      } else if (!entry) {
+        observation = 'NOT_RENDERED';
       }
-      try {
-        resolveRenderedPlacements(scene.objects, identity, mallRows);
-      } catch (error) {
-        throw new Error(`${key} (${phase}): ${error.message}`);
-      }
-    });
-    const resolved = resolveRenderedPlacements(initial.objects, identity, mallRows);
-    resolved.forEach(({ id, objectId, node: object }) => {
-      const find = scene => (scene && scene.objects || []).find(o => o.id === object.id) || null;
       records.push({
         source: target.source,
         id,
-        objectId,
-        placeKey: key,
-        rendered: {
-          position: object.position,
-          rotation: object.rotation,
+        objectId: entry ? entry.objectId : null,
+        placeKey: target.key,
+        placeId: target.placeId,
+        observation,
+        rendered: entry ? {
+          position: entry.node.position,
+          rotation: entry.node.rotation,
           scale: IMPLIED_SCALE,
-        },
-        renderedOnReturn: find(returned) && {
-          position: find(returned).position, rotation: find(returned).rotation,
-        },
-        renderedOnReload: find(reloaded) && {
-          position: find(reloaded).position, rotation: find(reloaded).rotation,
-        },
+        } : null,
+        renderedOnReturn: transformOf(returnIndex.byId.get(id)),
+        renderedOnReload: transformOf(reloadIndex.byId.get(id)),
       });
     });
-  });
+
+    coverage.push({
+      placeKey: target.key,
+      placeId: target.placeId,
+      route: target.route,
+      source: target.source,
+      expected: target.expected.length,
+      worldURL: initial.worldURL,
+      expectedWorld: initial.expectedWorld,
+      worldLoaded: initial.worldLoaded,
+      parseError,
+      initial: initialIndex.byId.size,
+      return: returnIndex.byId.size,
+      reload: reloadIndex.byId.size,
+      settled: { initial: initial.settled, return: returned && returned.settled,
+        reload: reloaded && reloaded.settled },
+    });
+    if (!observedEngine && initial.engine) observedEngine = initial.engine;
+    console.log(`${target.key}: expected=${target.expected.length} ` +
+      `world=${initial.worldLoaded ? 'loaded' : 'BLOCKED'} ` +
+      `initial=${initialIndex.byId.size} return=${returnIndex.byId.size} ` +
+      `reload=${reloadIndex.byId.size}`);
+  }
+
+  await browser.close();
 
   const capture = {
     layer: 'rendered',
@@ -300,6 +399,7 @@ async function main() {
     baseUrl: BASE,
     capturedAt: new Date().toISOString(),
     consoleErrors: Array.from(new Set(consoleErrors)),
+    coverage,
     records,
   };
   fs.mkdirSync(path.dirname(OUT), { recursive: true });

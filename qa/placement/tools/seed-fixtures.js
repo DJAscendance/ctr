@@ -73,6 +73,30 @@ emit(`UPDATE place p
        p.world_filename = 'home.wrl'
  WHERE p.type = 'home' AND (p.world_filename IS NULL OR p.assets_dir IS NULL);`);
 
+/*
+ * A home also needs its block.
+ *
+ * `place` has no parent column: the home-to-block link lives in `map_location`,
+ * and `GET /api/home/:username` walks it through `homeService.getHomeBlock`. A
+ * home place inserted without a claimed lot makes that walk dereference an
+ * undefined row, so the route answers 400, `main.ts` never calls `setPlace`,
+ * and the SPA stays in whatever place it was already in. The 3D view then shows
+ * the *previous* world, still holding the previous place's objects - which
+ * reads as a home that partly rendered rather than as a home that was never
+ * reached. Claiming a free lot is place metadata only; no placement value is
+ * read or written here.
+ */
+emit(`UPDATE map_location ml
+  JOIN (SELECT p.id AS place_id FROM place p
+         WHERE p.type = 'home'
+           AND NOT EXISTS (SELECT 1 FROM map_location m WHERE m.place_id = p.id)
+         ORDER BY p.id LIMIT 1) unlinked
+  JOIN (SELECT parent_place_id, MIN(location) AS location FROM map_location
+         WHERE available = 1 AND (place_id IS NULL OR place_id = 0)
+         GROUP BY parent_place_id ORDER BY parent_place_id LIMIT 1) free
+    ON ml.parent_place_id = free.parent_place_id AND ml.location = free.location
+   SET ml.place_id = unlinked.place_id;`);
+
 SET.objects.forEach(object => {
   emit(`INSERT INTO object (name, filename, directory, member_id, quantity, status, price)
   SELECT ${sql(object.name)}, ${sql(object.filename)}, ${sql(object.directory)}, 1, 999, 1, 0

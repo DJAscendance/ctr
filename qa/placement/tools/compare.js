@@ -80,6 +80,9 @@ function loadCapture(target) {
       existing.renderedOnReturn = record.renderedOnReturn;
       existing.renderedOnReload = record.renderedOnReload;
       existing.placeKey = record.placeKey;
+      // Why a row has no rendered block travels with it. Without this the
+      // merged record is indistinguishable from one nobody tried to observe.
+      existing.observation = record.observation;
     });
   }
   return {

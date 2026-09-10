@@ -24,9 +24,9 @@
  */
 
 const { execFileSync } = require('child_process');
-const { chromium } = require('playwright');
 const { launch: launchBrowser } = require('../../lib/browser');
 const { resolveRenderedPlacements } = require('../lib/rendered-identity');
+const { resolveTargets, expectedPlacements, samePath } = require('../lib/targets');
 
 const BASE = process.env.CTR_QA_URL || 'http://127.0.0.1:8128';
 const USER = process.env.CTR_QA_USER || 'testqa';
@@ -36,13 +36,24 @@ const DATABASE = process.env.CTR_QA_DB_NAME || 'cybertown';
 const CYCLES = Number(process.argv[2] || 10);
 const CYCLES_PER_PAGE = Number(process.env.CTR_QA_CYCLES_PER_PAGE || 5);
 
+const HOME_OWNER = process.env.CTR_QA_HOME_OWNER || 'XiteQA';
+const CLUB_SLUG = process.env.CTR_QA_CLUB_SLUG || 'personalclub';
+const ACCEPT_PARSE_BLOCK = process.env.CTR_QA_ACCEPT_PARSE_BLOCK === '1';
+
+/*
+ * Home and club ids are resolved, never written down - see lib/targets.js. The
+ * count each target must reach comes from the database for every target alike;
+ * taking it from the first observation instead makes the check self-fulfilling,
+ * because whatever the first cycle happened to see becomes the standard the
+ * remaining cycles are measured against.
+ */
 const TARGETS = [
   { key: 'public', route: '/place/enter', source: 'object_instance', slug: 'enter' },
   { key: 'place', route: '/place/fleamarket', source: 'object_instance', slug: 'fleamarket' },
   { key: 'shop2', route: '/place/electronicsstore', source: 'mall_object', slug: 'electronicsstore' },
   { key: 'shop', route: '/place/antiqueshop', source: 'mall_object', slug: 'antiqueshop' },
-  { key: 'home', route: '/home/XiteQA', source: 'object_instance', slug: null },
-  { key: 'club', route: '/club/837', source: 'object_instance', slug: null },
+  { key: 'home', source: 'object_instance', slug: null, homeOwner: HOME_OWNER },
+  { key: 'club', source: 'object_instance', slug: null, clubSlug: CLUB_SLUG },
 ];
 
 function query(sql) {
@@ -61,23 +72,29 @@ function query(sql) {
 }
 
 const READ_SCENE = () => {
-  if (typeof X3D === 'undefined') {
-    return { ready: false, objects: [] };
-  }
+  const out = { ready: false, placeId: null, worldURL: null, expectedWorld: null, objects: [] };
+  try {
+    const app = document.querySelector('#app');
+    const store = app && app.__vue__ && app.__vue__.$store;
+    const place = store && store.data && store.data.place;
+    out.placeId = place && place.id !== undefined ? Number(place.id) : null;
+    out.expectedWorld = place && place.assets_dir !== null && place.assets_dir !== undefined
+      ? `/assets/worlds/${place.assets_dir}${place.world_filename}` : null;
+  } catch (e) { out.storeError = e.message; }
+  if (typeof X3D === 'undefined') { return out; }
   const browser = X3D.getBrowser();
-  if (!browser || !browser.currentScene) {
-    return { ready: false, objects: [] };
-  }
-  const objects = [];
+  if (!browser || !browser.currentScene) { return out; }
+  out.ready = true;
+  out.worldURL = browser.currentScene.worldURL || null;
   const roots = browser.currentScene.rootNodes;
   for (let i = 0; i < roots.length; i += 1) {
     let typeName = null;
     try { typeName = roots[i].getNodeTypeName(); } catch (e) { typeName = null; }
     if (typeName === 'SharedObject') {
-      objects.push({ id: String(roots[i].id), name: String(roots[i].name) });
+      out.objects.push({ id: String(roots[i].id), name: String(roots[i].name) });
     }
   }
-  return { ready: true, objects };
+  return out;
 };
 
 function mallRowIndex() {
@@ -93,18 +110,6 @@ function mallRowIndex() {
   return index;
 }
 
-/** The number of saved placements each target should render. */
-function expectedCounts() {
-  const rows = query(
-    "SELECT 'object_instance' AS source, p.slug, COUNT(*) AS n FROM object_instance oi " +
-    'JOIN place p ON p.id = oi.place_id WHERE oi.place_id <> 0 GROUP BY p.slug ' +
-    "UNION ALL SELECT 'mall_object', p.slug, COUNT(*) FROM mall_object mo " +
-    'JOIN place p ON p.id = mo.place_id GROUP BY p.slug;');
-  const counts = new Map();
-  rows.forEach(row => counts.set(`${row.source}:${row.slug}`, Number(row.n)));
-  return counts;
-}
-
 async function login(page) {
   await page.goto(`${BASE}/#/login`, { waitUntil: 'networkidle' });
   await page.fill('input[type="text"], input[name="username"]', USER);
@@ -116,29 +121,41 @@ async function login(page) {
 /**
  * Enters a place and waits for the scene to stop changing.
  *
- * Objects are added from a 2 s timer after the world initializes, so an early
- * read sees an empty scene. Settling on "0 twice" would call that a finished
- * load and report a phantom emptiness, hence the minimum dwell before any
- * reading counts.
+ * Nothing counts until the SPA holds this place and X_ITE holds its world.
+ * Objects are added from a 2 s timer after the world initializes, so a read
+ * taken before then sees an empty scene; settling on "0 twice" would call that
+ * a finished load and report a phantom emptiness. Waiting on the world instead
+ * of on a fixed dwell also stops a failed load being counted, because the
+ * previous world's nodes are still standing when one fails.
  */
-async function enter(page, route) {
-  await page.goto(`${BASE}/#${route}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(4500);
+async function enter(page, target) {
+  await page.goto(`${BASE}/#${target.route}`, { waitUntil: 'domcontentloaded' });
   let previous = -1;
-  for (let attempt = 0; attempt < 24; attempt += 1) {
-    const scene = await page.evaluate(READ_SCENE);
-    if (scene.ready && scene.objects.length > 0 && scene.objects.length === previous) {
-      return scene;
-    }
-    previous = scene.ready ? scene.objects.length : -1;
-    await page.waitForTimeout(1500);
+  let stable = 0;
+  let scene = null;
+  for (let attempt = 0; attempt < 45; attempt += 1) {
+    await page.waitForTimeout(1000);
+    scene = await page.evaluate(READ_SCENE);
+    const loaded = scene.placeId === target.placeId
+      && samePath(scene.worldURL, scene.expectedWorld);
+    if (!loaded) { previous = -1; stable = 0; continue; }
+    if (scene.objects.length === previous) {
+      stable += 1;
+      if (stable >= 2 || scene.objects.length === target.expected.length) { break; }
+    } else { stable = 0; }
+    previous = scene.objects.length;
   }
-  return page.evaluate(READ_SCENE);
+  const loaded = !!(scene && scene.placeId === target.placeId
+    && samePath(scene.worldURL, scene.expectedWorld));
+  return { ready: !!(scene && scene.ready), worldLoaded: loaded,
+    objects: scene ? scene.objects : [] };
 }
 
 async function main() {
   const mallRows = mallRowIndex();
-  const expected = expectedCounts();
+  const targets = resolveTargets(query, TARGETS);
+  const expected = expectedPlacements(query, targets);
+  targets.forEach(target => { target.expected = expected.get(target.key); });
   const browser = await launchBrowser({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const consoleErrors = [];
   let page = null;
@@ -153,20 +170,26 @@ async function main() {
   await freshPage();
 
   let failures = 0;
-  const seen = new Map();
+  let blocked = 0;
   let heap = -1;
   for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
     if (cycle > 1 && (cycle - 1) % CYCLES_PER_PAGE === 0) {
       await freshPage();
     }
     const line = [];
-    for (const target of TARGETS) {
-      const scene = await enter(page, target.route);
+    for (const target of targets) {
+      const scene = await enter(page, target);
       heap = await page.evaluate(() => (performance.memory
         ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1));
-      const want = target.slug === null
-        ? seen.get(target.key) // homes and clubs are keyed by route, not slug
-        : expected.get(`${target.source}:${target.slug}`);
+      const expect = target.expected.length;
+      if (!scene.worldLoaded) {
+        // The previous world and its nodes are still standing when a load
+        // fails, so counting them here would credit them to this place.
+        blocked += 1;
+        if (!ACCEPT_PARSE_BLOCK) { failures += 1; }
+        line.push(`${target.key}=BLOCKED/${expect}${ACCEPT_PARSE_BLOCK ? '' : ' !!'}`);
+        continue;
+      }
       let got = null;
       let problem = null;
       try {
@@ -174,10 +197,6 @@ async function main() {
       } catch (error) {
         problem = error.message;
       }
-      if (problem === null && !seen.has(target.key)) {
-        seen.set(target.key, got);
-      }
-      const expect = want === undefined ? seen.get(target.key) : want;
       const ok = problem === null && got === expect;
       if (!ok) { failures += 1; }
       line.push(`${target.key}=${problem ? 'ERR' : got}/${expect}${ok ? '' : ' !!'}`);
@@ -187,7 +206,9 @@ async function main() {
   }
 
   await browser.close();
-  console.log(`\nbaseline counts: ${JSON.stringify(Object.fromEntries(seen))}`);
+  console.log(`\nexpected counts: ${JSON.stringify(Object.fromEntries(
+    targets.map(t => [t.key, t.expected.length])))}`);
+  console.log(`blocked visits: ${blocked}`);
   console.log(`console errors (unique): ${new Set(consoleErrors).size}`);
   console.log(failures === 0 ? 'PASS' : `FAIL (${failures})`);
   process.exit(failures === 0 ? 0 : 1);
