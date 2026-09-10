@@ -261,6 +261,23 @@ test("the world load promise is owned and settled exactly once", () => {
     "a supersession is not told apart from a real load failure");
 });
 
+test("both X_ITE 16 supersession messages are recognised (O4/O6)", () => {
+  const page = code(WORLD_PAGE);
+  const check = page.slice(
+    page.indexOf("supersededWorldLoad(error: any): boolean {"),
+    page.indexOf("recordUnexpectedLoadAbort"),
+  );
+  /* X_ITE rejects a superseded load with "Loading of X3D file aborted." while
+   * the file is still in flight, and with "Replacing world aborted." once its
+   * scene is installed but replaceWorld has not drained the world's assets yet.
+   * An ordinary 3D-to-3D change lands in the second window, so a check that
+   * knows only the first reports the cancellation as a load failure. */
+  assert.ok(check.indexOf("Loading of X3D file aborted.") !== -1,
+    "the in-flight supersession message is not recognised");
+  assert.ok(check.indexOf("Replacing world aborted.") !== -1,
+    "the replacement supersession message is not recognised");
+});
+
 test("the browser callback is keyed by the component, not by a fresh object", () => {
   const page = code(WORLD_PAGE);
   assert.ok(/addBrowserCallback\(this,/.test(page),
