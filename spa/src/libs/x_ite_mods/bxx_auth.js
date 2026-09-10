@@ -16,11 +16,99 @@
      * Browser.getAvatarHeight() on every floor change, and the old property
      * name made that throw before the car could move.
      */
-    function navigationInfo(browser) {
+    function boundNavigationInfo(browser) {
         if (typeof browser.getActiveNavigationInfo === 'function') {
             return browser.getActiveNavigationInfo()
         }
         return browser.activeNavigationInfo_
+    }
+
+    /* A scene the engine is still building answers some calls by throwing. */
+    const attempt = (read, fallback) => {
+      try {
+        return read();
+      } catch (error) {
+        return fallback;
+      }
+    };
+
+    /*
+     * The scene's own first NavigationInfo.
+     *
+     * An authored one is rarely a root node - the Mall's sits four levels
+     * inside `DEF root Group` - so this walks. An SFNode field IS the node and
+     * an MFNode field is iterable; an Inline keeps its own scene sealed, so the
+     * walk never leaves the world's own file.
+     */
+    const sceneNavigationInfo = (scene) => {
+      const seen = [];
+      const find = (node, depth) => {
+        if (!node || depth > 8 || seen.indexOf(node) !== -1) {
+          return null;
+        }
+        seen.push(node);
+        if (attempt(() => node.getNodeTypeName(), null) === "NavigationInfo") {
+          return node;
+        }
+        const definitions = attempt(() => node.getFieldDefinitions(), []);
+        for (let i = 0; i < definitions.length; i += 1) {
+          const field = attempt(() => node.getField(definitions[i].name), null);
+          const type = field && attempt(() => field.getType(), null);
+          let hit = null;
+          if (type === X3D.X3DConstants.SFNode) {
+            hit = find(field, depth + 1);
+          } else if (type === X3D.X3DConstants.MFNode) {
+            for (let j = 0; j < field.length && !hit; j += 1) {
+              hit = find(field[j], depth + 1);
+            }
+          }
+          if (hit) {
+            return hit;
+          }
+        }
+        return null;
+      };
+      const roots = attempt(() => scene.rootNodes, []);
+      for (let k = 0; k < roots.length; k += 1) {
+        const found = find(roots[k], 0);
+        if (found) {
+          return found;
+        }
+      }
+      return null;
+    };
+
+    /*
+     * The CURRENT world's NavigationInfo, not the one that is still bound.
+     *
+     * `browser.currentScene` is swapped as soon as the incoming world's scene
+     * is set up, but the layer that owns the NavigationInfo stack is only
+     * rebuilt on a later frame. Measured on 16.2.0: 282 ms on Plaza -> Mall in
+     * the SPA, and 4.3 s on a bare X_ITE page given the same two worlds, so it
+     * is engine timing rather than an ordering the SPA could change.
+     *
+     * A world's own Scripts run inside that gap, and every Blaxxun accessor
+     * below answered for the world the member had just left: a probe world
+     * authoring avatarSize 1.6 read Browser.getAvatarHeight() as 1.75, the
+     * height of the previous world, and a setWalkSpeed() from that Script was
+     * written to a node the incoming world never uses. The Mall elevator is
+     * the same shape of call.
+     *
+     * The bound node is returned unchanged whenever it belongs to the current
+     * scene, so a world that binds a second NavigationInfo at runtime still
+     * wins. Only a node owned by some other scene is overridden, and only when
+     * this scene has a NavigationInfo of its own.
+     */
+    function navigationInfo(browser) {
+      const bound = boundNavigationInfo(browser);
+      const scene = browser.currentScene;
+      if (!scene) {
+        return bound;
+      }
+      if (bound && attempt(() => bound.getExecutionContext(), null) === scene) {
+        return bound;
+      }
+      return sceneNavigationInfo(scene) || bound;
     }
 
     function navigationField(browser, name) {

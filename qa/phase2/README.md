@@ -38,6 +38,7 @@ or the page will ask for the previous bundle.
 | `check-walk-collision.js` | WALK, gravity, world collision, a peer standing on the local citizen's exact spot who does not block them, and two tabs of one member as two nodes |
 | `check-ray-events.js` | a ray resolves the correct presence (with negative controls), browser-sourced routes are accepted, a NULL SharedEvent list does not kill place startup |
 | `check-memory.js` | 100 world transitions: heap slope, one canvas, no retained citizen |
+| `check-navigation-rebind.js` | every world change hands the incoming world its OWN NavigationInfo, at every frame of the change and not only once it has settled |
 
 `lib/beta-client.js` is the only place a gate logs in. It drives the real login
 form: seeding `localStorage` does not work, because the SPA calls
