@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 /*
  * blaxxun shared-event list compatibility.
@@ -27,7 +27,7 @@ function sharedEventNodes(events) {
 }
 
 function isSharedEventNode(eventNode) {
-  return !!eventNode && typeof eventNode.addFieldCallback === 'function';
+  return !!eventNode && typeof eventNode.addFieldCallback === "function";
 }
 
 module.exports = {

@@ -1,3 +1,4 @@
+/* global X3D */
 (function () {
 
     // Below are additions from the Blaxxun Authoring guide and were not available on the X_ITE browser

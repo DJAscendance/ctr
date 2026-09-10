@@ -1,3 +1,4 @@
+/* global X3D */
 (function () {
 
   /*

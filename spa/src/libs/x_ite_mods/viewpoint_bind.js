@@ -1,3 +1,4 @@
+/* global X3D */
 (function () {
     // Viewpoint.bind to Viewpoint.set_bind as used in some scripts.
     //

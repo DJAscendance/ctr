@@ -1,3 +1,4 @@
+/* global X3D */
 (function () {
     // Add SFxxx types to the Window Object, a hacky way of allowing var x = SFString("asdf") in scripts.
     // X_ITE 15 exports the field classes straight off the global X3D object, so take them
