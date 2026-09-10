@@ -756,6 +756,119 @@ test("no undeclared navWalk is left anywhere in the patch file", () => {
     "bxx_auth.js still names navWalk");
 });
 
+// 6.6 THE VISIBILITY LIMIT REACHES THE REAL FIELD -----------------------------
+
+/*
+ * `setVisibilityLimit` carried the same class of defect as `setWalkSpeed`, but
+ * it hid better. It assigned the named property:
+ *
+ *   navigationInfo(this).visibilityLimit = limit
+ *
+ * On X_ITE 16.2.0 that property is a GETTER WITH NO SETTER, so the read works
+ * and the write is swallowed. Measured on a live 16.2.0 page (ANGLE / NVIDIA
+ * RTX 3060 Ti / OpenGL 4.5) against a world authored at visibilityLimit 150:
+ *
+ *   info.visibilityLimit                            -> 150  (reads fine)
+ *   info.visibilityLimit = 999                      -> still 150
+ *   info.getField("visibilityLimit").setValue(321)  -> 321
+ *   browser.setVisibilityLimit(123)                 -> still 150
+ *
+ * The readable property is why the old shape outlived the walk-speed fix next
+ * to it: the getter agreed with the authored value, so nothing looked wrong
+ * until the field was read back AFTER a set.
+ */
+
+/**
+ * A NavigationInfo in that measured shape. `visibilityLimit` is reachable
+ * through getField(), and is also exposed as a getter-only named property.
+ */
+function navigationInfoWithReadableProperty(): any {
+  const fields: { [name: string]: any } = {
+    speed: sfFloat(10),
+    visibilityLimit: sfFloat(150),
+    avatarSize: [1, 1.75, 0.9],
+    type: ["WALK", "ANY"],
+  };
+  const info: any = { getField: (name: string) => fields[name] };
+  Object.defineProperty(info, "visibilityLimit",
+    { get: () => fields.visibilityLimit.getValue() });
+  return info;
+}
+
+test("the patch file installs the Blaxxun visibility-limit pair", () => {
+  const browser = browserWithNavigationInfo(navigationInfoWithReadableProperty());
+  assert.strictEqual(typeof browser.setVisibilityLimit, "function",
+    "setVisibilityLimit is not installed");
+  assert.strictEqual(typeof browser.getVisibilityLimit, "function",
+    "getVisibilityLimit is not installed");
+});
+
+test("setVisibilityLimit writes the bound NavigationInfo field", () => {
+  const info = navigationInfoWithReadableProperty();
+  const browser = browserWithNavigationInfo(info);
+  assert.strictEqual(info.getField("visibilityLimit").getValue(), 150,
+    "the facade did not start at its authored visibility limit");
+  browser.setVisibilityLimit(123);
+  assert.strictEqual(info.getField("visibilityLimit").getValue(), 123,
+    "setVisibilityLimit did not change the field the renderer clips against");
+  assert.strictEqual(browser.getVisibilityLimit(), 123,
+    "the visibility-limit getter disagrees with the setter");
+});
+
+test("setVisibilityLimit uses its argument on every call", () => {
+  const browser = browserWithNavigationInfo(navigationInfoWithReadableProperty());
+  browser.setVisibilityLimit(123);
+  assert.strictEqual(browser.getVisibilityLimit(), 123);
+  browser.setVisibilityLimit(275);
+  assert.strictEqual(browser.getVisibilityLimit(), 275,
+    "a second call did not take, so the argument is being ignored");
+});
+
+test("setVisibilityLimit keeps an authored zero instead of clamping it", () => {
+  const browser = browserWithNavigationInfo(navigationInfoWithReadableProperty());
+  browser.setVisibilityLimit(0);
+  assert.strictEqual(browser.getVisibilityLimit(), 0,
+    "zero was not preserved, so the setter invented a clamp the engine has not");
+});
+
+test("setVisibilityLimit goes through the field setter, not a property", () => {
+  const info = navigationInfoWithReadableProperty();
+  const field = info.getField("visibilityLimit");
+  const reached: number[] = [];
+  const realSetValue = field.setValue;
+  field.setValue = (next: number) => { reached.push(next); realSetValue(next); };
+  browserWithNavigationInfo(info).setVisibilityLimit(275);
+  assert.deepStrictEqual(reached, [275],
+    "the real field setter was never reached");
+});
+
+test("setVisibilityLimit leaves the other navigation fields alone", () => {
+  const info = navigationInfoWithReadableProperty();
+  const browser = browserWithNavigationInfo(info);
+  browser.setVisibilityLimit(123);
+  assert.strictEqual(info.getField("speed").getValue(), 10,
+    "changing the visibility limit moved the walk speed");
+  assert.deepStrictEqual(info.getField("type"), ["WALK", "ANY"],
+    "changing the visibility limit moved the world off its navigation mode");
+  assert.deepStrictEqual(info.getField("avatarSize"), [1, 1.75, 0.9],
+    "changing the visibility limit disturbed the avatar size");
+});
+
+test("the old property assignment is a silent no-op on a 16.2 NavigationInfo", () => {
+  const info = navigationInfoWithReadableProperty();
+  const browser = browserWithNavigationInfo(info);
+  // The expression as it shipped, evaluated in a non-strict context the way
+  // bxx_auth.js itself runs, so a getter-only property swallows the write
+  // rather than throwing - which is what the live runtime does.
+  const asShipped = vm.runInNewContext(
+    "(function (limit) { this.getActiveNavigationInfo().visibilityLimit = limit; })");
+  asShipped.call(browser, 123);
+  assert.strictEqual(info.getField("visibilityLimit").getValue(), 150,
+    "property assignment reached the field, so getField/setValue would be unnecessary");
+  assert.strictEqual(info.visibilityLimit, 150,
+    "the named property stopped reading the field, so this control proves nothing");
+});
+
 // ---------------------------------------------------------------------------
 
 let failures = 0;

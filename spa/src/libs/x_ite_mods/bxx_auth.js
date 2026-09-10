@@ -293,7 +293,7 @@
         b.getStepOverSize = function () { return navigationField(this, 'avatarSize')[2] }
         b.setCollisionDistance = function (distance) { navigationField(this, 'avatarSize')[0] = distance }
         b.getCollisionDistance = function () { return navigationField(this, 'avatarSize')[0] }
-        b.setVisibilityLimit = function (limit) { navigationInfo(this).visibilityLimit = limit }
+        b.setVisibilityLimit = function (n) { navigationField(this, "visibilityLimit").setValue(n) }
         b.getVisibilityLimit = function () { return navigationValue(this, 'visibilityLimit') }
         // TODO: Should we multiply the walkspeed to match Blaxxun?
         b.setWalkSpeed = function (speed) { navigationField(this, "speed").setValue(speed) }
