@@ -324,7 +324,7 @@ export default Vue.extend({
            * asked for here - and, like there, before the world is replaced,
            * while browser.currentScene still names it. */
           this.releaseWorldScriptState(browser);
-          browser.replaceWorld(null);
+          this.replaceWorldWithNothing(browser, generation);
         }
 
         if(this.$store.data.place.type === "shop"){
@@ -344,7 +344,7 @@ export default Vue.extend({
       }
     },
     async unloadPlace(): Promise<void> {
-      ++this.loadGeneration;
+      const generation = ++this.loadGeneration;
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
       this.presenceStore = new PresenceStore();
       this.clearRenderedPresences();
@@ -355,7 +355,7 @@ export default Vue.extend({
          * outgoing world through browser.currentScene, and replaceWorld has
          * already put an empty scene there by the time it returns. */
         this.releaseWorldScriptState(browser);
-        browser.replaceWorld(null);
+        this.replaceWorldWithNothing(browser, generation);
       }
     },
     async joinPlace(): Promise<void> {
@@ -1162,6 +1162,43 @@ export default Vue.extend({
         url: this.worldUrl,
       };
       console.error("a current world load was aborted by nothing this page started");
+    },
+    /*
+     * Owns the promise `replaceWorld(null)` hands back.
+     *
+     * Leaving 3D is the one path that replaces the world itself, and X_ITE 16
+     * returns a promise for that replacement. It settles only once the
+     * replacement's loading has drained - about 48ms on this stack - so there
+     * is a window in which the teardown is still sitting in X_ITE's single
+     * replacement slot. Dropping the promise was the defect: a member who
+     * leaves 3D and turns straight back around starts a loadURL whose own
+     * replacement evicts the waiting teardown, and X_ITE rejects the evicted
+     * one with "Replacing world aborted." With nobody holding it, that became
+     * an unhandled rejection.
+     *
+     * A cancellation proves itself twice here, exactly as it does in startX3D:
+     * X_ITE's own supersession message, AND a generation a later run has
+     * already claimed. On those terms the cancellation costs nothing - the
+     * replacement that evicted this one is itself taking the old world down,
+     * which is the whole of what this teardown wanted.
+     *
+     * Nothing else is expected. An abort while this teardown is still the
+     * current one means something outside this page is replacing worlds, and a
+     * rejection X_ITE does not name as a cancellation is a real teardown
+     * failure. Both are reported rather than swallowed.
+     *
+     * Owned, not awaited. The 2D page does not depend on the old world's drain,
+     * and under a slow drain waiting on it would hold the 2D component back.
+     */
+    replaceWorldWithNothing(browser: any, generation: number): Promise<void> {
+      return Promise.resolve(browser.replaceWorld(null)).then(
+        () => undefined,
+        error => {
+          if (this.supersededWorldLoad(error) && generation !== this.loadGeneration) return;
+          if (this.supersededWorldLoad(error)) this.recordUnexpectedLoadAbort(generation);
+          console.error("the world teardown failed", error);
+        },
+      );
     },
     async startX3D(generation: number): Promise<any> {
       if (!this.browser) {

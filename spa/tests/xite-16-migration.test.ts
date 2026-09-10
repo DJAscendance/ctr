@@ -314,7 +314,7 @@ function twoDTeardownFault(page: string): string | null {
   if (elseAt === -1 || endAt === -1 || endAt < elseAt) return "could not isolate the 2D branch";
   const twoD = page.slice(elseAt, endAt);
   const release = twoD.indexOf("this.releaseWorldScriptState(browser)");
-  const replace = twoD.indexOf("browser.replaceWorld(null)");
+  const replace = twoD.search(/(?:this\.replaceWorldWithNothing|browser\.replaceWorld)\(/);
   if (release === -1) return "leaving 3D no longer releases the world";
   if (replace === -1) return "leaving 3D no longer replaces the world";
   if (release > replace) return "the world is replaced before it is released";
@@ -324,9 +324,74 @@ function twoDTeardownFault(page: string): string | null {
 /** The same source with that one pair of calls put back in the old order. */
 function replaceBeforeRelease(page: string): string {
   return page.replace(
-    /this\.releaseWorldScriptState\(browser\);(\s*)browser\.replaceWorld\(null\);/,
-    "browser.replaceWorld(null);$1this.releaseWorldScriptState(browser);",
+    /this\.releaseWorldScriptState\(browser\);(\s*)this\.replaceWorldWithNothing\(browser, generation\);/,
+    "this.replaceWorldWithNothing(browser, generation);$1this.releaseWorldScriptState(browser);",
   );
+}
+
+/*
+ * The teardown replacement promise must be owned.
+ *
+ * X_ITE 16's replaceWorld() returns a promise that settles only once the
+ * replacement's loading has drained. Leaving 3D is the one path that replaces
+ * the world itself, so a bare `browser.replaceWorld(null);` statement drops
+ * that promise - and a member who turns straight back around starts a loadURL
+ * whose own replacement evicts the waiting teardown, which X_ITE rejects with
+ * "Replacing world aborted." Dropped, that rejection reaches nobody and the
+ * page raises an unhandled rejection.
+ *
+ * Reads source shape rather than one exact string: the rule is that every
+ * teardown goes through the owner, and that the owner classifies rather than
+ * swallows.
+ */
+function teardownOwnershipFault(page: string): string | null {
+  const owner = "replaceWorldWithNothing(browser: any, generation: number)";
+  const ownerAt = page.indexOf(owner);
+  if (ownerAt === -1) return "no method owns the teardown replacement promise";
+  const ownerEnd = page.indexOf("\n    },", ownerAt);
+  if (ownerEnd === -1) return "could not isolate the teardown owner";
+  const body = page.slice(ownerAt, ownerEnd);
+
+  // Exactly one raw replacement, and it is the owner's own.
+  const raw: number[] = [];
+  const find = /browser\.replaceWorld\(null\)/g;
+  let m = find.exec(page);
+  while (m) { raw.push(m.index); m = find.exec(page); }
+  if (raw.length === 0) return "leaving 3D no longer replaces the world";
+  const outside = raw.filter(at => at < ownerAt || at > ownerEnd);
+  if (outside.length > 0) return "a teardown replacement promise is dropped";
+
+  // The owner has to take the promise, not just make it.
+  if (!/\.then\(/.test(body)) return "the teardown promise is not settled";
+  // And it has to tell a cancellation from a failure, on the same two-part
+  // proof startX3D uses. A blind catch would pass a .then() check alone.
+  if (body.indexOf("supersededWorldLoad(error)") === -1) {
+    return "the teardown swallows every rejection";
+  }
+  if (body.indexOf("generation !== this.loadGeneration") === -1) {
+    return "a teardown abort is called a cancellation without a later run";
+  }
+  if (!/console\.error/.test(body)) return "an unexpected teardown failure is not reported";
+  return null;
+}
+
+/** The same source with the 2D teardown's promise dropped again. */
+function dropTeardownPromise(page: string): string {
+  return page.replace(
+    "this.replaceWorldWithNothing(browser, generation);\n        }\n\n        if(this.$store.data.place.type",
+    "browser.replaceWorld(null);\n        }\n\n        if(this.$store.data.place.type",
+  );
+}
+
+/** The same source with the owner reduced to a blind catch. */
+function blindCatchTeardown(page: string): string {
+  const owner = "replaceWorldWithNothing(browser: any, generation: number)";
+  const ownerAt = page.indexOf(owner);
+  const ownerEnd = page.indexOf("\n    },", ownerAt);
+  return page.slice(0, ownerAt) + owner
+    + ": Promise<void> {\n      return Promise.resolve(browser.replaceWorld(null))"
+    + ".then(() => undefined, () => undefined);"
+    + page.slice(ownerEnd);
 }
 
 test("the 2D path still tears the old world down, because nothing supersedes it", () => {
@@ -338,6 +403,47 @@ test("NEGATIVE CONTROL: replacing the 2D world before releasing it is caught", (
   const swapped = replaceBeforeRelease(page);
   assert.notStrictEqual(swapped, page, "the fixture changed nothing, so it proves nothing");
   assert.strictEqual(twoDTeardownFault(swapped), "the world is replaced before it is released");
+});
+
+test("the teardown replacement promise is owned, not dropped", () => {
+  assert.strictEqual(teardownOwnershipFault(code(WORLD_PAGE)), null);
+});
+
+test("both teardown paths hand the replacement to that owner", () => {
+  const page = code(WORLD_PAGE);
+  /* Leaving 3D for a 2D place, and leaving the world-browser route entirely.
+   * Both replace the world with nothing, and both used to drop the promise. */
+  const unload = page.slice(
+    page.indexOf("async unloadPlace("),
+    page.indexOf("async joinPlace("),
+  );
+  assert.ok(unload.length > 0, "could not isolate unloadPlace");
+  assert.ok(/this\.replaceWorldWithNothing\(browser, generation\)/.test(unload),
+    "unloadPlace drops the promise X_ITE returns for its replacement");
+  assert.ok(/const generation = \+\+this\.loadGeneration/.test(unload),
+    "unloadPlace has no generation to prove a later run claimed its teardown");
+  const twoD = page.slice(
+    page.indexOf("} else {", page.indexOf("if(this.$store.data.view3d && !this.force2d) {")),
+    page.indexOf("async unloadPlace("),
+  );
+  assert.ok(/this\.replaceWorldWithNothing\(browser, generation\)/.test(twoD),
+    "the 2D branch drops the promise X_ITE returns for its replacement");
+});
+
+test("NEGATIVE CONTROL: a dropped teardown promise is caught", () => {
+  const page = code(WORLD_PAGE);
+  const dropped = dropTeardownPromise(page);
+  assert.notStrictEqual(dropped, page, "the fixture changed nothing, so it proves nothing");
+  assert.strictEqual(teardownOwnershipFault(dropped),
+    "a teardown replacement promise is dropped");
+});
+
+test("NEGATIVE CONTROL: a blind catch on the teardown is caught", () => {
+  const page = code(WORLD_PAGE);
+  const blind = blindCatchTeardown(page);
+  assert.notStrictEqual(blind, page, "the fixture changed nothing, so it proves nothing");
+  assert.strictEqual(teardownOwnershipFault(blind),
+    "the teardown swallows every rejection");
 });
 
 /*
