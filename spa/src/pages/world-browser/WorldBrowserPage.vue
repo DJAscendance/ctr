@@ -317,7 +317,13 @@ export default Vue.extend({
          * the old world is only released if it is asked for here.
          */
         if(this.browser) {
-          X3D.getBrowser(this.browser).replaceWorld(null);
+          const browser = X3D.getBrowser(this.browser);
+          /* The 3D branch releases the outgoing world inside startX3D(), before
+           * its loadURL. This branch has no loadURL, so the same release is
+           * asked for here - and, like there, before the world is replaced,
+           * while browser.currentScene still names it. */
+          this.releaseWorldScriptState(browser);
+          browser.replaceWorld(null);
         }
 
         if(this.$store.data.place.type === "shop"){
@@ -344,6 +350,10 @@ export default Vue.extend({
       this.attachRemoteMembers();
       if (this.browser) {
         const browser = X3D.getBrowser(this.browser);
+        /* Before the replacement, not after: releaseWorldScriptState names the
+         * outgoing world through browser.currentScene, and replaceWorld has
+         * already put an empty scene there by the time it returns. */
+        this.releaseWorldScriptState(browser);
         browser.replaceWorld(null);
       }
     },
@@ -1155,6 +1165,14 @@ export default Vue.extend({
       if (typeof browser.installBlaxxunEventDelivery === "function") {
         browser.installBlaxxunEventDelivery();
       }
+      /*
+       * Whatever the outgoing world left on the BROWSER goes back now: its
+       * event mask and its browser event route are browser-level state that
+       * X_ITE does not hand back, because it never runs a VRML97 Script's
+       * shutdown() on replaceWorld. Released here, before loadURL, so the
+       * incoming world's own initialize() is what puts them back.
+       */
+      this.releaseWorldScriptState(browser);
       this.applyAvatarIdentity();
       /*
        * This run owns the promise loadURL hands back. Dropping it was the
@@ -1251,6 +1269,26 @@ export default Vue.extend({
      * Every world therefore starts under normal gravity. A world that wants it
      * off switches it off itself, as those four do.
      */
+    /*
+     * Gives back what the outgoing world took from the browser.
+     *
+     * Gameplay lives in the world's own Scripts, and those Scripts are
+     * disposed with the scene - their timers, their sensors and their routes
+     * all go with it. What does NOT go with it is the state a Script wrote
+     * onto the browser: the blaxxun event mask, and the route from the
+     * browser's `event_changed` into the Script. A historical world's
+     * shutdown() returns both, but X_ITE does not run shutdown() on a VRML97
+     * Script when the world is replaced, so the next world would inherit them.
+     */
+    releaseWorldScriptState(browser: any): void {
+      try {
+        if (typeof browser.releaseBlaxxunWorldState === "function") {
+          browser.releaseBlaxxunWorldState();
+        }
+      } catch (error) {
+        console.warn("could not release the previous world's browser state", error);
+      }
+    },
     resetGravity(browser: any): void {
       try {
         if (typeof browser.setGravity === "function") {
