@@ -678,7 +678,7 @@ function browserWithNavigationInfo(info: any): any {
   const sandbox: any = {
     console,
     X3D: {
-      require: (_names: unknown, ready: (B: any) => void) => ready({ prototype }),
+      require: (_names: unknown, ready: any) => ready({ prototype }),
       SFVec3f: function SFVec3f() { /* not reached by these tests */ },
       SFRotation: function SFRotation() { /* not reached by these tests */ },
     },
@@ -730,7 +730,8 @@ test("declaring navWalk as a global would NOT have fixed setWalkSpeed", () => {
   const browser = browserWithNavigationInfo(info);
   // The expression as it was written, with the global it named actually supplied.
   const navWalk: any = { speed: 0 };
-  const asWritten = function (this: any, _speed: number): void {
+  const asWritten = function (this: any, speed: number): void {
+    assert.strictEqual(speed, 3.5, "the control did not receive the argument the original ignored");
     navWalk.speed = this.activeNavigationInfo_ && this.activeNavigationInfo_.speed;
   };
   asWritten.call(browser, 3.5);
