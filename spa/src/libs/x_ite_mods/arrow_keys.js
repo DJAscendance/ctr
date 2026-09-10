@@ -1,3 +1,4 @@
+/* global X3D */
 (function () {
 
   X3D.require(["x_ite/Browser/Navigation/WalkViewer"], function (WalkViewer) {
