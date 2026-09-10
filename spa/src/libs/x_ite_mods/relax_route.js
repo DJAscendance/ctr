@@ -1,3 +1,4 @@
+/* global X3D */
 X3D.require(["x_ite/Parser/Parser"], function (Parser) {
     Parser.prototype.nodeStatements = function (field) {
         let nodeStatementWithRoute = () => {
