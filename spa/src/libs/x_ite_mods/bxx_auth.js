@@ -296,7 +296,15 @@
         b.setVisibilityLimit = function (limit) { navigationInfo(this).visibilityLimit = limit }
         b.getVisibilityLimit = function () { return navigationValue(this, 'visibilityLimit') }
         // TODO: Should we multiply the walkspeed to match Blaxxun?
-        b.setWalkSpeed = function (speed) { navWalk.speed = this.activeNavigationInfo_.speed }
+        /*
+         * This used to assign to an undeclared `navWalk`, so every caller threw
+         * a ReferenceError before a speed could be set - and it read the bound
+         * speed rather than writing the argument. The write goes through the
+         * field's setValue(): on X_ITE 16 the NavigationInfo handed back by
+         * getActiveNavigationInfo() has no named `speed` property, so assigning
+         * one lands on the facade and changes nothing.
+         */
+        b.setWalkSpeed = function (speed) { navigationField(this, 'speed').setValue(speed) }
         b.getWalkSpeed = function () { return navigationValue(this, 'speed') }
         b.setViewpointByValue = function (position, orientation, mode) { throw Error('UnimplementedBXXMethod') }
         b.getViewpointByValue = function (position, orientation, mode) { throw Error('UnimplementedBXXMethod') }

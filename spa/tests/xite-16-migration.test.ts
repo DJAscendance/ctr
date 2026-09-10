@@ -621,6 +621,140 @@ test("the local user is never a ray target, even with a node bound to their key"
     "the local citizen resolves as a remote target");
 });
 
+// 6. THE BLAXXUN NAVIGATION SETTERS ACTUALLY RUN ------------------------------
+
+/*
+ * Everything above this line is a grep or a pure-logic check. This section is
+ * neither: it EXECUTES `bxx_auth.js` and calls the Blaxxun method, because the
+ * defect it guards cannot be seen in the source shape alone.
+ *
+ * `setWalkSpeed` was written against a `navWalk` object that has never existed
+ * in this repository - not in a shim, not on `window`, not in any commit since
+ * the initial import. It is installed on `Browser.prototype` all the same, so
+ * a world Script that calls `Browser.setWalkSpeed(n)` gets a ReferenceError
+ * rather than a walk speed. That is the same failure `getTime`'s undeclared
+ * `wst` had, and it is proved the same way: by calling the method.
+ *
+ * The NavigationInfo below is the shape X_ITE 16.2 really hands back from
+ * `getActiveNavigationInfo()`, measured against the live 16.2.0 runtime:
+ *
+ *   * fields are reachable ONLY through `getField(name)`;
+ *   * `info.speed` reads back `undefined`;
+ *   * `info.speed = n` succeeds and changes nothing.
+ *
+ * That last point is why the fix cannot be the property assignment the
+ * neighbouring `setVisibilityLimit` uses - section 6.5 holds that as a
+ * negative control.
+ */
+const vm = require("vm");
+
+/** A single-valued field: the only way in or out is getValue/setValue. */
+function sfFloat(initial: number): any {
+  let held = initial;
+  return {
+    getValue: () => held,
+    setValue: (next: number) => { held = next; },
+    valueOf: () => held,
+  };
+}
+
+/**
+ * A NavigationInfo facade in X_ITE 16.2's measured shape. Named properties are
+ * deliberately absent, so writing one lands on the facade and never on a field.
+ */
+function navigationInfoFacade(): any {
+  const fields: { [name: string]: any } = {
+    speed: sfFloat(10),
+    visibilityLimit: sfFloat(150),
+    avatarSize: [1, 1.75, 0.9],
+    type: ["WALK", "ANY"],
+  };
+  return { getField: (name: string) => fields[name] };
+}
+
+/** Runs the real patch file and returns the Browser prototype it decorated. */
+function browserWithNavigationInfo(info: any): any {
+  const prototype: any = {};
+  const sandbox: any = {
+    console,
+    X3D: {
+      require: (_names: unknown, ready: (B: any) => void) => ready({ prototype }),
+      SFVec3f: function SFVec3f() { /* not reached by these tests */ },
+      SFRotation: function SFRotation() { /* not reached by these tests */ },
+    },
+  };
+  vm.runInNewContext(read(`${MODS}/bxx_auth.js`), sandbox, { filename: "bxx_auth.js" });
+  const browser = Object.create(prototype);
+  browser.getActiveNavigationInfo = () => info;
+  return browser;
+}
+
+test("the patch file loads and installs the Blaxxun walk-speed pair", () => {
+  const browser = browserWithNavigationInfo(navigationInfoFacade());
+  assert.strictEqual(typeof browser.setWalkSpeed, "function", "setWalkSpeed is not installed");
+  assert.strictEqual(typeof browser.getWalkSpeed, "function", "getWalkSpeed is not installed");
+});
+
+test("setWalkSpeed reaches the bound NavigationInfo instead of throwing", () => {
+  const info = navigationInfoFacade();
+  const browser = browserWithNavigationInfo(info);
+  assert.strictEqual(browser.getWalkSpeed(), 10, "the facade did not start at its authored speed");
+  browser.setWalkSpeed(3.5);
+  assert.strictEqual(browser.getWalkSpeed(), 3.5,
+    "setWalkSpeed did not change the walk speed the world is navigating at");
+});
+
+test("setWalkSpeed uses its argument, not the speed already bound", () => {
+  const browser = browserWithNavigationInfo(navigationInfoFacade());
+  browser.setWalkSpeed(7);
+  assert.strictEqual(browser.getWalkSpeed(), 7);
+  browser.setWalkSpeed(2);
+  assert.strictEqual(browser.getWalkSpeed(), 2,
+    "a second call did not take, so the argument is being ignored");
+});
+
+test("setWalkSpeed leaves the authored navigation type alone", () => {
+  const info = navigationInfoFacade();
+  const browser = browserWithNavigationInfo(info);
+  browser.setWalkSpeed(4);
+  assert.deepStrictEqual(info.getField("type"), ["WALK", "ANY"],
+    "changing the walk speed moved the world off its authored navigation mode");
+  assert.deepStrictEqual(info.getField("avatarSize"), [1, 1.75, 0.9],
+    "changing the walk speed disturbed the avatar size");
+});
+
+// 6.5 NEGATIVE CONTROLS -------------------------------------------------------
+
+test("declaring navWalk as a global would NOT have fixed setWalkSpeed", () => {
+  const info = navigationInfoFacade();
+  const browser = browserWithNavigationInfo(info);
+  // The expression as it was written, with the global it named actually supplied.
+  const navWalk: any = { speed: 0 };
+  const asWritten = function (this: any, _speed: number): void {
+    navWalk.speed = this.activeNavigationInfo_ && this.activeNavigationInfo_.speed;
+  };
+  asWritten.call(browser, 3.5);
+  assert.strictEqual(browser.getWalkSpeed(), 10,
+    "the original expression set the walk speed, so a global declaration would be the fix");
+});
+
+test("assigning the field as a plain property is a silent no-op on 16.2", () => {
+  const info = navigationInfoFacade();
+  const browser = browserWithNavigationInfo(info);
+  // The shape `setVisibilityLimit` uses. It throws nothing and changes nothing.
+  const byProperty = function (this: any, speed: number): void {
+    this.getActiveNavigationInfo().speed = speed;
+  };
+  byProperty.call(browser, 3.5);
+  assert.strictEqual(browser.getWalkSpeed(), 10,
+    "property assignment reached the field, so getField/setValue would be unnecessary");
+});
+
+test("no undeclared navWalk is left anywhere in the patch file", () => {
+  assert.ok(!/navWalk/.test(code(`${MODS}/bxx_auth.js`)),
+    "bxx_auth.js still names navWalk");
+});
+
 // ---------------------------------------------------------------------------
 
 let failures = 0;
