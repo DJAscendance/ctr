@@ -4,8 +4,9 @@ import VueGtag from "vue-gtag";
 
 import App from "./App.vue";
 import api from "./api";
-import appStore, { User } from "./appStore";
+import appStore, { Place, User } from "./appStore";
 import * as filters from "./helpers/fiters";
+import { NavigationScopedValue } from "./helpers/navigation-place.helper";
 import routes from "./routes";
 import siteConfig from "./site-config";
 import socket from "./socket";
@@ -54,6 +55,22 @@ const PUBLIC_ROUTE_NAMES = [
 /** Suffix appended to every document title on a labelled deployment, e.g. " (BETA)". */
 const TITLE_SUFFIX = siteConfig.label ? ` (${siteConfig.label})` : "";
 
+/**
+ * The place a navigation fetched, held until vue-router says that navigation landed.
+ *
+ * The guard below fetches the place for the route it is asked about, and that fetch can
+ * finish after its own navigation is gone - superseded by a later one, or cancelled by a
+ * return to the route the app is still on, which vue-router rejects as a duplicate before
+ * any guard runs for it. Writing the store from the guard therefore let a place the citizen
+ * never reached land on top of the place they are standing in. Staging it here and
+ * committing it from `afterEach` means only the navigation that actually landed can write
+ * the store. See `helpers/navigation-place.helper.ts` for why the route object is the
+ * navigation's identity.
+ */
+const navigationPlace = new NavigationScopedValue<Place>(place => {
+  appStore.methods.setPlace(place);
+});
+
 router.beforeEach(async (to, from, next) => {
   if (to.meta.title) {
     document.title = `${to.meta.title} - Cybertown${TITLE_SUFFIX}`;
@@ -76,7 +93,7 @@ router.beforeEach(async (to, from, next) => {
       .then(response => {
         const Data = response.data;
         const place = { ...Data.place };
-        appStore.methods.setPlace(place);
+        navigationPlace.stage(to, place);
       });
   } else if (to.fullPath.includes("/club/")) {
     await api.get<any>(`/place/by_id/${to.params.id}`)
@@ -95,7 +112,7 @@ router.beforeEach(async (to, from, next) => {
           assets_dir: "club/vrml/",
           world_filename: "vrml.wrl",
         };
-        appStore.methods.setPlace(place);
+        navigationPlace.stage(to, place);
       });
   } else if (to.fullPath.includes("/inbox/") || to.fullPath.includes("/messageboard/")) {
     await api.get<any>(`/place/by_id/${to.params.place_id}`)
@@ -132,7 +149,7 @@ router.beforeEach(async (to, from, next) => {
     await api.get<any>(`/place/by_id/${to.params.id}`)
       .then(response => {
         const Data = response.data;
-        appStore.methods.setPlace(Data.place);
+        navigationPlace.stage(to, Data.place);
       });
   } else if (to.fullPath.includes("/home/")) {
     await api.get<any>(`/home/${to.params.username}`)
@@ -146,7 +163,7 @@ router.beforeEach(async (to, from, next) => {
           slug: "home",
           block: Data.blockData,
         };
-        appStore.methods.setPlace(place);
+        navigationPlace.stage(to, place);
       });
   }
 
@@ -172,12 +189,17 @@ router.beforeEach(async (to, from, next) => {
           } else if (to.fullPath === "/restricted") {
             next();
           } else if (to.fullPath !== "/place/jail" && banInfo.type === "jail") {
+            // The redirect below is a navigation of its own, and it matches "/place/",
+            // so the guard runs again for it and fetches the jail through the ordinary
+            // path above. Staging it against THIS navigation - the one being redirected
+            // away from, which will never land - is what keeps the rule single: a place
+            // is committed by the navigation that landed, never by one that did not.
             next("/place/jail");
             api.get<any>("/place/jail")
               .then(response => {
                 const Data = response.data;
                 const place = { ...Data.place };
-                appStore.methods.setPlace(place);
+                navigationPlace.stage(to, place);
               });
           } else if (to.fullPath === "/place/jail") {
             next();
@@ -209,6 +231,16 @@ router.beforeEach(async (to, from, next) => {
   } else {
     next();
   }
+});
+
+/**
+ * vue-router runs this only for a navigation it CONFIRMED, and runs it synchronously right
+ * after the route is updated - before Vue re-renders for the new route on the next tick. So
+ * the store still holds the right place by the time the new page is created, and a
+ * navigation that was cancelled never gets here at all.
+ */
+router.afterEach(to => {
+  navigationPlace.confirm(to);
 });
 
 Vue.use(VueGtag, {
