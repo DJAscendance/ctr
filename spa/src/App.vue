@@ -74,7 +74,12 @@
           <div class="flex flex-row justify-center" v-if="$store.data.place.name">
             <span class="inline" style="color:lime;">{{ $store.data.place.name }}</span> 
           </div>
-            <div class="flex flex-row justify-center">
+            <!--
+              Outlands never offered a 2D/3D choice: its entrance led straight
+              into the 3D battle zone and there was no 2D Outlands room. The
+              selector is withheld while the historical entrance is up.
+            -->
+            <div class="flex flex-row justify-center" v-if="!outlandsEntrance">
               <img src="/assets/img/b2dchat.gif" @click="$store.methods.setView3d(false)"
                   class="cursor-pointer"/>
               <img src="/assets/img/b3dchat.gif" @click="$store.methods.setView3d(true)"
@@ -120,7 +125,15 @@
             </div>
             <div class="flex justify-center" v-else>
               <img v-if="liveEvent.enabled && liveEvent.place" src="/assets/img/live-event.gif" class="cursor-pointer" style="width: 75%; height: 75%;" @click="$router.push({ path: `/place/${liveEvent.place.slug}` })" />
-              <img v-else src="/assets/img/outlandico.jpeg" />
+              <!--
+                The Outlands event button. Historically this art was the
+                control panel's Outlands entry point: place_002.html wraps
+                outlandico.jpg in a link to `place?plc=ne_game` with
+                target="_top", which is the `outlands` slug here.
+              -->
+              <router-link v-else to="/place/outlands">
+                <img src="/assets/img/outlandico.jpeg" alt="Enter Outlands" />
+              </router-link>
             </div>
             <div class="px-8">
               <select
@@ -196,6 +209,7 @@ import ModalService from "./components/modals/services/ModalService.vue";
 import ClockPage from "./components/Clock.vue";
 import InstantMessageModal from "./components/modals/InstantMessageModal.vue";
 import siteConfig from "./site-config";
+import { outlandsEntranceActive } from "@/libs/outlands";
 
 declare const X3D: any;
 
@@ -545,7 +559,14 @@ export default Vue.extend({
     },
   },
   computed: {
-
+    /*
+     * True while the historical Outlands entrance stands in front of the
+     * world. The place chrome asks this so it does not offer a 2D room that
+     * Outlands never had.
+     */
+    outlandsEntrance(): boolean {
+      return outlandsEntranceActive(this.$store.data.place, this.$store.data.user);
+    },
   },
 });
 </script>
