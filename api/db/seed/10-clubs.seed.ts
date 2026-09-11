@@ -20,10 +20,11 @@ export async function seed(knex: Knex): Promise<void> {
   });
   
   await knex('place').insert({
-    /* Both halves were wrong here: no leading slash, and the `vrml/` segment on
-     * the wrong side of the split. Concatenated they gave 'club/vrml/vrml.wrl',
-     * which the client resolves relative to the current route instead of the
-     * asset root. The deployed row is '/club/' + 'vrml/vrml.wrl'. */
+    /* Split the same way the deployed row splits it. WorldBrowserPage builds
+     * `/assets/worlds/${assets_dir}${world_filename}`, so the old pair resolved
+     * to a working URL too - this is parity with production, not a broken path
+     * being repaired. Every deployed assets_dir carries a leading slash, which
+     * is why the built URL has a doubled separator; nginx merges it. */
     assets_dir: '/club/',
     description: 'Welcome to Newcomers Club',
     name: 'Newcomers Club',
