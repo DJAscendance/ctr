@@ -521,6 +521,15 @@ const OUTLANDS_AVATAR_DIRS: { [file: string]: string } = {
 };
 const RECOVERED = "assets/worlds/ne_game/vrml/avatars";
 const SEED = read("../api/db/seed/14-avatars.outlands.seed.ts");
+/*
+ * The five rows themselves live beside the seeds rather than inside one,
+ * because two callers write them: the seed, which fills a fresh install, and
+ * 20260911190000_sync_outlands_avatars, which fills a Beta database that was
+ * deployed before the seed existed. A deployment runs migrations and not seeds,
+ * so both paths exist and neither may hold its own copy of these ids.
+ */
+const AVATAR_DATA = read("../api/db/seed_data/outlands_avatars.ts");
+const AVATAR_SYNC = read("../api/db/migrations/20260911190000_sync_outlands_avatars.ts");
 
 test("all five historical avatars are served where a member's avatar is served from", () => {
   for (const [file, dir] of Object.entries(OUTLANDS_AVATAR_DIRS)) {
@@ -566,16 +575,31 @@ test("every file one of them asks for is actually in the tree", () => {
   }
 });
 
-test("the seed puts each row in the directory its files are in", () => {
+test("the canonical rows put each avatar in the directory its files are in", () => {
   for (const [file, dir] of Object.entries(OUTLANDS_AVATAR_DIRS)) {
     assert.ok(
       new RegExp(`id: ${dir}, name: '[^']+', filename: '${file}', image: '${file.replace(/\.wrl$/, ".jpg")}'`)
-        .test(SEED),
-      `the seed row for ${file} is not id ${dir}`,
+        .test(AVATAR_DATA),
+      `the canonical row for ${file} is not id ${dir}`,
     );
   }
-  assert.ok(/directory: String\(avatar\.id\)/.test(SEED),
-    "the seed no longer keeps directory equal to id");
+  assert.ok(/return String\(avatar\.id\)/.test(AVATAR_DATA),
+    "the canonical rows no longer keep directory equal to id");
+  assert.ok(/directory: directoryOf\(avatar\)/.test(SEED),
+    "the seed no longer takes its directory from the canonical rule");
+  assert.ok(/directory: directoryOf\(avatar\)/.test(AVATAR_SYNC),
+    "the sync migration no longer takes its directory from the canonical rule");
+});
+
+test("the seed and the sync migration read the same five rows", () => {
+  assert.ok(/from '\.\.\/seed_data\/outlands_avatars'/.test(SEED),
+    "the seed no longer reads the canonical Outlands rows");
+  assert.ok(/from '\.\.\/seed_data\/outlands_avatars'/.test(AVATAR_SYNC),
+    "the sync migration no longer reads the canonical Outlands rows");
+  assert.strictEqual(/id: 1[23456], name:/.test(SEED), false,
+    "the seed has grown its own copy of the Outlands rows");
+  assert.strictEqual(/id: 1[23456], name:/.test(AVATAR_SYNC), false,
+    "the sync migration has grown its own copy of the Outlands rows");
 });
 
 test("the seed leaves rows that are not its own alone", () => {
