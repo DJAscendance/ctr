@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Clubs Directory",
+    "description": "Welcome to Clubs Directory",
+    "slug": "clubdir",
+    "assets_dir": null,
+    "world_filename": null,
+    "type": "public"
+  },
+  {
+    "name": "Newcomers Club",
+    "description": "Welcome to Newcomers Club",
+    "slug": "newcomers",
+    "assets_dir": "/club/",
+    "world_filename": "vrml/vrml.wrl",
+    "type": "public"
+  }
+]

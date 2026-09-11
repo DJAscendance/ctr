@@ -1,5 +1,7 @@
 import { Knex } from 'knex';
 
+import publicPlaceData = require('./../seed_data/public_place_data.json');
+
 /*
  * The public places the deployed site serves, transcribed from its own
  * `place` rows so a freshly seeded stack matches production. Names and
@@ -9,177 +11,13 @@ import { Knex } from 'knex';
  * `type` is set explicitly. It defaulted to NULL here while every deployed row
  * carries 'public', and the messageboard and inbox controllers branch on that
  * value.
+ *
+ * The rows themselves live in `seed_data/public_place_data.json` so the
+ * canonical-place migration can synchronize an already-deployed database
+ * against the same bytes this seed writes, instead of carrying a second
+ * hand-maintained copy that can drift.
  */
 export async function seed(knex: Knex): Promise<void> {
   console.log('Creating seed places');
-  await knex('place').insert([
-    {
-      name: 'The Plaza',
-      description: 'Welcome to the Plaza',
-      slug: 'enter',
-      assets_dir: '/enter/vrml/',
-      world_filename: 'enter.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Home 0',
-      description: 'Welcome to home 0',
-      slug: 'home00',
-      assets_dir: '/000/',
-      world_filename: 'home.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Gameshow',
-      description: 'Welcome to the Gameshow',
-      slug: 'gameshow',
-      assets_dir: '/gameshow/',
-      world_filename: 'vrml/gameshow.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Flea Market',
-      description: 'Welcome to the Flea Market',
-      slug: 'fleamarket',
-      assets_dir: '/fleamarket/',
-      world_filename: 'vrml/fleamarket.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Sunset Beach',
-      description: 'Welcome to Sunset Beach',
-      slug: 'beach',
-      assets_dir: '/beach/',
-      world_filename: 'vrml/beach.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Blackmarket',
-      description: 'Welcome to the Blackmarket',
-      slug: 'blackmarket',
-      assets_dir: '/blackmarket/',
-      world_filename: 'vrml/blackmarket.wrl',
-      type: 'public',
-    },
-    {
-      name: 'The Mall',
-      description: 'Welcome to The Mall',
-      slug: 'mall',
-      assets_dir: '/shopping/',
-      world_filename: 'vrml/shopping.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Cybertown Bank',
-      description: 'Welcome to Cybertown Bank',
-      slug: 'bank',
-      assets_dir: '/bank/',
-      world_filename: 'vrml/bank.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Employment Office',
-      description: 'Welcome to the Employment Office',
-      slug: 'employment',
-      assets_dir: '/employment/',
-      world_filename: 'vrml/employment.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Outlands',
-      description: 'Welcome to the Outlands',
-      slug: 'outlands',
-      assets_dir: '/ne_game/',
-      world_filename: 'vrml/ne_game.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Le Cafe',
-      description: 'Welcome to Le Cafe',
-      slug: 'cafe',
-      assets_dir: '/cafe/',
-      world_filename: 'vrml/cafe.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Library',
-      description: 'Welcome to The Library',
-      slug: 'library',
-      assets_dir: '/library/',
-      world_filename: 'vrml/library.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Jail',
-      description: 'Welcome to the Jail',
-      slug: 'jail',
-      assets_dir: '/jail/',
-      world_filename: 'vrml/jail.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Fun Park',
-      description: 'Welcome to the Fun Park',
-      slug: 'funpark',
-      assets_dir: '/funpark/',
-      world_filename: 'vrml/funpark.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Water Park',
-      description: 'Welcome to the Water Park',
-      slug: 'waterpark',
-      assets_dir: '/waterpark/',
-      world_filename: 'vrml/waterpark.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Theme Park',
-      description: 'Welcome to the Theme Park',
-      slug: 'themepark',
-      assets_dir: '/themepark/',
-      world_filename: 'vrml/themepark.wrl',
-      type: 'public',
-    },
-    {
-      name: 'City Hall',
-      description: 'Welcome to City Hall',
-      slug: 'cityhall',
-      assets_dir: '/cityhall/',
-      world_filename: 'vrml/cityhall.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Performing Arts',
-      description: 'Welcome to Performing Arts',
-      slug: 'theatre',
-      assets_dir: '/theatre/',
-      world_filename: 'vrml/theatre.wrl',
-      type: 'public',
-    },
-    {
-      name: 'The Pool',
-      description: 'Welcome to The Pool',
-      slug: 'pool',
-      assets_dir: '/pool/',
-      world_filename: 'vrml/pool.wrl',
-      type: 'public',
-    },
-    {
-      name: 'The Stadium',
-      description: 'Welcome to The Stadium',
-      slug: 'stadium',
-      assets_dir: '/stadium/',
-      world_filename: 'vrml/stadium.wrl',
-      type: 'public',
-    },
-    {
-      name: 'Post Office',
-      description: 'Welcome to the Post Office',
-      slug: 'postoffice',
-      assets_dir: '/post/',
-      world_filename: 'vrml/post.wrl',
-      type: 'public',
-    },
-  ]);
+  await knex('place').insert(publicPlaceData);
 }
