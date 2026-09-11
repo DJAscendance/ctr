@@ -579,10 +579,16 @@ test("the seed puts each row in the directory its files are in", () => {
 });
 
 test("the seed leaves rows that are not its own alone", () => {
-  assert.ok(/whereIn\('filename', avatars\.map\(a => a\.filename\)\)/.test(SEED),
-    "the seed no longer checks for its own rows before inserting");
+  assert.ok(/whereIn\('id', avatars\.map\(a => a\.id\)\)/.test(SEED),
+    "the seed no longer looks for its own ids before inserting");
+  assert.ok(/orWhereIn\('filename', avatars\.map\(a => a\.filename\)\)/.test(SEED),
+    "the seed no longer looks for its own file names before inserting");
   assert.strictEqual(/\.update\(|\.del\(|truncate/.test(SEED), false,
     "the Outlands seed writes to rows it does not own");
+  assert.ok(/if \(!atId\) missing\.push\(avatar\)/.test(SEED),
+    "the seed no longer decides each required row on its own");
+  assert.ok(/insert\(missing\.map/.test(SEED),
+    "the seed no longer inserts only the required rows that are missing");
 });
 
 // ---------------------------------------------------------------------------
