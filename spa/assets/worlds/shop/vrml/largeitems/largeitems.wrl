@@ -193,41 +193,11 @@ DEF SharedZone BlaxxunZone {
    ] 
 }
 
-DEF S Script {
- eventIn MFNode addEvents IS addEvents
- eventIn MFNode removeEvents IS removeEvents
- eventIn MFNode addAvatars IS addAvatars
- eventIn MFNode removeAvatars IS removeAvatars 
- eventIn MFNode addObjects IS addObjects
- eventIn MFNode removeObjects IS removeObjects 
- eventIn SFString set_myAvatarURL IS set_myAvatarURL
- eventOut MFNode events_added IS events_added
- eventOut MFNode events_removed IS events_removed
- eventOut MFNode avatars_added IS avatars_added
- eventOut MFNode avatars_removed IS avatars_removed
- eventOut MFNode objects_added IS objects_added
- eventOut MFNode objects_removed IS objects_removed
- eventIn         SFInt32  set_myAvatarGesture IS set_myAvatarGesture
- eventIn         SFInt32  myAvatarGestureFromServer IS myAvatarGestureFromServer
- eventOut        SFInt32  myAvatarGesture_changed IS myAvatarGesture_changed
- eventOut        SFInt32  myAvatarGestureToServer IS myAvatarGestureToServer
- eventOut                SFString myAvatarURL_changed IS myAvatarURL_changed
- exposedField    MFString sendToChat IS sendToChat
- exposedField    SFFloat  beamToDistance  IS beamToDistance  
- exposedField    MFString groupChatName  IS groupChatName  
- exposedField    MFString groupChat  IS groupChat  
-url "vrmlscript:
- function addEvents(value, time) { events_added = value; }
- function addAvatars(value, time) { avatars_added = value; }
- function addObjects(value, time) { objects_added = value; }
- function removeEvents(value, time) { events_removed = value; }
- function removeAvatars(value, time) { avatars_removed = value; }
- function removeObjects(value, time) { objects_removed = value; }
- function set_myAvatarGesture(value, time) { myAvatarGestureToServer = value; }
- function myAvatarGestureFromServer(value, time) { myAvatarGesture_changed = value; }
- function set_myAvatarURL(value, time) { myAvatarURL_changed = value; }
-"
-}
+# The blaxxun multiuser Script that stood here used IS statements outside a
+# PROTO, which is invalid VRML and aborts the parse before any geometry or
+# sound loads. It was the same leftover removed from shop/vrml/shop.wrl: the
+# block belongs inside PROTO BlaxxunZone, which this file already declares
+# above, and nothing ROUTEs to DEF S.
 
 EXTERNPROTO malldirectory[
 field SFVec3f position 
