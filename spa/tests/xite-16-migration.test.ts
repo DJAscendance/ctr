@@ -377,9 +377,13 @@ function teardownOwnershipFault(page: string): string | null {
 
 /** The same source with the 2D teardown's promise dropped again. */
 function dropTeardownPromise(page: string): string {
+  /* The 2D branch's own teardown: the only replaceWorldWithNothing call that
+   * closes on an eight-space brace followed by a blank line. Anchored on that
+   * alone, so the fixture does not move when a new 2D main component is added
+   * to the chain of branches below it. */
   return page.replace(
-    "this.replaceWorldWithNothing(browser, generation);\n        }\n\n        if(this.$store.data.place.type",
-    "browser.replaceWorld(null);\n        }\n\n        if(this.$store.data.place.type",
+    "this.replaceWorldWithNothing(browser, generation);\n        }\n\n",
+    "browser.replaceWorld(null);\n        }\n\n",
   );
 }
 

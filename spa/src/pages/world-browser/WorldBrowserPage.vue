@@ -13,7 +13,12 @@
     <div v-show="!this.$store.data.view3d || force2d" class="w-full flex-1">
       <component :is="mainComponent"></component>
     </div>
-    <div class="flex flex-none h-1/3 bg-chat">
+    <!--
+      The historical Outlands entrance is an entrance and instruction screen,
+      not a place. It had no 2D Outlands room and no chat panel beneath it, so
+      the panel is withheld until a side has been chosen and the world loads.
+    -->
+    <div class="flex flex-none h-1/3 bg-chat" v-if="!outlandsTeamNeeded">
       <chat
         ref="chat"
         v-if="chatReady"
@@ -52,6 +57,14 @@ import { RemoteMemberRegistry } from "@/remote-members";
 import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
 import { sharedEventNodes } from "../../libs/shared-events";
 import { releaseWorldScripts } from "@/libs/world-scripts";
+import {
+  isOutlands,
+  outlandsTeamOfAvatar,
+  blaxxunAvatarNameFor,
+  blaxxunAvatarURLFor,
+  avatarToRestoreAfterOutlands,
+  forgetAvatarBeforeOutlands,
+} from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -84,6 +97,12 @@ export default Vue.extend({
       showUpdateWarning: false,
       mainComponent: null,
       force2d: false,
+      /*
+       * True when Outlands has been asked for and the citizen is not wearing a
+       * side yet: the historical entrance stands in front of the world until
+       * they pick one. See @/libs/outlands.
+       */
+      outlandsTeamNeeded: false,
       pet: null,
       clickId: null,
     };
@@ -235,6 +254,57 @@ export default Vue.extend({
         console.error(e);
       }
     },
+    /*
+     * Puts back the avatar the Outlands entrance replaced.
+     *
+     * Nothing happens unless the entrance actually left a note, so an ordinary
+     * member joining an ordinary place pays nothing for this. A failed restore
+     * is not worth interrupting a world load for - the member simply keeps the
+     * avatar they are wearing - but the note is dropped either way, so a
+     * broken avatar row cannot make every future place join retry forever.
+     */
+    async restoreAvatarAfterOutlands(generation: number): Promise<void> {
+      const wanted = avatarToRestoreAfterOutlands();
+      if (!wanted) return;
+      if (!this.$store.data.isUser) return;
+      /*
+       * Already back in their own clothes: drop the note and move on. The
+       * store types the avatar id as a string because it arrives inside the
+       * member's token, so the comparison is made on numbers.
+       */
+      if (this.$store.data.user.avatar && Number(this.$store.data.user.avatar.id) === wanted) {
+        forgetAvatarBeforeOutlands();
+        return;
+      }
+      try {
+        const response = await this.$http.post("/member/update_avatar", { avatarId: wanted });
+        if (generation !== this.loadGeneration) return;
+        const list = await this.$http.get("/avatar");
+        if (generation !== this.loadGeneration) return;
+        const restored = (list.data.avatars || []).find(a => a.id === wanted);
+        /*
+         * The token carries the avatar row but nothing decodes it back into
+         * the store, so the fields the world reads are written here - the same
+         * thing the entrance does on the way in.
+         */
+        this.$store.methods.setToken(response.data.token);
+        if (restored) {
+          // The store's avatar type declares only what the token carries; the
+          // API row also carries `directory` and `image`, which the world and
+          // the avatar picker both read. Same cast as applyAvatarIdentity.
+          const worn: any = this.$store.data.user.avatar;
+          worn.id = restored.id;
+          worn.name = restored.name;
+          worn.filename = restored.filename;
+          worn.directory = restored.directory;
+          worn.image = restored.image;
+        }
+      } catch (e) {
+        this.debugMsg("could not restore the avatar worn before Outlands");
+      } finally {
+        forgetAvatarBeforeOutlands();
+      }
+    },
     async loadAndJoinPlace(): Promise<void> {
       // Bumped once per call, so a load superseded by a later one (rapid
       // repeated navigation) can tell its own now-stale continuations not
@@ -258,6 +328,44 @@ export default Vue.extend({
 
       if(this.$store.data.place.slug === "clubdir"){
         this.force2d = true;
+      }
+
+      /*
+       * Outlands takes a citizen's side from the avatar they wear: ne_game.wrl's
+       * set_team() reads Browser.myAvatarURL and matches the file name. A citizen
+       * with no side is parked under the map by the world itself, so the
+       * historical entrance has to come first and make them pick one.
+       * See @/libs/outlands.
+       */
+      this.outlandsTeamNeeded = false;
+      if (isOutlands(this.$store.data.place)) {
+        if (!outlandsTeamOfAvatar(this.$store.data.user && this.$store.data.user.avatar)) {
+          this.outlandsTeamNeeded = true;
+          this.force2d = true;
+        } else if (!this.$store.data.view3d) {
+          /*
+           * Outlands is a 3D place and only ever was one: the historical
+           * entrance offered no 2D/3D choice and there was no 2D Outlands
+           * room, so there is no components/place/outlands/main2d.vue for the
+           * 2D branch below to import. A member whose default is 2D is moved
+           * to 3D on the way in. The write is synchronous, so this run reads
+           * the new value straight away; the flag's own watcher then starts a
+           * second run, and loadGeneration abandons this one so the world is
+           * still only built once.
+           */
+          this.$store.methods.setView3d(true);
+        }
+      } else {
+        /*
+         * Anywhere that is not Outlands, the citizen gets their own avatar
+         * back. The entrance dressed them for a side because in Outlands the
+         * avatar file is what carries the side; outside it, a member should
+         * not be left in uniform. Done on the join rather than on the way out,
+         * because leaving is very often a page load and there is no reliable
+         * moment of departure to hang it on.
+         */
+        await this.restoreAvatarAfterOutlands(generation);
+        if (this.loadGeneration !== generation) return;
       }
 
       if(this.$route.params.username){
@@ -327,7 +435,11 @@ export default Vue.extend({
           this.replaceWorldWithNothing(browser, generation);
         }
 
-        if(this.$store.data.place.type === "shop"){
+        if(this.outlandsTeamNeeded){
+          this.mainComponent = () => import(
+            "@/components/place/outlands/entrance.vue"
+          );
+        } else if(this.$store.data.place.type === "shop"){
           this.mainComponent = () => import(
             "@/components/place/mall/main2d.vue"
           );
@@ -1411,12 +1523,30 @@ export default Vue.extend({
           const avatar: any = user && user.avatar;
           if (!avatar || !avatar.directory || !avatar.filename) return {};
           return {
-            // Absolute, but never a hard-coded host: a historical world compares
-            // this string, and the origin has to be whichever deployment is
-            // serving the page.
-            avatarURL:
+            /*
+             * Absolute, but never a hard-coded host: a historical world compares
+             * this string, and the origin has to be whichever deployment is
+             * serving the page. Inside Outlands the comparison is against five
+             * fixed cybertown.com URLs, so blaxxunAvatarURLFor answers with the
+             * historical one - see @/libs/outlands.
+             */
+            avatarURL: blaxxunAvatarURLFor(
+              this.$store.data.place,
+              avatar.filename,
               `${window.location.origin}/assets/avatars/${avatar.directory}/${avatar.filename}`,
-            avatarName: user.username || "",
+            ),
+            /*
+             * The other half of the Beamer's comparison. receive_beamer asks
+             * `name == Browser.myAvatarName`, and the shooter sent the label
+             * carried by the node it hit - the presence key - so inside
+             * Outlands this has to be this presence's own key. Everywhere else
+             * it is the username, which is what historical worlds display.
+             */
+            avatarName: blaxxunAvatarNameFor(
+              this.$store.data.place,
+              presenceKey(user.id, this.$socket.presenceId),
+              user.username || "",
+            ),
           };
         });
       } catch (error) {
@@ -1541,6 +1671,8 @@ export default Vue.extend({
   },
   mounted() {
     this.startSocketListeners();
+    /* The entrance screen wears the side and then asks for the world. */
+    this.$root.$on("outlands-team-selected", this.loadAndJoinPlace);
     // WorldBrowserPage is a v-show singleton (mounted once for the app's
     // lifetime), so this single subscription can't accumulate. On a
     // reconnect-driven resync, re-announce our current viewpoint so a
@@ -1550,7 +1682,9 @@ export default Vue.extend({
       if (event === "resynced") this.sendInitialViewpoint();
     });
   },
-  beforeDestroy() {},
+  beforeDestroy() {
+    this.$root.$off("outlands-team-selected", this.loadAndJoinPlace);
+  },
   async beforeCreate() {
     await this.$socket.start();
   },
