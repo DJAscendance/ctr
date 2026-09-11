@@ -4,6 +4,7 @@ import knexFactory, { Knex } from 'knex';
 import { describeWithDb } from './integration-db';
 import {
   CANONICAL_PLACES,
+  OBSOLETE_SHOP_SLUGS,
   SYNCED_FIELDS,
   syncCanonicalPlaces,
 } from '../db/migrations/20260911120000_sync_canonical_places';
@@ -37,18 +38,34 @@ const CANONICAL_SHOP_SLUGS = CANONICAL_PLACES
   .filter(place => place.type === 'shop')
   .map(place => place.slug);
 
-/** Shop slugs the deployed mall carried that the canonical set dropped. */
-const OBSOLETE_SHOP_SLUGS = [
-  'aquaticsshop',
-  'bargainoutlet',
-  'collectibles',
-  'giftshop',
-  'holdsdepot',
-  'holidayshop',
-  'magicalcorner',
-  'spaceport',
-  'weddingshop',
-];
+/**
+ * An active shop this migration knows nothing about: not canonical, not one of
+ * the nine retired slugs. It stands in for a shop added to Beta after this
+ * migration was written, and it must come through untouched.
+ */
+const UNRELATED_SHOP = {
+  name: 'Future Test Shop',
+  description: 'added after this migration was written',
+  slug: 'futuretestshop',
+  assets_dir: '/shop/',
+  world_filename: 'vrml/shop.wrl',
+  type: 'shop',
+  status: 1,
+  member_id: null as number | null,
+};
+
+/** A deployed, still-active row for one of the nine retired shop slugs. */
+function obsoleteRow(slug: string): Record<string, unknown> {
+  return {
+    name: slug,
+    description: `stale ${slug}`,
+    slug,
+    assets_dir: '/shop/',
+    world_filename: 'vrml/shop.wrl',
+    type: 'shop',
+    status: 1,
+  };
+}
 
 let schemaName: string;
 let db: Knex;
@@ -172,17 +189,7 @@ describeWithDb('canonical place sync', () => {
   });
 
   it('retires an obsolete shop instead of deleting it, and keeps its id', async () => {
-    for (const slug of OBSOLETE_SHOP_SLUGS) {
-      await db('place').insert({
-        name: slug,
-        description: `stale ${slug}`,
-        slug,
-        assets_dir: '/shop/',
-        world_filename: 'vrml/shop.wrl',
-        type: 'shop',
-        status: 1,
-      });
-    }
+    for (const slug of OBSOLETE_SHOP_SLUGS) await db('place').insert(obsoleteRow(slug));
     const idsBefore = new Map(
       (await db('place').select('id', 'slug')).map(row => [row.slug, row.id]),
     );
@@ -203,15 +210,8 @@ describeWithDb('canonical place sync', () => {
 
   it('is safe to run again', async () => {
     await db('place').insert(staleRow('mall'));
-    await db('place').insert({
-      name: 'Gift Shop',
-      description: 'obsolete',
-      slug: 'giftshop',
-      assets_dir: '/shop/',
-      world_filename: 'vrml/shop.wrl',
-      type: 'shop',
-      status: 1,
-    });
+    await db('place').insert(obsoleteRow('giftshop'));
+    await db('place').insert(UNRELATED_SHOP);
     await syncCanonicalPlaces(db);
     const first = await db('place').select('id', 'slug', 'status').orderBy('id');
 
@@ -221,6 +221,61 @@ describeWithDb('canonical place sync', () => {
     expect(second.updated).toEqual([]);
     expect(second.retired).toEqual([]);
     expect(await db('place').select('id', 'slug', 'status').orderBy('id')).toEqual(first);
+    expect((await placeBySlug('futuretestshop')).status).toBe(1);
+    expect((await placeBySlug('giftshop')).status).toBe(0);
+  });
+
+  it('leaves an unrelated active shop alone', async () => {
+    await db('place').insert(UNRELATED_SHOP);
+    for (const slug of OBSOLETE_SHOP_SLUGS) await db('place').insert(obsoleteRow(slug));
+    const idBefore = (await placeBySlug('futuretestshop')).id;
+
+    const result = await syncCanonicalPlaces(db);
+
+    expect(result.retired.sort()).toEqual([...OBSOLETE_SHOP_SLUGS].sort());
+    expect(result.retired).not.toContain('futuretestshop');
+    const after = await placeBySlug('futuretestshop');
+    expect(after.status).toBe(1);
+    expect(after.id).toBe(idBefore);
+    expect(after.name).toBe(UNRELATED_SHOP.name);
+    expect(after.world_filename).toBe(UNRELATED_SHOP.world_filename);
+
+    const active = await db('place').where({ type: 'shop', status: 1 }).select('slug');
+    expect(active.map(row => row.slug).sort())
+      .toEqual([...CANONICAL_SHOP_SLUGS, 'futuretestshop'].sort());
+  });
+
+  it('retires only the obsolete shops the database actually has', async () => {
+    const present = ['giftshop', 'spaceport', 'weddingshop'];
+    for (const slug of present) await db('place').insert(obsoleteRow(slug));
+
+    const result = await syncCanonicalPlaces(db);
+
+    expect(result.retired.sort()).toEqual([...present].sort());
+    const absent = OBSOLETE_SHOP_SLUGS.filter(slug => present.indexOf(slug) === -1);
+    for (const slug of absent) expect(await placeBySlug(slug)).toBeUndefined();
+    for (const slug of present) expect((await placeBySlug(slug)).status).toBe(0);
+  });
+
+  it('refuses an obsolete slug owned by a member, before changing anything', async () => {
+    await db('place').insert(staleRow('mall'));
+    await db('place').insert({ ...obsoleteRow('giftshop'), member_id: 4242 });
+    const before = await db('place').select('*').orderBy('id');
+
+    await expect(syncCanonicalPlaces(db)).rejects.toThrow(/must not overwrite/);
+
+    expect(await db('place').select('*').orderBy('id')).toEqual(before);
+    expect(await countPlaces()).toBe(2);
+  });
+
+  it('refuses an obsolete slug stored under another type, before changing anything', async () => {
+    await db('place').insert(staleRow('mall'));
+    await db('place').insert({ ...obsoleteRow('spaceport'), type: 'public' });
+    const before = await db('place').select('*').orderBy('id');
+
+    await expect(syncCanonicalPlaces(db)).rejects.toThrow(/must not overwrite/);
+
+    expect(await db('place').select('*').orderBy('id')).toEqual(before);
   });
 
   it('refuses a canonical slug owned by a member, before changing anything', async () => {

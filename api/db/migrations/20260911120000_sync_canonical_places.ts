@@ -41,6 +41,24 @@ export const SYNCED_FIELDS: Array<keyof CanonicalPlace> = [
   'type',
 ];
 
+/**
+ * The exact shop slugs the deployed Beta mall carried that the canonical mall
+ * dropped. Retirement is limited to this list on purpose: "every shop that is
+ * not canonical" would also retire a shop added after this migration was
+ * written, which is not something a data migration may decide.
+ */
+export const OBSOLETE_SHOP_SLUGS = [
+  'aquaticsshop',
+  'bargainoutlet',
+  'collectibles',
+  'giftshop',
+  'holdsdepot',
+  'holidayshop',
+  'magicalcorner',
+  'spaceport',
+  'weddingshop',
+];
+
 /** Types a canonical slug may already be stored under and still be safe to update. */
 const UPDATABLE_TYPES = [null, 'public', 'shop'];
 
@@ -87,6 +105,15 @@ export async function syncCanonicalPlaces(
     throw new Error(`Canonical place data has duplicate slugs: ${duplicates.join(', ')}`);
   }
 
+  const revived = canonical
+    .map(place => place.slug)
+    .filter(slug => OBSOLETE_SHOP_SLUGS.indexOf(slug) !== -1);
+  if (revived.length) {
+    throw new Error(
+      `Canonical place data lists slugs marked obsolete: ${revived.join(', ')}`,
+    );
+  }
+
   const [{ total }] = await db('place').count('id as total');
   if (Number(total) === 0) {
     result.skipped = true;
@@ -98,9 +125,20 @@ export async function syncCanonicalPlaces(
     .select('id', 'slug', 'status', 'member_id', ...SYNCED_FIELDS)
     .whereIn('slug', canonicalSlugs);
 
-  const conflicts = existingRows
-    .filter(row => row.member_id !== null || UPDATABLE_TYPES.indexOf(row.type) === -1)
-    .map(row => `${row.slug} (id ${row.id}, type ${row.type}, member_id ${row.member_id})`);
+  const obsoleteRows = await db('place')
+    .select('id', 'slug', 'status', 'member_id', 'type')
+    .whereIn('slug', OBSOLETE_SHOP_SLUGS);
+
+  const describe = (row: Record<string, unknown>): string =>
+    `${row.slug} (id ${row.id}, type ${row.type}, member_id ${row.member_id})`;
+  const conflicts = [
+    ...existingRows
+      .filter(row => row.member_id !== null || UPDATABLE_TYPES.indexOf(row.type) === -1)
+      .map(describe),
+    ...obsoleteRows
+      .filter(row => row.member_id !== null || row.type !== 'shop')
+      .map(describe),
+  ];
   if (conflicts.length) {
     throw new Error(
       `Canonical slugs are owned by rows this migration must not overwrite: ${conflicts.join(
@@ -144,24 +182,16 @@ export async function syncCanonicalPlaces(
   }
 
   /*
-   * Shops that left the mall. They keep their rows and ids so historical
-   * `object_instance` and messageboard references stay valid; `status = 0`
-   * is what keeps them out of `findAllStores`, which every member-facing
-   * store listing goes through.
+   * The shops that left the mall, and only those. They keep their rows and ids
+   * so historical `object_instance` and messageboard references stay valid;
+   * `status = 0` is what keeps them out of `findAllStores`, which every
+   * member-facing store listing goes through. An obsolete slug with no row is
+   * simply nothing to do -- not every deployment carried all nine.
    */
-  const canonicalShopSlugs = canonical
-    .filter(place => place.type === 'shop')
-    .map(place => place.slug);
-  const obsolete = await db('place')
-    .select('slug')
-    .where({ type: 'shop', status: 1 })
-    .whereNull('member_id')
-    .whereNotIn('slug', canonicalShopSlugs);
-
-  if (obsolete.length) {
-    const obsoleteSlugs = obsolete.map(row => row.slug);
-    await db('place').whereIn('slug', obsoleteSlugs).update({ status: 0 });
-    result.retired = obsoleteSlugs;
+  const retirable = obsoleteRows.filter(row => row.status !== 0).map(row => row.slug);
+  if (retirable.length) {
+    await db('place').whereIn('slug', retirable).update({ status: 0 });
+    result.retired = retirable;
   }
 
   return result;
