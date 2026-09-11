@@ -1,7 +1,16 @@
 import { Knex } from 'knex';
-import { db } from '../../src/db';
 
 const hoodBlockData = require('./../seed_data/hood_block_data.json');
+
+/*
+ * Every query here goes through the Knex instance knex hands the seed, the same
+ * one the rest of this file already used. It previously reached for the API's
+ * DI-managed `db` from src/, which builds its own connection from
+ * `config[process.env.NODE_ENV]`. `knex seed:run` does not set NODE_ENV, so that
+ * lookup returned undefined and the whole seed run died before any file ran, with
+ * `Cannot read property 'client' of undefined`. A seed must not depend on the
+ * application's runtime wiring.
+ */
 
 const colonyIdsToSlugs = [
   {'slug': 'games_col', 'oldId': '0101'},
@@ -111,7 +120,7 @@ export async function seed(knex: Knex): Promise<void> {
 
     console.log('Processing ' + colRef.slug + ' block data...');
     // get the place id of the colony in place table
-    const [colony] = await db.place.where({ slug: colRef.slug });
+    const [colony] = await knex('place').where({ slug: colRef.slug });
     console.log(colony);
 
     console.log(blocks.length + " blocks to process...");
@@ -127,7 +136,7 @@ export async function seed(knex: Knex): Promise<void> {
           console.log('Creating Hood: '+ block.hood_name);
 
           hoodId = block.h_id;
-          const newHoodId = await db.place.insert(
+          const newHoodId = await knex('place').insert(
             {
               name: block.hood_name,
               type: 'hood',
@@ -142,7 +151,7 @@ export async function seed(knex: Knex): Promise<void> {
           newHood = newHoodId[0];
 
           //  insert hood map_location with rel to colony place id (store in var)
-          await db.mapLocation.insert({
+          await knex('map_location').insert({
             parent_place_id: colony.id,
             place_id: newHood,
             location: newLocation,
@@ -152,7 +161,7 @@ export async function seed(knex: Knex): Promise<void> {
 
         console.log('Creating Block: ' + blockName);
 
-        const newBlockId = await db.place.insert(
+        const newBlockId = await knex('place').insert(
           {
             name: blockName,
             type: 'block',
@@ -165,7 +174,7 @@ export async function seed(knex: Knex): Promise<void> {
         const newBlockLocation = location2dto1d(block.block_map_coord,6);
 
         //  insert block map_location with rel to hood place id
-        await db.mapLocation.insert({
+        await knex('map_location').insert({
           parent_place_id: newHood,
           place_id: newBlockId[0],
           location: newBlockLocation,
