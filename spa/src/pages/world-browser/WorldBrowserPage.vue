@@ -1188,18 +1188,33 @@ export default Vue.extend({
       }
     },
     /*
-     * The one X_ITE rejection that means "a newer load took this browser
-     * over", rather than "this world is broken".
+     * X_ITE's own supersession messages.
      *
-     * X3DBrowser.loadURL keeps a single current FileLoader. A second loadURL
-     * installs its own and, when the first file finally arrives, the first
-     * load sees that it is no longer the current one and rejects with exactly
-     * this message. It is a cancellation signal, not a load failure, and it is
-     * the only message that may be treated as one.
+     * A world load that is still running when the next one starts is cancelled,
+     * and X_ITE 16 reports that cancellation with one of TWO messages, chosen by
+     * how far the superseded load had got:
+     *
+     *   "Loading of X3D file aborted."  - the file had not arrived yet, so the
+     *     newer loadURL aborted the fetch.
+     *   "Replacing world aborted."      - the file had arrived and its scene was
+     *     already installed, but replaceWorld had not resolved: it only resolves
+     *     once the world's own assets have finished draining, and the newer
+     *     replaceWorld rejects whichever one is still waiting.
+     *
+     * The second window is the one an ordinary 3D-to-3D change lands in. The
+     * scene's rootNodes are visible from the moment replaceWorld starts, so the
+     * page (and a member) call the world "there" while its replaceWorld is still
+     * pending; the next place then supersedes it. Measured on this stack the gap
+     * between one replaceWorld settling and the next one starting is well under a
+     * second, so any slower asset drain closes it.
+     *
+     * Both are cancellation signals, not load failures, and they are the only
+     * messages that may be treated as such.
      */
     supersededWorldLoad(error: any): boolean {
       const message = error && error.message ? error.message : String(error);
-      return message.indexOf("Loading of X3D file aborted.") !== -1;
+      return message.indexOf("Loading of X3D file aborted.") !== -1
+        || message.indexOf("Replacing world aborted.") !== -1;
     },
     /*
      * A supersession message on a run that is still the current one. Nothing

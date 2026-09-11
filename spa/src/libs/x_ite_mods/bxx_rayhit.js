@@ -251,6 +251,13 @@
         try { return node.getField(name) } catch (err) { return null }
     }
 
+    /* One MFInt32 element, as a plain number. X_ITE hands back an SFInt32
+     * wrapper on some field paths, and an array keyed by one of those reads
+     * back undefined, so every index field goes through here. */
+    function indexAt(field, i) {
+        return typeof field[i] === 'number' ? field[i] : Number(field[i])
+    }
+
     /* Coordinates and triangles of the geometries CTR content actually uses.
      * Anything else falls back to its bounding box, which is the same answer
      * the historical HUD gave for geometry it could not tessellate. */
@@ -276,7 +283,7 @@
             if (!index || !index.length) { return null }
             var polygon = []
             for (var j = 0; j < index.length; j += 1) {
-                var value = typeof index[j] === 'number' ? index[j] : Number(index[j])
+                var value = indexAt(index, j)
                 if (value < 0) {
                     /* Fan-triangulate. VRML97 faces are planar and convex in
                      * practice, which is what a fan assumes. */
@@ -298,7 +305,12 @@
             var ti = mfField(geometry, 'index')
             if (!ti || !ti.length) { return null }
             for (var t = 0; t + 2 < ti.length; t += 3) {
-                var p0 = points[ti[t]], p1 = points[ti[t + 1]], p2 = points[ti[t + 2]]
+                /* Indexed the same way as coordIndex above: an MFInt32 element
+                 * is not always a plain number, and points[] keyed by an
+                 * SFInt32 wrapper reads back undefined for every vertex. */
+                var p0 = points[indexAt(ti, t)]
+                var p1 = points[indexAt(ti, t + 1)]
+                var p2 = points[indexAt(ti, t + 2)]
                 if (p0 && p1 && p2) { faces.push([p0, p1, p2]) }
             }
             return faces
@@ -456,7 +468,12 @@
                 var geometry = fieldValue(shapes[s].node, 'geometry')
                 var faces = geometry ? triangles(geometry) : null
 
-                if (!faces) {
+                /* An empty list is not a tessellation. triangles() returns []
+                 * for a mesh whose indices yield no complete polygon, and []
+                 * is truthy, so without the length test such a shape got
+                 * neither a triangle hit nor the box fallback below - it was
+                 * invisible to the ray. */
+                if (!faces || !faces.length) {
                     /* A box that already contains the ray's origin says nothing
                      * about where its surface is, so it is not an answer. The
                      * Outlands arena is ringed by a 20000-metre Cylinder whose
