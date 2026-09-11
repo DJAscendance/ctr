@@ -34,6 +34,10 @@
 </template>
 
 <script lang="ts">
+// X_ITE publishes its runtime as the browser global X3D; it is loaded from the
+// CDN in spa/public/index.html, not imported, so declare it for the linter.
+/* global X3D */
+
 import Vue from "vue";
 
 import * as avatarsDataJson from "../../libs/data/avatars.json";
@@ -46,6 +50,8 @@ import {
 import { PresenceStore, Presence, presenceKey, isSelfPresence, isPresenceEventForRoom, avTransformPayload } from "@/presence";
 import { RemoteMemberRegistry } from "@/remote-members";
 import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
+import { sharedEventNodes } from "../../libs/shared-events";
+import { releaseWorldScripts } from "@/libs/world-scripts";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
@@ -65,7 +71,6 @@ export default Vue.extend({
       worldsData: worldDataJson,
       avatarsData: avatarsDataJson,
       browser: null,
-      uniqValue: 0,
       place: undefined,
       position: [0, 0, 0],
       rotation: [0, 0, 0, 0],
@@ -188,13 +193,13 @@ export default Vue.extend({
       inline.url = new X3D.MFString(obj.url);
       sharedObject.children[0] = inline;
       browser.currentScene.addRootNode(sharedObject);
-      sharedObject.addFieldCallback("newPosition", {}, (pos) => {
+      sharedObject.addFieldCallback({}, "newPosition", (pos) => {
         this.saveObjectLocation(obj.id);
       });
-      sharedObject.addFieldCallback("newRotation", {}, (rot) => {
+      sharedObject.addFieldCallback({}, "newRotation", (rot) => {
         this.saveObjectLocation(obj.id);
       });
-      sharedObject.addFieldCallback("touchTime", {}, (_t) => {
+      sharedObject.addFieldCallback({}, "touchTime", (_t) => {
         if(obj.id){
           if(obj.id === this.clickId){
             this.clickId = null;
@@ -246,7 +251,7 @@ export default Vue.extend({
       // about to join, and stale `loading`/`loaded` flags for a presence
       // key seen in a previous room must not suppress a real render here.
       this.presenceStore = new PresenceStore();
-      this.users = {};
+      this.clearRenderedPresences();
       this.attachRemoteMembers();
       await this.getPlace();
       if (this.loadGeneration !== generation) return;
@@ -259,11 +264,6 @@ export default Vue.extend({
         if(this.$store.data.place.assets_dir === null) {
           this.force2d = true;
         }
-      }
-
-      if(this.browser) {
-        const browser = X3D.getBrowser(this.browser);
-        browser.replaceWorld(null);
       }
 
       // Room membership (JOIN) and Chat readiness no longer wait on X_ITE -
@@ -281,11 +281,51 @@ export default Vue.extend({
       this.chatReady = true;
 
       if(this.$store.data.view3d && !this.force2d) {
-        const browser = await this.startX3D();
+        /*
+         * The old world is not replaced here. X_ITE 16.2.0 keeps one active
+         * replaceWorld slot: startX3D()'s loadURL() chains into its own
+         * replaceWorld(scene), which evicts whatever is waiting in that slot
+         * and rejects it with "Replacing world aborted.". An explicit
+         * replaceWorld(null) on this path was always the evicted one, so every
+         * 3D-to-3D change raised that rejection for a replacement that bought
+         * nothing - loadURL's own replacement tears the old world down. The 2D
+         * branch below still needs it, because nothing supersedes it there.
+         */
+        /*
+         * A world that genuinely fails is reported, not swallowed and not left
+         * unhandled. loadAndJoinPlace is called from route and store watchers
+         * that do not await it, so a rejection escaping here becomes an
+         * unhandled promise rejection and the member is left on a blank page
+         * with nothing in the console naming the world. A supersession is not a
+         * failure and never reaches this branch - startX3D resolves those.
+         */
+        let browser;
+        try {
+          browser = await this.startX3D(generation);
+        } catch (error) {
+          console.error("the world failed to load", error);
+          return;
+        }
         if (this.loadGeneration !== generation) return;
-        this.startX3DListeners(browser);
+        // A superseded run settles with null rather than a browser.
+        if (!browser) return;
+        this.startX3DListeners(browser, generation);
         this.loaded = true;
       } else {
+        /*
+         * Leaving 3D with no world load behind it. This is the teardown the 3D
+         * branch above hands to loadURL; on this path there is no loadURL, so
+         * the old world is only released if it is asked for here.
+         */
+        if(this.browser) {
+          const browser = X3D.getBrowser(this.browser);
+          /* The 3D branch releases the outgoing world inside startX3D(), before
+           * its loadURL. This branch has no loadURL, so the same release is
+           * asked for here - and, like there, before the world is replaced,
+           * while browser.currentScene still names it. */
+          this.releaseWorldScriptState(browser);
+          this.replaceWorldWithNothing(browser, generation);
+        }
 
         if(this.$store.data.place.type === "shop"){
           this.mainComponent = () => import(
@@ -304,14 +344,18 @@ export default Vue.extend({
       }
     },
     async unloadPlace(): Promise<void> {
-      ++this.loadGeneration;
+      const generation = ++this.loadGeneration;
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
       this.presenceStore = new PresenceStore();
-      this.users = {};
+      this.clearRenderedPresences();
       this.attachRemoteMembers();
       if (this.browser) {
         const browser = X3D.getBrowser(this.browser);
-        browser.replaceWorld(null);
+        /* Before the replacement, not after: releaseWorldScriptState names the
+         * outgoing world through browser.currentScene, and replaceWorld has
+         * already put an empty scene there by the time it returns. */
+        this.releaseWorldScriptState(browser);
+        this.replaceWorldWithNothing(browser, generation);
       }
     },
     async joinPlace(): Promise<void> {
@@ -347,14 +391,26 @@ export default Vue.extend({
       pos_offset.y = 0;
       const dropPosition = pos.add(pos_offset);
       const dropRotation= new X3D.SFRotation(0, 1, 0, Math.atan2(pos_offset.x, pos_offset.z));
+      /*
+       * Read through the public accessors, not through an internal holder.
+       * X_ITE 4 and 15 kept the numbers on an internal `_value` holder whose
+       * members were the underscored `x_` / `y_` / `z_`; 16.2.0 removed it, so
+       * `dropPosition._value` is undefined and every coordinate would be sent
+       * as null. `.x` / `.y` / `.z` / `.angle` are the accessors on every
+       * version, and they are what the saved placement is read back through.
+       */
       const request = await this.$http.post(`/object_instance/${  objectId  }/drop`, {
         placeId: this.$store.data.place.id,
-        position: dropPosition._value,
+        position: {
+          x: dropPosition.x,
+          y: dropPosition.y,
+          z: dropPosition.z,
+        },
         rotation: {
-          x: dropRotation._value.x_,
-          y: dropRotation._value.y_,
-          z: dropRotation._value.z_,
-          angle: dropRotation._value.angle + Math.PI,
+          x: dropRotation.x,
+          y: dropRotation.y,
+          z: dropRotation.z,
+          angle: dropRotation.angle + Math.PI,
         },
       });
       this.sharedObjects.push(request.data.object_instance);
@@ -393,9 +449,17 @@ export default Vue.extend({
       if(/^[0-9]+$/.test(id)){
         objectSelected = true;
         target = this.sharedObjectsMap.get(id);
-        position = Object.values(target.translation._value);
-        rotation = Object.values(Object.values(target.rotation._value));
-        rotation.pop();
+        /*
+         * Same removed `_value` holder as dropObject. It used to be enumerable,
+         * so Object.values() read the components straight off it; on 16.2.0 it
+         * does not exist and both lists came back empty, which beamed the
+         * citizen to nowhere.
+         *
+         * The angle is dropped here because the SFRotation is rebuilt from the
+         * axis below - that is what the trailing pop() used to do.
+         */
+        position = [target.translation.x, target.translation.y, target.translation.z];
+        rotation = [target.rotation.x, target.rotation.y, target.rotation.z];
       } else {
         target = this.users[id];
         position = target.transform.pos;
@@ -431,7 +495,7 @@ export default Vue.extend({
         // Negating pos_offset gives Math.atan2(pos_offset.x, pos_offset.z)
         viewpoint.orientation = new X3D.SFRotation(0, 1, 0, Math.atan2(pos_offset.x, pos_offset.z));
         viewpoint.set_bind = true;
-        viewpoint.addFieldCallback("isBound", {}, (value) => {
+        viewpoint.addFieldCallback({}, "isBound", (value) => {
           if(!value) {
             browser.currentScene.removeRootNode(viewpoint);
             viewpoint.dispose();
@@ -450,31 +514,81 @@ export default Vue.extend({
       const key = presenceKey(presence.memberId, presence.presenceId);
       const ROTATE180 = new X3D.SFRotation(0, 1, 0, Math.PI);
 
-      const unique = (prefix) => {
-        this.uniqValue += 1;
-        return prefix + this.uniqValue.toString();
-      };
-
-      const loadInlineAsync = (browser, url) => {
-        browser.endUpdate();
-        //todo: error coming from here about 'url' = ''
+      /*
+       * Build one remote citizen's scene graph and wait for its model.
+       *
+       * The LoadSensor this used to watch is X3D-only, and X_ITE 16 refuses it
+       * in a VRML97 scene, so there is no VRML97-legal load event left to use -
+       * Inline exposes neither isLoaded nor loadState. The Inline is therefore
+       * attached, which is what starts the fetch, and its own scene is polled
+       * for content. The wait is bounded: a model that never arrives settles as
+       * a failure rather than leaving the citizen half-added.
+       */
+      const loadInlineAsync = (browser, url, onAttached) => {
         const inline = browser.currentScene.createNode("Inline");
         inline.url = new X3D.MFString(url);
-        const loadSensor = browser.currentScene.createNode("LoadSensor");
-        loadSensor.watchList[0] = inline;
-        const callbackKey = {};
-        const promise = new Promise((resolve, reject) => {
-          loadSensor.addFieldCallback("isLoaded", callbackKey, (value) => {
-            loadSensor.removeFieldCallback("isLoaded", callbackKey);
-            if (value) {
-              resolve(inline);
-            } else {
-              reject(inline);
+
+        /*
+         * The citizen goes into the scene inside a Collision node with `collide`
+         * FALSE, not as a bare root node.
+         *
+         * X_ITE's WALK viewer collides the local camera against every solid
+         * thing in the scene, and a remote citizen added as a root Inline is one
+         * of them. Two citizens on the same spawn viewpoint therefore stand
+         * inside one another and neither can walk forward. The Mall and the Club
+         * have no RandomEntry script, so there every pair of citizens shares the
+         * spawn and this is not a matter of luck.
+         *
+         * `collide FALSE` takes the subtree out of the collision test and
+         * nothing else: the citizen is still drawn, still moved by their
+         * presence transform, and - because the wrapper is the node this page
+         * binds to their presence key - still found by a ray. The Inline is
+         * attached only through the wrapper, which is enough to start the fetch.
+         */
+        const collision = browser.currentScene.createNode("Collision");
+        collision.collide = false;
+        collision.children = [inline];
+        browser.currentScene.addRootNode(collision);
+        // The nodes exist and are attached now; the caller records them straight
+        // away so a citizen who leaves mid-load can still be cleaned up.
+        if (onAttached) onAttached({ collision, inline });
+
+        /* The loaded content sits on the concrete node behind X_ITE 16's SAI
+         * facade, found by capability rather than by symbol position, the same
+         * way bxx_rayhit.js reaches a node's geometry. */
+        const concrete = (node) => {
+          for (const symbol of Object.getOwnPropertySymbols(node)) {
+            const value = node[symbol];
+            if (value && typeof value === "object"
+              && typeof value.getInternalScene === "function") return value;
+          }
+          return null;
+        };
+
+        const internal = concrete(inline);
+        return new Promise<any>((resolve, reject) => {
+          if (!internal) {
+            reject(new Error("Inline has no reachable internal scene"));
+            return;
+          }
+          let waited = 0;
+          const step = 100;
+          const limit = 20000;
+          const tick = () => {
+            const scene = internal.getInternalScene();
+            if (scene && scene.rootNodes && scene.rootNodes.length) {
+              resolve({ inline, collision, scene });
+              return;
             }
-          });
+            waited += step;
+            if (waited >= limit) {
+              reject(new Error(`avatar model did not load: ${url}`));
+              return;
+            }
+            setTimeout(tick, step);
+          };
+          setTimeout(tick, step);
         });
-        browser.beginUpdate();
-        return promise;
       };
 
       const browser = X3D.getBrowser(this.browser);
@@ -498,28 +612,79 @@ export default Vue.extend({
       const avURL = `/assets/avatars/${directory}/${filename}`;
 
       this.users[key].loading = true;
-      loadInlineAsync(browser, avURL).then((avInline) => {
+      /*
+       * The wrapper is in the scene from the moment loadInlineAsync builds it -
+       * attaching it is what starts the fetch - so the entry has to know about
+       * it before the model arrives. Recorded here rather than on resolve,
+       * because a citizen who leaves (or a world that changes) while their model
+       * is still in flight would otherwise be cleaned up against an entry that
+       * names no node, and the half-built wrapper would stay in the scene for
+       * the life of the world.
+       */
+      loadInlineAsync(browser, avURL, (nodes) => {
+        if (this.users[key]) Object.assign(this.users[key], nodes);
+      }).then(({ inline: avInline, scene: avScene, collision }) => {
         // The presence may have left (authoritative reconciliation removed
         // it) or already been rendered by a racing call while this model
         // was in flight - in either case `this.users[key]` is no longer the
         // same "still loading" entry we started with, so the completed
-        // model must never be attached to the scene.
+        // model must never be left in the scene.
         if (!this.users[key] || this.users[key].loading !== true) {
+          this.detachRemoteNodes(browser, { collision, inline: avInline });
           return;
         }
-        const uniqueID = unique("Av-");
-        browser.currentScene.updateImportedNode(avInline, "Avatar", uniqueID);
-        const avImport = browser.currentScene.getImportedNode(uniqueID);
-        browser.currentScene.addRootNode(avInline);
+        /*
+         * The node that carries the citizen: their position, their facing and
+         * their gestures.
+         *
+         * This used to be reached with updateImportedNode(inline, "Avatar") /
+         * getImportedNode. X3D's IMPORT only binds to a node the inlined scene
+         * has EXPORTed, and EXPORT is X3D syntax that no VRML97 avatar can
+         * carry - so X_ITE 16 hands back a stub. The stub has the right shape,
+         * accepts `set_position` without complaint, and drops it: every citizen
+         * in the room would stand at the world origin, whatever their presence
+         * transform said.
+         *
+         * The avatar's own scene is reachable, so the node is taken from there
+         * instead: the DEF'd `Avatar` when the file has one, and the scene's
+         * first root node otherwise, which is the same node in an avatar whose
+         * whole content is one Avatar PROTO instance.
+         */
+        const avatarNode = (() => {
+          try {
+            const named = avScene.getNamedNode("Avatar");
+            if (named) return named;
+          } catch (error) { /* not every avatar DEFs it */ }
+          return avScene.rootNodes[0];
+        })();
         this.users[key].loading = false;
         this.users[key].loaded = true;
         this.users[key]["inline"] = avInline;
-        this.users[key]["import"] = avImport;
-        // Tell the registry which scene node now stands for this citizen. An
-        // Outlands ray comes back as a node, not an id, and this is the only
-        // place that mapping can be recorded truthfully - at the moment the
-        // node is actually attached to the scene.
-        if (this.remoteMembers) this.remoteMembers.bindRemoteNode(key, avInline);
+        this.users[key]["collision"] = collision;
+        this.users[key]["import"] = avatarNode;
+        /*
+         * Tell the registry which scene node now stands for this citizen. A ray
+         * comes back as a node, not as an id, and this is the only place that
+         * mapping can be recorded truthfully - at the moment the node is
+         * actually attached to the scene.
+         *
+         * It is the COLLISION WRAPPER that is bound, not the Inline inside it.
+         * bxx_rayhit.js builds its hit path out of what a grouping node's
+         * `children` field hands back, and X_ITE 16 hands back a fresh wrapper
+         * object each time rather than the node this page holds, so an Inline
+         * one level down is no longer the same object the registry was keyed
+         * on. A root node is: the wrapper comes back out of `scene.rootNodes`
+         * as itself, and it stands for the citizen exactly as the bare Inline
+         * used to.
+         *
+         * The key is the PRESENCE key, `memberId:presenceId` - never the
+         * username. Two tabs of one member share a username and must resolve to
+         * two different presences, so the username cannot be the identity.
+         */
+        if (this.remoteMembers) this.remoteMembers.bindRemoteNode(key, collision);
+        if (typeof browser.registerBlaxxunAvatar === "function") {
+          browser.registerBlaxxunAvatar(collision, key);
+        }
 
         if (this.users[key]["inline"]) {
           if (
@@ -539,11 +704,66 @@ export default Vue.extend({
             );
           }
         }
-      }).catch(() => {
+      }).catch((error) => {
+        /* A citizen whose model never arrived is not left half-added: the flag
+         * goes back so a later add for the same presence can try again, and the
+         * empty wrapper does not stay in the scene. */
+        console.warn("could not load a citizen's avatar", error);
         if (this.users[key]) {
           this.users[key].loading = false;
         }
       });
+    },
+    /**
+     * Takes one citizen's nodes back out of the scene that owns them.
+     *
+     * What is attached is the collision wrapper - the `Collision { collide
+     * FALSE }` that keeps a remote citizen out of the local WALK test - and the
+     * Inline hangs below it, so removing the wrapper removes both. An entry
+     * that predates the wrapper still carries only the Inline and is detached
+     * the old way.
+     *
+     * Never throws: a node whose scene is already gone can fail to detach, and
+     * one bad entry must not stop the rest of the room being cleaned up.
+     */
+    detachRemoteNodes(browser: any, entry: any): void {
+      if (!entry || !browser) return;
+      const attached = entry.collision || entry.inline;
+      if (attached) {
+        try {
+          if (typeof browser.unregisterBlaxxunAvatar === "function") {
+            browser.unregisterBlaxxunAvatar(attached);
+          }
+          if (browser.currentScene) browser.currentScene.removeRootNode(attached);
+        } catch (error) {
+          console.warn("could not detach a citizen's nodes", error);
+        }
+      }
+      if (entry.import && typeof entry.import.dispose === "function") {
+        try {
+          entry.import.dispose();
+        } catch (error) {
+          console.warn("could not dispose a citizen's avatar node", error);
+        }
+      }
+    },
+    /**
+     * Drops every rendered citizen at a world change.
+     *
+     * The world being left takes its citizens with it: every node in `users`
+     * belongs to the scene that is about to be replaced, and every registry
+     * binding points into it. The registry cannot be repaired citizen by
+     * citizen on the way out, because a client that leaves the old room never
+     * receives the other citizens' later removals - it has already left the
+     * room that would have carried them. The whole set has to go with the
+     * world.
+     */
+    clearRenderedPresences(): void {
+      const browser = this.browser ? X3D.getBrowser(this.browser) : null;
+      for (const key of Object.keys(this.users)) {
+        this.detachRemoteNodes(browser, this.users[key]);
+        delete this.users[key];
+      }
     },
     /** Updates an already-known presence's rendered position/rotation. */
     renderPresenceUpdated(presence: Presence): void {
@@ -590,15 +810,10 @@ export default Vue.extend({
       if (this.remoteMembers) this.remoteMembers.unbindNode(key);
       if (!this.users[key]) return;
 
-      if (this.users[key].inline) {
-        X3D.getBrowser(this.browser)
-          .currentScene
-          .removeRootNode(this.users[key].inline);
-      }
-
-      if (this.users[key].import) {
-        this.users[key].import.dispose();
-      }
+      this.detachRemoteNodes(
+        this.browser ? X3D.getBrowser(this.browser) : null,
+        this.users[key],
+      );
 
       delete this.users[key];
     },
@@ -759,9 +974,17 @@ export default Vue.extend({
 
       this.eventNodeMap = new Map();
 
-      for (const eventNode of Array.from<any>(sharedZone.events)) {
+      /*
+       * A historical world may declare `exposedField MFNode events NULL`
+       * (shopping.wrl does). blaxxun Contact read that as an empty list; X_ITE
+       * 16 reads it as a one-item MFNode whose single entry is null, so the
+       * loop below would call addFieldCallback on nothing and take down place
+       * startup. sharedEventNodes drops the null entry rather than replacing
+       * it: a world that declares no events genuinely has none.
+       */
+      for (const eventNode of sharedEventNodes(sharedZone.events)) {
         for (const typeName of Object.keys(this.TYPES)) {
-          eventNode.addFieldCallback(`${typeName  }ToServer`, {}, val => {
+          eventNode.addFieldCallback({}, `${typeName  }ToServer`, val => {
             // TODO: confirm validity of adding to possibly non-existent field
             this.sendSharedEvent({
               detail: {
@@ -897,58 +1120,357 @@ export default Vue.extend({
         if (event.type === "remove") this.renderPresenceRemoved(event.key);
       });
     },
-    async startX3D(): Promise<any> {
+    /*
+     * X_ITE's own supersession messages.
+     *
+     * A world load that is still running when the next one starts is cancelled,
+     * and X_ITE 16 reports that cancellation with one of TWO messages, chosen by
+     * how far the superseded load had got:
+     *
+     *   "Loading of X3D file aborted."  - the file had not arrived yet, so the
+     *     newer loadURL aborted the fetch.
+     *   "Replacing world aborted."      - the file had arrived and its scene was
+     *     already installed, but replaceWorld had not resolved: it only resolves
+     *     once the world's own assets have finished draining, and the newer
+     *     replaceWorld rejects whichever one is still waiting.
+     *
+     * The second window is the one an ordinary 3D-to-3D change lands in. The
+     * scene's rootNodes are visible from the moment replaceWorld starts, so the
+     * page (and a member) call the world "there" while its replaceWorld is still
+     * pending; the next place then supersedes it. Measured on this stack the gap
+     * between one replaceWorld settling and the next one starting is well under a
+     * second, so any slower asset drain closes it.
+     *
+     * Both are cancellation signals, not load failures, and they are the only
+     * messages that may be treated as such.
+     */
+    supersededWorldLoad(error: any): boolean {
+      const message = error && error.message ? error.message : String(error);
+      return message.indexOf("Loading of X3D file aborted.") !== -1
+        || message.indexOf("Replacing world aborted.") !== -1;
+    },
+    /*
+     * A supersession message on a run that is still the current one. Nothing
+     * inside loadAndJoinPlace() can produce that, so it is a real fault and is
+     * re-raised by the caller; it is only recorded here so a QA run can read
+     * back which world it happened on.
+     */
+    recordUnexpectedLoadAbort(generation: number): void {
+      (window as any).ctrUnexpectedWorldLoadAbort = {
+        generation,
+        loadGeneration: this.loadGeneration,
+        url: this.worldUrl,
+      };
+      console.error("a current world load was aborted by nothing this page started");
+    },
+    /*
+     * Owns the promise `replaceWorld(null)` hands back.
+     *
+     * Leaving 3D is the one path that replaces the world itself, and X_ITE 16
+     * returns a promise for that replacement. It settles only once the
+     * replacement's loading has drained - about 48ms on this stack - so there
+     * is a window in which the teardown is still sitting in X_ITE's single
+     * replacement slot. Dropping the promise was the defect: a member who
+     * leaves 3D and turns straight back around starts a loadURL whose own
+     * replacement evicts the waiting teardown, and X_ITE rejects the evicted
+     * one with "Replacing world aborted." With nobody holding it, that became
+     * an unhandled rejection.
+     *
+     * A cancellation proves itself twice here, exactly as it does in startX3D:
+     * X_ITE's own supersession message, AND a generation a later run has
+     * already claimed. On those terms the cancellation costs nothing - the
+     * replacement that evicted this one is itself taking the old world down,
+     * which is the whole of what this teardown wanted.
+     *
+     * Nothing else is expected. An abort while this teardown is still the
+     * current one means something outside this page is replacing worlds, and a
+     * rejection X_ITE does not name as a cancellation is a real teardown
+     * failure. Both are reported rather than swallowed.
+     *
+     * Owned, not awaited. The 2D page does not depend on the old world's drain,
+     * and under a slow drain waiting on it would hold the 2D component back.
+     */
+    replaceWorldWithNothing(browser: any, generation: number): Promise<void> {
+      return Promise.resolve(browser.replaceWorld(null)).then(
+        () => undefined,
+        error => {
+          if (this.supersededWorldLoad(error) && generation !== this.loadGeneration) return;
+          if (this.supersededWorldLoad(error)) this.recordUnexpectedLoadAbort(generation);
+          console.error("the world teardown failed", error);
+        },
+      );
+    },
+    async startX3D(generation: number): Promise<any> {
       if (!this.browser) {
         this.browser = X3D.createBrowser();
         document.querySelector("#world").appendChild(this.browser);
       }
       const browser = X3D.getBrowser(this.browser);
-      browser.loadURL(new X3D.MFString(this.worldUrl), "");
+      /* Blaxxun let Scripts route the browser's own input events to
+       * themselves. X_ITE rejects that, and the shim has to sit on the class
+       * that owns addRoute, which is only reachable from a live browser. */
+      if (typeof browser.installBlaxxunRouteShim === "function") {
+        browser.installBlaxxunRouteShim();
+      }
+      /* And the route has to carry events, or historical worlds have no
+       * keyboard controls. Bound once per browser, not once per world, so the
+       * listener count stays flat as places are replaced. */
+      if (typeof browser.installBlaxxunEventDelivery === "function") {
+        browser.installBlaxxunEventDelivery();
+      }
+      /*
+       * Whatever the outgoing world left on the BROWSER goes back now: its
+       * event mask and its browser event route are browser-level state that
+       * X_ITE does not hand back, because it never runs a VRML97 Script's
+       * shutdown() on replaceWorld. Released here, before loadURL, so the
+       * incoming world's own initialize() is what puts them back.
+       */
+      this.releaseWorldScriptState(browser);
+      this.applyAvatarIdentity();
+      /*
+       * This run owns the promise loadURL hands back. Dropping it was the
+       * defect: the browser callback below is keyed by the component, so a
+       * second navigation replaces this run's callback, and INITIALIZED_EVENT
+       * for this world is then delivered to the newer run instead. Without the
+       * loadURL promise this run has no second way out and stays pending for
+       * the life of the page, and so does the loadAndJoinPlace() awaiting it.
+       */
+      const load = browser.loadURL(new X3D.MFString(this.worldUrl), new X3D.MFString());
       return new Promise((resolve, reject) => {
-        browser.addBrowserCallback({}, eventType => {
+        /*
+         * One run, one settlement. Two independent paths can end this run -
+         * the browser callback and the loadURL promise - and on a real load
+         * failure X_ITE walks both: it calls INITIALIZED_ERROR first and then
+         * rejects loadURL. Whichever arrives first is the answer.
+         */
+        let settled = false;
+        const settleOnce = (settle, value = undefined) => {
+          if (settled) return;
+          settled = true;
+          settle(value);
+        };
+
+        /*
+         * X_ITE keys browser callbacks by their first argument. A fresh {} on
+         * every place load registered a new callback and kept every earlier
+         * one, each holding the scene it was created for, so the tab died after
+         * roughly fifty loads. Passing the component keys them all to one slot,
+         * so the newest load replaces the previous one. A superseded run must
+         * therefore never remove it: the slot it would clear is the live run's.
+         */
+        browser.addBrowserCallback(this, eventType => {
           switch (eventType) {
           case X3D.X3DConstants.INITIALIZED_EVENT:
-            resolve(browser);
+            this.resetGravity(browser);
+            this.applyNavigationDefaults(browser);
+            settleOnce(resolve, browser);
             break;
           case X3D.X3DConstants.CONNECTION_ERROR:
           case X3D.X3DConstants.INITIALIZED_ERROR:
-            reject();
+            /* Named, because this rejection surfaces. Rejecting with no value
+             * reported the failure as a bare `undefined`, which says nothing
+             * about which world failed - and a world that fails to parse (a
+             * content fault, not an engine one) is exactly the case somebody
+             * reading the console needs to identify. */
+            settleOnce(reject, new Error(`X_ITE could not initialize ${this.worldUrl}`));
             break;
           }
         });
+
+        /* bxx_url.js suppresses a dead legacy navigation by returning a
+         * resolved promise rather than calling through, so `load` is always
+         * thenable even when no world was actually asked for. */
+        Promise.resolve(load).then(
+          () => {
+            /*
+             * The success path is the callback's: X_ITE calls INITIALIZED_EVENT
+             * immediately before it resolves loadURL, so this run has already
+             * settled. It only lands here unsettled if the world arrived for a
+             * generation nobody is waiting on any more.
+             */
+            if (generation !== this.loadGeneration) settleOnce(resolve, null);
+          },
+          error => {
+            /*
+             * A cancellation has to prove itself twice: X_ITE's own supersession
+             * message, and a generation that a later run has already claimed.
+             * Anything else is a real failure and is re-raised, including an
+             * abort reported while this run is still the current one, which
+             * would mean something outside loadAndJoinPlace() is loading worlds.
+             */
+            if (this.supersededWorldLoad(error) && generation !== this.loadGeneration) {
+              settleOnce(resolve, null);
+              return;
+            }
+            if (this.supersededWorldLoad(error)) this.recordUnexpectedLoadAbort(generation);
+            settleOnce(reject, error);
+          },
+        );
       });
     },
-    startX3DListeners(browserbak: any): void {
+    /*
+     * Gravity belongs to the world, not to the session.
+     *
+     * blaxxun's Browser.setGravity is a plain on/off switch, and X_ITE carries
+     * gravity as the numeric "Gravity" browser option, which is a property of
+     * the browser rather than of the scene. Four home templates switch it off
+     * while a lift or a transport effect runs (worlds/007, /008, /009, /00a),
+     * and a member who leaves one of them mid-effect - or whose effect Script
+     * never delivers its closing event - used to carry weightlessness into
+     * every world they visited afterwards.
+     *
+     * Every world therefore starts under normal gravity. A world that wants it
+     * off switches it off itself, as those four do.
+     */
+    /*
+     * Gives back what the outgoing world took, both from X_ITE and from the
+     * browser. Called on every path that replaces a world, and always while the
+     * outgoing scene is still the current one - after the replacement it can no
+     * longer be named.
+     *
+     * The world's own Scripts go first. X_ITE does not dispose them on
+     * `replaceWorld`, and each one that defines shutdown() is registered on the
+     * window's `unload` event, which held the Script - and through it the whole
+     * scene - for the life of the page. `releaseWorldScripts` runs X_ITE's own
+     * `Script.dispose()` on them, which calls shutdown() and takes the listener
+     * off the window; see @/libs/world-scripts.
+     *
+     * The browser state goes second, and stays. A Script writes two things onto
+     * the browser that are not part of any scene: the blaxxun event mask, and
+     * the route from the browser's `event_changed` into itself. A historical world's
+     * shutdown() hands both back and now genuinely runs, but a world that never
+     * defined shutdown() still cannot, so the sweep below is what guarantees the
+     * next world does not inherit them.
+     */
+    releaseWorldScriptState(browser: any): void {
+      try {
+        releaseWorldScripts(browser.currentScene);
+      } catch (error) {
+        console.warn("could not release the previous world's scripts", error);
+      }
+      try {
+        if (typeof browser.releaseBlaxxunWorldState === "function") {
+          browser.releaseBlaxxunWorldState();
+        }
+      } catch (error) {
+        console.warn("could not release the previous world's browser state", error);
+      }
+    },
+    resetGravity(browser: any): void {
+      try {
+        if (typeof browser.setGravity === "function") {
+          browser.setGravity(true);
+        }
+      } catch (error) {
+        console.warn("could not reset gravity for the new world", error);
+      }
+    },
+    /*
+     * Blaxxun default: only the Walk and Fly viewers are offered.
+     *
+     * This used to be done by the bxx_speed_avatar patch, which rewrote the
+     * NavigationInfo field default. X_ITE 16 no longer exposes that default,
+     * so the value is set on the node instead. A NavigationInfo authored in
+     * the scene still wins, matching the old patch's behaviour.
+     */
+    applyNavigationDefaults(browser: any): void {
+      try {
+        const scene = browser.currentScene;
+        if (!scene) return;
+
+        const authored = scene.rootNodes.some(
+          (node: any) => node && node.getNodeTypeName
+            && node.getNodeTypeName() === "NavigationInfo",
+        );
+        if (authored) return;
+
+        const navInfo = scene.createNode("NavigationInfo");
+        navInfo.type = ["WALK", "FLY"];
+        scene.addRootNode(navInfo);
+      } catch (error) {
+        console.warn("could not apply navigation defaults", error);
+      }
+    },
+    /*
+     * Publishes the citizen's own avatar to the historical Browser surface.
+     *
+     * Historical worlds read Browser.myAvatarURL / myAvatarName back to decide
+     * who the local member is. bxx_identity.js exposes those as a provider
+     * seam rather than as plain slots, so Beta registers a reader here instead
+     * of writing values in: the store is the single source of truth and a late
+     * login still resolves, because the provider is called at read time.
+     */
+    applyAvatarIdentity(): void {
+      try {
+        if (!X3D.bxx || typeof X3D.bxx.setIdentityProvider !== "function") return;
+        X3D.bxx.setIdentityProvider(() => {
+          const user = this.$store.data.user;
+          // The store's avatar type does not declare `directory`, but the row the
+          // API returns carries it - the same field the remote-citizen render path
+          // destructures off a presence avatar.
+          const avatar: any = user && user.avatar;
+          if (!avatar || !avatar.directory || !avatar.filename) return {};
+          return {
+            // Absolute, but never a hard-coded host: a historical world compares
+            // this string, and the origin has to be whichever deployment is
+            // serving the page.
+            avatarURL:
+              `${window.location.origin}/assets/avatars/${avatar.directory}/${avatar.filename}`,
+            avatarName: user.username || "",
+          };
+        });
+      } catch (error) {
+        console.warn("could not publish the avatar identity", error);
+      }
+    },
+    startX3DListeners(browserbak: any, generation: number): void {
       const browser = X3D.getBrowser();
-      const browserProto = Object.getPrototypeOf(browser);
+      /*
+       * The ProximitySensor is what feeds this.position / this.rotation to the
+       * presence transform we publish. It belongs to the scene that is loaded
+       * right now, so it is replaced on every world load.
+       *
+       * This used to also install viewpointPosition / viewpointOrientation
+       * getters onto the browser *prototype*, closing over the sensor of
+       * whichever scene happened to load first. The install was guarded by an
+       * "already defined" check, so after the first world the getters kept
+       * reading a sensor that had been disposed by replaceWorld(). bxx_auth.js
+       * defines both accessors against the live viewpoint, so the prototype
+       * patch is gone; getTime is set there too, so that assignment is gone as
+       * well.
+       *
+       * Note that the two are NOT interchangeable: the sensor reports WORLD
+       * space, which is what a peer needs to draw us, while bxx_auth's
+       * accessors report the viewpoint-local values a historical Script
+       * expects. Presence keeps using the sensor.
+       */
       const prox = browser.currentScene.createNode("ProximitySensor");
       prox.size = new X3D.SFVec3f(1000000, 1000000, 1000000);
       prox.enabled = true;
-      prox.addFieldCallback("position_changed", {}, (val) => {
+      prox.addFieldCallback({}, "position_changed", (val) => {
         this.position = [val.x, val.y, val.z];
       });
-      prox.addFieldCallback("orientation_changed", {}, (val) => {
+      prox.addFieldCallback({}, "orientation_changed", (val) => {
         this.rotation = [val.x, val.y, val.z, val.angle];
       });
       browser.currentScene.addRootNode(prox);
-      if (!("viewpointPosition" in browserProto)) {
-        Object.defineProperty(browserProto, "viewpointPosition", {
-          get: function () {
-            return prox.position_changed;
-          },
-        });
-      }
-      if (!("viewpointOrientation" in browserProto)) {
-        Object.defineProperty(browserProto, "viewpointOrientation", {
-          get: function () {
-            return prox.orientation_changed;
-          },
-        });
-      }
-      browserProto.getTime = browserProto.getCurrentTime;
       this.sharedObjectsMap = new Map();
+      /*
+       * The delay is still needed: INITIALIZED_EVENT fires before the scene's
+       * EXTERNPROTOs have finished loading, and createProto("SharedObject")
+       * against externprotos/shared_xite.wrl throws until that resolves. X_ITE
+       * 16 exposes no "externprotos ready" callback, so the wait stays until
+       * one exists.
+       *
+       * It does mean this callback can outlive its world. addSharedObject reads
+       * browser.currentScene when it runs, not when the timer was set, so a
+       * stale timer would otherwise pour its objects into whichever world had
+       * replaced this one. The generation check is what prevents that.
+       */
       setTimeout(() => {
-        //this.sharedObjectsMap = new Map();
+        if (generation !== this.loadGeneration) {
+          return;
+        }
         this.sharedObjects.forEach((object) => {
           this.addSharedObject(object, browser);
         });

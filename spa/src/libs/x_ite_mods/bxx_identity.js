@@ -47,10 +47,17 @@
   X3D.require(["x_ite/Browser/X3DBrowser"], function (Browser) {
     const b = Browser.prototype;
 
+    // This file loads AFTER bxx_auth.js, which defines the same two properties
+    // over a pair of plain browser slots (`myAvatarURL_` / `myAvatarName_`) that
+    // BlaxxunZone's `set_myAvatarURL` eventIn writes to. The provider seam wins,
+    // because Beta publishes the citizen's real avatar through it - but when no
+    // provider is registered the slots are still read, so a world that sets its
+    // own avatar URL through the historical route is not silently ignored.
     Object.defineProperty(b, "myAvatarURL", {
       get: function () {
         const value = identity().avatarURL;
-        return typeof value === "string" ? value : "";
+        if (typeof value === "string" && value !== "") { return value; }
+        return typeof this.myAvatarURL_ === "string" ? this.myAvatarURL_ : "";
       },
       set: function (value) {
         // Blaxxun allowed a write; the place definition's
@@ -59,14 +66,20 @@
         const provider = X3D.bxx.identityProvider;
         if (provider && typeof provider.setAvatarURL === "function") {
           provider.setAvatarURL(String(value));
+          return;
         }
+        this.myAvatarURL_ = typeof value === "string" ? value : "";
       },
     });
 
     Object.defineProperty(b, "myAvatarName", {
       get: function () {
         const value = identity().avatarName;
-        return typeof value === "string" ? value : "";
+        if (typeof value === "string" && value !== "") { return value; }
+        return typeof this.myAvatarName_ === "string" ? this.myAvatarName_ : "";
+      },
+      set: function (name) {
+        this.myAvatarName_ = typeof name === "string" ? name : "";
       },
     });
 

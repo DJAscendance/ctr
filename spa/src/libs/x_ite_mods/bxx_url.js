@@ -80,7 +80,13 @@
       if (decision.keptUrls.length === 0) {
         // Nothing left to load. Make no call at all, so the wrappers below this
         // one never run and the world that is playing right now survives.
-        return undefined;
+        //
+        // X_ITE 16's loadURL returns a promise and WorldBrowserPage now owns the
+        // one it hands back (see startX3D), so a suppressed call has to settle
+        // like a completed one. Returning undefined here left that caller with
+        // nothing to await; a resolved promise reports "this navigation is over"
+        // without claiming a world was loaded.
+        return Promise.resolve();
       }
 
       // A mixed list keeps its fallback behaviour, minus the dead entries.
