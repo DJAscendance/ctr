@@ -1,5 +1,6 @@
 export * from './access-level';
 export * from './bot-challenge';
+export * from './client-id';
 export * from './economy';
 export * from './html';
 export * from './mail';

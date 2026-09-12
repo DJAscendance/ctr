@@ -135,6 +135,28 @@ async function getOutlandsTeamAvatars(apitoken) {
 }
 
 /*
+ * Whether a value a client put in a JOIN payload is usable as a row id.
+ *
+ * A socket payload is structured data, so the type the client chose arrives
+ * intact and is evidence. Coercing it away is what let a malformed value in:
+ * `Number([13])` is `13` and `Number("13")` is `13`, so the comparison this
+ * guard replaces answered an ARRAY with a real Outlands team avatar. Only a
+ * primitive number that is a safe integer above zero is an id here; an array,
+ * an object, a numeric string, a boolean, a fraction and a magnitude past
+ * 2^53 - 1 are all refused as they arrived, with no second guess at what the
+ * client meant. `Number.isSafeInteger` covers NaN, both infinities, fractions
+ * and unsafe magnitudes on its own, and accepts `13.0`, which IS `13`.
+ *
+ * The API keeps the same rule for its own HTTP boundary in
+ * `api/src/libs/client-id.ts`, named `isClientId` there too. The two servers
+ * are separate packages and cannot share a module, so they share a name and a
+ * test table instead. Change one and change the other.
+ */
+function isClientId(raw) {
+  return typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0;
+}
+
+/*
  * The avatar a presence in `room` should be shown with.
  *
  * Fails CLOSED, in both directions: an id that is not one of the four playable
@@ -144,12 +166,14 @@ async function getOutlandsTeamAvatars(apitoken) {
  * hand over.
  */
 async function resolvePresenceAvatar(tokenData, room, outlandsAvatarId, apitoken) {
-  if (outlandsAvatarId === null || outlandsAvatarId === undefined) return tokenData.avatar;
+  // Covers "no override asked for" (null / undefined / absent) and "the override
+  // is not an id at all" with one answer: the citizen's own verified avatar.
+  if (!isClientId(outlandsAvatarId)) return tokenData.avatar;
   const outlandsPlaceId = await getOutlandsPlaceId();
   if (outlandsPlaceId === null || `${outlandsPlaceId}` !== `${room}`) return tokenData.avatar;
   const avatars = await getOutlandsTeamAvatars(apitoken);
   if (!avatars) return tokenData.avatar;
-  const chosen = avatars.find(avatar => Number(avatar.id) === Number(outlandsAvatarId));
+  const chosen = avatars.find(avatar => avatar.id === outlandsAvatarId);
   return chosen || tokenData.avatar;
 }
 

@@ -2,7 +2,7 @@ import { Request, Response} from 'express';
 import {Container} from 'typedi';
 import validator from 'validator';
 
-import { isOutlandsTeamAvatar } from '../libs';
+import { isClientId, isOutlandsTeamAvatar } from '../libs';
 import {
   AvatarService,
   MemberService
@@ -76,8 +76,16 @@ class AvatarController {
   public async wearOutlandsTeamAvatar(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
+    /*
+     * The id is taken as it arrived, not as it coerces. A JSON body can carry
+     * an array, an object, a string or a boolean where a number belongs, and
+     * `Number([13])` is `13` -- so the coercing comparison this replaces let
+     * `[13]` be answered with a real Outlands avatar. `isClientId` refuses
+     * every shape but a primitive, safe, positive integer, before the rows are
+     * even fetched.
+     */
     const { avatarId } = request.body;
-    if (!avatarId) {
+    if (!isClientId(avatarId)) {
       response.status(400).json({
         error: 'Please pass an avatar id.',
       });
@@ -92,7 +100,7 @@ class AvatarController {
        * way to put on an arbitrary avatar -- including the Game Master's.
        */
       const chosen = avatars.find(
-        avatar => Number(avatar.id) === Number(avatarId) && isOutlandsTeamAvatar(avatar.filename),
+        avatar => avatar.id === avatarId && isOutlandsTeamAvatar(avatar.filename),
       );
       if (!chosen) {
         response.status(400).json({

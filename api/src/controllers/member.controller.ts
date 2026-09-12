@@ -6,6 +6,7 @@ import validator from 'validator';
 import * as badwords from 'badwords-list';
 
 import {
+  isClientId,
   sendMemberPendingApprovalEmail,
   sendPasswordResetEmail,
   sendPasswordResetUnknownEmail,
@@ -500,8 +501,17 @@ class MemberController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const { id, username } = session;
+    /*
+     * Taken as it arrived, for the same reason the Outlands path is. This id
+     * reaches a `where id = ?` binding rather than a `Number()` comparison, so
+     * MySQL did the coercing instead: `[11]` and `'11'` both matched avatar 11
+     * and were then WRITTEN back as `member.avatar_id`. The system rows stayed
+     * out of reach either way -- they are private and ownerless, so
+     * `getByIdAndMemberId` refuses them -- but a citizen's stored avatar id is
+     * an id, and only a primitive, safe, positive integer is one.
+     */
     const { avatarId } = request.body;
-    if (!avatarId) {
+    if (!isClientId(avatarId)) {
       response.status(400).json({
         error: 'Please pass an avatar id.',
       });
