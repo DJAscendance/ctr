@@ -240,6 +240,34 @@ describeWithDb('outlands system-only avatar access', () => {
       }
     });
 
+    it('answers with the gameplay fields alone, and no citizen bookkeeping', async () => {
+      const avatars = await avatarService.getOutlandsTeamAvatars();
+      for (const avatar of avatars) {
+        /*
+         * The runtime reads exactly these four. A system row carries an owner
+         * column, a private flag, a status and gestures that no citizen may
+         * act on, so none of them leave the API.
+         */
+        expect(Object.keys(avatar).sort()).toEqual(['directory', 'filename', 'id', 'team']);
+      }
+    });
+
+    it('mints no token: wearing a side is not a change of identity', async () => {
+      /*
+       * The one way this path could put a system avatar into a citizen's
+       * durable identity is by issuing a token that names it. MemberService no
+       * longer has a way to do that at all -- the avatar in a token is always
+       * the member's own `avatar_id` -- so the Outlands answer is gameplay data
+       * and nothing a browser could mistake for a login.
+       */
+      const methods = Object.getOwnPropertyNames(MemberService.prototype);
+      expect(methods).not.toContain('getMemberTokenWearing');
+      const encode = Object.getOwnPropertyDescriptor(MemberService.prototype, 'encodeMemberToken');
+      expect(typeof encode.value).toBe('function');
+      // One parameter: the member. There is no second one to override the avatar.
+      expect(encode.value.length).toBe(1);
+    });
+
     it('serves no unrelated avatar', async () => {
       const avatars = await avatarService.getOutlandsTeamAvatars();
       expect(avatars.map(avatar => avatar.filename)).not.toContain('sparkie.wrl');

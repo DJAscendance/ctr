@@ -3,7 +3,7 @@ const fs = require('fs');
 import { Service } from 'typedi';
 import { Avatar } from 'models';
 
-import { OUTLANDS_TEAM_AVATARS } from '../../libs';
+import { OUTLANDS_TEAM_AVATARS, OutlandsTeamAvatarView } from '../../libs';
 import {
   AvatarRepository,
 } from '../../repositories';
@@ -49,12 +49,17 @@ export class AvatarService {
    * cannot wear one. The Game Master is left out here as well: it is a system
    * avatar the world may use, never a choice offered to a citizen.
    *
+   * Only the four fields the Outlands runtime actually reads are returned. A
+   * system row has no owner, no gestures and nothing a citizen may edit, so
+   * `member_id`, `private` and `status` are internal bookkeeping and are not
+   * part of the answer.
+   *
    * The database stays authoritative. Nothing is invented when a row is
    * missing; the caller gets fewer than four choices and the entrance says so,
    * which is the same signal the missing-rows defect produced before.
    * @returns promise resolving in the playable rows, each carrying its team
    */
-  public async getOutlandsTeamAvatars(): Promise<(Avatar & { team: number })[]> {
+  public async getOutlandsTeamAvatars(): Promise<OutlandsTeamAvatarView[]> {
     const filenames = OUTLANDS_TEAM_AVATARS.map(entry => entry.filename);
     const rows = await this.avatarRepository.findSystemByFilenames(filenames);
     // Returned in the canonical order rather than the database's, so the
@@ -62,7 +67,13 @@ export class AvatarService {
     return OUTLANDS_TEAM_AVATARS
       .map(entry => {
         const row = rows.find(candidate => candidate.filename === entry.filename);
-        return row ? { ...row, team: entry.team } : null;
+        if (!row) return null;
+        return {
+          id: row.id,
+          filename: row.filename,
+          directory: row.directory,
+          team: entry.team,
+        };
       })
       .filter(row => row !== null);
   }

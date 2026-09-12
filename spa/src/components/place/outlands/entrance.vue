@@ -252,7 +252,6 @@ import Vue from "vue";
 import {
   OUTLANDS_TEAM_AVATARS,
   RED_TEAM,
-  rememberSelfBeforeOutlands,
 } from "@/libs/outlands";
 
 /*
@@ -387,38 +386,19 @@ export default Vue.extend({
       this.busy = true;
       try {
         /*
-         * Write down the token and the avatar they had before the side goes
-         * on, so that leaving Outlands can give both back. This has to happen
-         * before the swap: once the POST returns, the team token has replaced
-         * theirs in the store and there is nothing left to remember.
+         * The server validates the choice against the database and answers with
+         * the gameplay row alone. No token is issued and nothing is written:
+         * the citizen's `member.avatar_id` and the normal authentication token
+         * in localStorage are both untouched, so there is nothing to remember
+         * and nothing to give back later.
          *
-         * Their own avatar is untouched in the database throughout - the POST
-         * below only issues a token that says they are wearing a side - so the
-         * note is the only thing the restore needs, and no server call is made
-         * to undo anything.
+         * The row is handed to the page, which keeps it in tab-local state for
+         * the length of the visit. See @/libs/outlands.
          */
-        rememberSelfBeforeOutlands(
-          this.$store.data.user.token, { ...this.$store.data.user.avatar },
-        );
         const response = await this.$http.post("/avatar/outlands", {
           avatarId: avatar.id,
         });
-        /*
-         * The token carries the avatar row, but nothing decodes it back into
-         * the store, so the fields the world needs are written here. Without
-         * the file name the browser identity and the side both stay stale.
-         */
-        this.$store.methods.setToken(response.data.token);
-        // The store's avatar type declares only what the token carries; the
-        // API row also carries `directory` and `image`, and the world reads
-        // both through the avatar URL it is given.
-        const worn: any = this.$store.data.user.avatar;
-        worn.id = avatar.id;
-        worn.name = avatar.name;
-        worn.filename = avatar.filename;
-        worn.directory = avatar.directory;
-        worn.image = avatar.image;
-        this.$root.$emit("outlands-team-selected");
+        this.$root.$emit("outlands-team-selected", response.data.avatar);
       } catch (errorResponse: any) {
         this.error = "That avatar could not be worn. Please try again.";
       } finally {

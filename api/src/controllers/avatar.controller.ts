@@ -64,11 +64,14 @@ class AvatarController {
   }
 
   /**
-   * Wears one of the four team avatars for this visit to Outlands.
+   * Validates one of the four team avatars for this visit to Outlands.
    *
-   * Answers with a token that says the citizen is wearing it. Nothing is
-   * written: `member.avatar_id` is untouched, so the avatar they chose for
-   * themselves is still theirs when they leave.
+   * Nothing is written and no token is issued. `member.avatar_id` is untouched,
+   * so the avatar the citizen chose for themselves is still theirs, and the
+   * normal authentication token they are holding is still exactly the token
+   * they logged in with. The answer is the validated gameplay row alone: the
+   * Outlands runtime keeps it in tab-local state for the length of the visit,
+   * and a reload simply returns them to the entrance to choose again.
    */
   public async wearOutlandsTeamAvatar(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
@@ -97,10 +100,8 @@ class AvatarController {
         });
         return;
       }
-      const token = await this.memberService.getMemberTokenWearing(session.id, chosen);
       response.status(200).json({
         message: 'Success',
-        token,
         avatar: chosen,
       });
     } catch (error) {

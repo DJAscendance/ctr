@@ -32,6 +32,21 @@ export interface OutlandsTeamAvatar {
 }
 
 /**
+ * What the Outlands runtime is told about a team avatar, and nothing else.
+ *
+ * The entrance needs the id to ask for a side and the world needs the path to
+ * build the avatar URL `ne_game.wrl` reads. Everything else on the row --
+ * `member_id`, `private`, `status`, `gestures` -- is system bookkeeping a
+ * citizen has no use for, so it does not leave the API.
+ */
+export interface OutlandsTeamAvatarView {
+  id: number;
+  filename: string;
+  directory: string;
+  team: number;
+}
+
+/**
  * The four playable choices, in the historical order of the entrance screen:
  * the Red pair, then the Blue pair.
  */

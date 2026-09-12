@@ -18,6 +18,22 @@ export interface User {
     firstname?: string;
 }
 
+/**
+ * The gameplay avatar an Outlands visit is being played with.
+ *
+ * Deliberately NOT part of {@link User}: it is temporary gameplay state, not
+ * the citizen's identity. It is never written to localStorage, never sent to
+ * the server as an avatar change, and it is gone on a reload - which returns
+ * the citizen to the Outlands entrance to choose again. Only the Outlands
+ * runtime reads it; everywhere else the citizen is their own avatar.
+ */
+export interface OutlandsAvatar {
+    id: number;
+    filename: string;
+    directory: string;
+    team: number;
+}
+
 export interface Place {
     assets_dir?: string;
     block?: any;
@@ -47,6 +63,7 @@ export interface AppStore {
         user: User;
         view3d: boolean;
         place: Place;
+        outlandsAvatar: OutlandsAvatar | null;
     };
     methods: {
         destroySession: () => void;
@@ -55,6 +72,7 @@ export interface AppStore {
         setPlace: (value: Place) => void;
         setUser: (userData: object) => void;
         setBid: (bid: number) => void;
+        setOutlandsAvatar: (avatar: OutlandsAvatar | null) => void;
     };
 }
 
@@ -69,12 +87,14 @@ const appStore = Vue.observable<AppStore>({
             token: localStorage.getItem("token"),
         },
         place: {},
+        outlandsAvatar: null,
     },
     methods: {
         destroySession() {
             localStorage.removeItem("token");
             appStore.data.user = {};
             appStore.data.isUser = false;
+            appStore.data.outlandsAvatar = null;
         },
         setToken(token: string): void {
             appStore.data.user.token = token;
@@ -101,6 +121,15 @@ const appStore = Vue.observable<AppStore>({
         },
         setBid(bid: number): void {
             localStorage.setItem("bid", bid.toString());
+        },
+        /*
+         * Puts on, or takes off, the Outlands gameplay avatar. In memory only:
+         * no localStorage, no cookie, no token, and nothing merged into
+         * `data.user`, so the citizen's identity and their own avatar are
+         * untouched and another tab of the same account never sees this.
+         */
+        setOutlandsAvatar(avatar: OutlandsAvatar | null): void {
+            appStore.data.outlandsAvatar = avatar;
         },
     },
 });

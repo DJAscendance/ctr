@@ -24,6 +24,7 @@ export CTR_QA_USER_2D=testqa2d  CTR_QA_PASS_2D=testqa   # a member whose chatdef
 
 DISPLAY=:1 node qa/outlands/tools/check-entrance.js
 DISPLAY=:1 node qa/outlands/tools/check-system-avatars.js
+DISPLAY=:1 node qa/outlands/tools/check-avatar-isolation.js
 DISPLAY=:1 node qa/outlands/tools/check-freeplay.js
 DISPLAY=:1 node qa/outlands/tools/check-lifecycle.js
 DISPLAY=:1 node qa/outlands/tools/check-stale-place.js
@@ -46,6 +47,7 @@ seeded.
 |---|---|
 | `check-entrance.js` | the historical entrance screen: all four choices end to end, the Game Master absent, a typed match password refused rather than dropped into free play, the world withheld until a side is worn, a 2D-default citizen carried into the 3D battle zone, and the ordinary avatar given back on the way out — across a page load |
 | `check-system-avatars.js` | that the five Outlands avatars are system resources and nothing else: the ordinary avatar library returns none of them, the ordinary avatar picker shows none of them, all five ids are refused by the persistent avatar-change path even when it is called directly, an ordinary public avatar still works, and the citizen's permanent avatar is unchanged before, during and after a visit to Outlands |
+| `check-avatar-isolation.js` | that a team avatar stays temporary gameplay state: the Outlands POST answers with validated gameplay data and no token, `localStorage["token"]` is byte-for-byte unchanged before, during and after a battle, no other durable key appears, a reload returns to the entrance, browser Back and BOTH navigation orders (with and without a `/member/session` refresh) land in the Plaza wearing the citizen's own avatar, and a second tab and a tab opened mid-battle are untouched |
 | `check-freeplay.js` | the historical entrance, the four choices, red/blue mapping, the world's own spawn, W/D/A, the ammunition contract, Beamer, Repulsor, AAPD, ammo dispensers, beam-out, respawn and friendly fire — two authenticated citizens, on opposite sides |
 | `check-lifecycle.js` | two presences of ONE member as two targets, room state, leaving, returning, rapid Plaza/Outlands navigation, and what the outgoing world gives back |
 | `check-memory.js` | 100 entrance-to-battle-to-Plaza cycles: heap slope, one canvas, no retained citizen, no retained gameplay browser state, flat socket listeners |

@@ -30,7 +30,7 @@ import {
 } from '../../libs/economy';
 import { sendMemberApprovedEmail } from '../../libs/mail';
 import { isMemberApprovalRequired } from '../../libs/site-config';
-import { Avatar, Member, ObjectInstance, Place } from '../../types/models';
+import { Member, ObjectInstance, Place } from '../../types/models';
 import { MemberInfoView, MemberAdminView } from '../../types/views';
 import { SessionInfo } from 'session-info.interface';
 import { RosterService, RosterView } from '../roster/roster.service';
@@ -810,25 +810,6 @@ export class MemberService {
   }
 
   /**
-   * A token for a member that says they are wearing the given avatar, without
-   * making them wear it.
-   *
-   * Outlands decides a citizen's side from the avatar they wear, and the socket
-   * server reads that avatar out of the verified token, so other citizens in the
-   * battle only see a side if the token carries it. That is gameplay state for
-   * one visit, not a change of appearance: `member.avatar_id` is deliberately
-   * NOT written, so the citizen's own avatar is exactly what it was when they
-   * leave, and a reload simply returns them to the entrance to choose again.
-   * @param memberId id of the member the token is for
-   * @param avatar the avatar row the token should carry
-   * @returns promise resolving in the encoded token
-   */
-  public async getMemberTokenWearing(memberId: number, avatar: Avatar): Promise<string> {
-    const member = await this.memberRepository.findById(memberId);
-    return this.encodeMemberToken(member, avatar);
-  }
-
-  /**
    * Sets the password for the member with the given id to a hashed version of the provided
    * password.
    * @param memberId id of member to be updated
@@ -870,8 +851,8 @@ export class MemberService {
    * @param member member object to encode a token for
    * @returns promise resolving in encoded token, or rejecting on error
    */
-  private async encodeMemberToken(member: Member, wearing?: Avatar): Promise<string> {
-    const avatar = wearing ?? await this.avatarRepository.find({ id: member.avatar_id });
+  private async encodeMemberToken(member: Member): Promise<string> {
+    const avatar = await this.avatarRepository.find({ id: member.avatar_id });
     return jwt.sign(
       {
         id: member.id,

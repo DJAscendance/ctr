@@ -46,9 +46,9 @@ function spawnPoints(repoRoot) {
 }
 
 /*
- * Take a citizen out of any Outlands uniform, so the entrance has to be shown.
- * Uses the same endpoint the entrance uses, and clears the note the entrance
- * would otherwise have left from an earlier run.
+ * Put the citizen in an ordinary avatar and take any Outlands uniform off, so
+ * the entrance has to be shown. The uniform is tab-local gameplay state, so
+ * dropping it is a local write - there is no server call and no stored note.
  */
 async function wearOrdinaryAvatar(page, avatarId = 1) {
   /* The store's user arrives over HTTP after login, so wait for it rather than
@@ -64,7 +64,7 @@ async function wearOrdinaryAvatar(page, avatarId = 1) {
     const list = await app.$http.get('/avatar');
     const row = (list.data.avatars || []).find(a => a.id === id);
     if (row) Object.assign(app.$store.data.user.avatar, row);
-    localStorage.removeItem('outlandsPreviousSelf');
+    app.$store.methods.setOutlandsAvatar(null);
   }, avatarId);
 }
 
@@ -79,20 +79,13 @@ const wornAvatar = page => page.evaluate(() => {
     view3d: !!app.$store.data.view3d,
     place: app.$store.data.place && app.$store.data.place.slug,
     /*
-     * The entrance's note. Wearing a side no longer writes the citizen's
-     * permanent avatar -- `POST /avatar/outlands` only issues a token -- so
-     * the note now carries their own token AND their own avatar row, and the
-     * restore is a local swap. The gate still only cares which avatar is
-     * coming back, so the id is what is reported.
+     * The side being played with, if any. Wearing one writes nothing: no
+     * server call, no token and no browser storage, so this is the whole of
+     * it and it is gone when the tab is.
      */
-    note: (() => {
-      const raw = localStorage.getItem('outlandsPreviousSelf');
-      if (!raw) return null;
-      try {
-        return String(JSON.parse(raw).avatar.id);
-      } catch (e) {
-        return null;
-      }
+    gameplayAvatar: (() => {
+      const worn = app.$store.data.outlandsAvatar;
+      return worn ? { id: Number(worn.id), filename: worn.filename, team: worn.team } : null;
     })(),
   };
 });

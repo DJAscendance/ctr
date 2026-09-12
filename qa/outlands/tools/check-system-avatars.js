@@ -173,8 +173,10 @@ const permanentAvatar = page => page.evaluate(async () => {
 
   const worn = await O.wornAvatar(page);
   record.wornInOutlands = worn;
-  check('the citizen is wearing a team avatar inside Outlands',
-    SYSTEM_FILES.indexOf(worn.filename) > -1, worn);
+  check('the citizen is playing as a team avatar inside Outlands',
+    !!worn.gameplayAvatar && SYSTEM_FILES.indexOf(worn.gameplayAvatar.filename) > -1, worn);
+  check('and a team avatar is never the avatar they own',
+    SYSTEM_FILES.indexOf(worn.filename) === -1, worn.filename);
 
   const permanentDuring = await permanentAvatar(page);
   record.permanentDuring = permanentDuring;
@@ -199,7 +201,8 @@ const permanentAvatar = page => page.evaluate(async () => {
   const wornAfter = await O.wornAvatar(page);
   record.wornAfter = wornAfter;
   check('and the avatar on screen is their own again',
-    Number(wornAfter.id) === permanentBeforeEntry.id, wornAfter);
+    Number(wornAfter.id) === permanentBeforeEntry.id
+    && wornAfter.gameplayAvatar === null, wornAfter);
 
   await page.screenshot({ path: path.join(OUT_DIR, 'after-outlands.png') });
   fs.writeFileSync(

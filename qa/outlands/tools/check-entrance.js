@@ -148,9 +148,10 @@ async function backToOrdinary(page) {
     check(`${side}: the world was not loaded before the choice was made`,
       before.outlandsWorldLoaded === false && before.worldPaneShown === false,
       { loaded: before.outlandsWorldLoaded, paneShown: before.worldPaneShown });
-    check(`${side}: the citizen is wearing ${side}.wrl, from its own directory`,
-      worn.filename === `${side}.wrl` && worn.id === spec.avatarId,
-      { filename: worn.filename, id: worn.id, directory: worn.directory });
+    check(`${side}: the citizen is playing as ${side}.wrl, from its own directory`,
+      !!worn.gameplayAvatar && worn.gameplayAvatar.filename === `${side}.wrl`
+      && worn.gameplayAvatar.id === spec.avatarId,
+      { gameplayAvatar: worn.gameplayAvatar, ownAvatarId: worn.id });
     check(`${side}: the battle zone loaded once the side was worn`,
       /ne_game\.wrl/.test(String(loaded)), loaded);
     check(`${side}: the world's own set_team put them on team ${spec.team}`,
@@ -169,8 +170,10 @@ async function backToOrdinary(page) {
   await O.enterOutlandsThroughEntrance(page, 'bluef');
   const inUniform = await O.wornAvatar(page);
   /*
-   * The note the entrance left has to survive the tab being reloaded, because
-   * leaving Outlands is very often a page load rather than a route change.
+   * A side is tab-local gameplay state: it is not written to the server and not
+   * written to browser storage, so a reload simply does not have one. The
+   * historical entrance is what a reloaded battle lands on, and the citizen is
+   * their own avatar again before any of it - there is nothing to restore.
    */
   await page.reload({ waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForFunction(() => {
@@ -185,19 +188,23 @@ async function backToOrdinary(page) {
 
   check('the citizen entered in their own clothes',
     ordinaryBefore.id === ORDINARY, ordinaryBefore);
-  check('the entrance dressed them for a side', inUniform.filename === 'bluef.wrl', inUniform);
-  check('the note survived the page load', afterReload.note === String(ORDINARY), afterReload);
-  check('the first ordinary place gave their own avatar back',
+  check('the entrance dressed them for a side',
+    !!inUniform.gameplayAvatar && inUniform.gameplayAvatar.filename === 'bluef.wrl', inUniform);
+  check('wearing a side never touched the citizen\'s own avatar',
+    inUniform.id === ORDINARY, inUniform);
+  check('a reload drops the side rather than carrying it over',
+    afterReload.gameplayAvatar === null && afterReload.id === ORDINARY, afterReload);
+  check('the first ordinary place has their own avatar',
     restored.id === ORDINARY && restored.filename === ordinaryBefore.filename, restored);
-  check('and the note was dropped, so nothing retries for ever',
-    restored.note === null, restored.note);
+  check('and no side is left behind',
+    restored.gameplayAvatar === null, restored.gameplayAvatar);
 
   await enterPlace(page, '#/place/enter', 'enter.wrl');
   await page.waitForTimeout(2000);
   const secondJoin = await O.wornAvatar(page);
   record.secondJoin = secondJoin;
   check('a second ordinary join changes nothing further',
-    secondJoin.id === ORDINARY && secondJoin.note === null, secondJoin);
+    secondJoin.id === ORDINARY && secondJoin.gameplayAvatar === null, secondJoin);
 
   await page.evaluate(() => { window.location.hash = '#/place/outlands'; });
   await page.waitForSelector('.oe-avatar:not([disabled])', { timeout: 60000 });
