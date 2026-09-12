@@ -1,6 +1,7 @@
 #!/bin/bash
-# Release preflight for the CTR beta stack: build the release, then bring the schema up to
-# date WHILE THE PREVIOUS RELEASE IS STILL SERVING, and abort the release if that fails.
+# Release preflight for the CTR beta stack: verify this release is operating on the intended
+# Beta application, then bring the schema up to date WHILE THE PREVIOUS RELEASE IS STILL
+# SERVING, and abort the release if either step fails.
 #
 # This is Coolify's "Custom Build Command" for the ctr-beta application. That field is not
 # an arbitrary choice of hook -- it is the only one that runs in the right place. Reading
@@ -9,6 +10,7 @@
 #
 #   635  prepare_builder_image()        -- ends by running pre_deployment_command
 #   637  clone_repository()             -- the NEW release lands in the builder container
+#   713  save_buildtime_environment_variables()  -- writes /artifacts/build-time.env
 #   715  docker_compose_custom_build_command   <-- THIS SCRIPT
 #   782  stop_running_container(force: true)   <-- the old release is destroyed here
 #   806  docker_compose_custom_start_command / start_by_compose_file()
@@ -30,7 +32,42 @@
 # was wrong: `up` runs at line 806, so a failed migration failed with the old containers
 # already destroyed at 782 and the new ones refusing to start. Schema safety, total outage.
 #
+# WHAT IDENTIFIES THE TARGET
+#
+# The revision before this one selected the database with nothing but
+# COMPOSE_PROJECT_NAME + service=db, and took `head -n 1` of the result. A compose project
+# name is a plain string supplied by the deployment field; a typo that happens to name
+# ANOTHER EXISTING PROJECT with a `db` service silently migrated that project's database and
+# exited 0. Wrong database, wrong schema, green deployment. That is the defect this revision
+# closes, and it is why every check below is an equality against Docker's own labels rather
+# than a search that settles for the first hit.
+#
+# Coolify 4.1.2 stamps four identity labels onto every container it manages (verified by
+# `docker inspect` on the live beta containers, and on the unrelated ctng-site application
+# beside them, which carries coolify.applicationId=2 / coolify.resourceName=ctng-site):
+#
+#   coolify.applicationId   the Coolify applications.id row -- 1 for ctr-beta. Immutable:
+#                           it survives redeploy, rename and image change, and a second
+#                           application cannot share it.
+#   coolify.resourceName    the application name -- ctr-beta.
+#   coolify.projectName     the Coolify project -- ctng. Shared with ctng-site, so it is a
+#                           corroborating field, not an identifying one.
+#   coolify.environmentName production.
+#
+# com.docker.compose.project is the application uuid (zkoil3p3wo2mozpn833yu2ol), which is
+# stable too -- but it is the ONE field the deployment types in by hand, so it is exactly the
+# field that can be wrong. It is checked, and it is never checked alone.
+#
+# The expected values are declared by the deployment command and compared with what Docker
+# reports. Coolify does not export them: generate_coolify_env_variables() only emits
+# COOLIFY_RESOURCE_UUID when the build pack is not `dockercompose` or the compose parsing
+# version is 1 or 2 (ctr-beta is dockercompose at version 5), and SOURCE_COMMIT only when
+# application_settings.include_source_commit_in_build is on (it is off). So the command
+# states the identity and this script proves it -- rather than trusting a name Coolify never
+# actually passes. See docs/beta-deployment.md for the exact command.
+#
 # What this script may do is deliberately narrow:
+#   * prove the identity of the target application, the release checkout and the database.
 #   * build the release images.
 #   * run migrations, once, via docker/beta/migrate-db.sh.
 # It never starts, stops, recreates or touches ct-api, ct-socket or nginx -- replacing the
@@ -45,24 +82,132 @@ set -euo pipefail
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.beta.yml}"
 
-# The compose project of the RUNNING stack. Coolify names it after the application uuid and
-# passes it to its own compose calls as --project-name; it is not exported into this shell,
-# so the deployment command must set it. Getting it wrong would migrate nothing and, worse,
-# start a second stack beside the live one, so there is no default.
-: "${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME to the compose project of the running stack}"
+log()  { echo "== preflight: $* =="; }
+fail() { echo "preflight: $*" >&2; exit 1; }
+
+# ------------------------------------------------------- phase 0: identity
+# Every check in this phase runs BEFORE anything is built and long before anything is
+# migrated, and every one of them exits non-zero rather than falling back to a guess.
+
+# --- release identity -------------------------------------------------------------
+# The commit that is actually checked out, always computed, never supplied. A release is
+# whatever is in the working tree; anything that disagrees with it is a claim, not a fact.
+CHECKOUT_SHA="$(git rev-parse HEAD 2>/dev/null)" \
+  || fail "cannot read the release checkout (git rev-parse HEAD failed in $PWD)."
+
+# SOURCE_COMMIT is Coolify's claim about which commit it deployed. It used to be allowed to
+# REPLACE the checkout sha, which meant a release could be labelled, tagged and recorded as a
+# commit it was not built from. It is now only ever a claim to be checked: present and equal
+# is fine, present and different stops the release. Empty or unset is absent, not a
+# mismatch -- ctr-beta has include_source_commit_in_build off, so Coolify genuinely does not
+# pass one at build time.
+if [ -n "${SOURCE_COMMIT:-}" ]; then
+  claimed_sha="$(git rev-parse --verify --quiet "${SOURCE_COMMIT}^{commit}" || true)"
+  if [ -z "$claimed_sha" ]; then
+    fail "SOURCE_COMMIT=${SOURCE_COMMIT} does not resolve to a commit in this checkout."
+  fi
+  if [ "$claimed_sha" != "$CHECKOUT_SHA" ]; then
+    fail "SOURCE_COMMIT resolves to ${claimed_sha} but the checkout is at ${CHECKOUT_SHA}."
+  fi
+  log "SOURCE_COMMIT agrees with the checkout"
+fi
+RELEASE_SHA="$CHECKOUT_SHA"
+
+# --- repository identity ----------------------------------------------------------
+# A different repository with a file at this path must not be able to migrate beta. The proof
+# is the root commit: it is immutable, it is unique to this history, and reading it needs no
+# remote -- so it still holds on a detached, shallow-fetched or renamed checkout, and cannot
+# be satisfied by pointing `origin` somewhere.
+CTR_ROOT_COMMIT="${CTR_ROOT_COMMIT:-30fd2c250cd1f7154c2c3df03ec23fb47a19e1f4}"
+git merge-base --is-ancestor "$CTR_ROOT_COMMIT" HEAD 2>/dev/null \
+  || fail "this checkout does not descend from the CTR root commit ${CTR_ROOT_COMMIT};
+ refusing to migrate beta."
+
+# --- application identity ---------------------------------------------------------
+# All three are required and none of them has a default. A missing one is a deployment that
+# has not said what it is aiming at, and that is not a state to guess from.
+: "${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME to the compose project of the target stack}"
+: "${CTR_BETA_APPLICATION_ID:?set CTR_BETA_APPLICATION_ID to the target coolify.applicationId label}"
+: "${CTR_BETA_RESOURCE_NAME:?set CTR_BETA_RESOURCE_NAME to the target coolify.resourceName label}"
 PROJECT="$COMPOSE_PROJECT_NAME"
 
+# `docker ps -a`, not `docker ps`: a database that is restarting, or briefly down, is a
+# database to WAIT for, not a reason to abort a release. A stopped container still reports
+# its labels and its networks and rejoins them when it starts, so identity resolves either
+# way, and migrate-db.sh then waits up to 120s for MySQL to answer.
+find_containers() {
+  docker ps -aq \
+    --filter "label=com.docker.compose.project=${PROJECT}" \
+    --filter "label=coolify.applicationId=${CTR_BETA_APPLICATION_ID}" \
+    --filter "label=coolify.resourceName=${CTR_BETA_RESOURCE_NAME}" \
+    --filter "label=com.docker.compose.service=$1"
+}
+
+# Exactly one. Zero is a wrong project, a wrong identity or a stack that was never
+# bootstrapped; more than one is an ambiguity, and an ambiguity resolved by `head -n 1` is
+# how the wrong database gets migrated. Both stop the release.
+db_matches="$(find_containers db)"
+db_count="$(printf '%s' "$db_matches" | grep -c . || true)"
+if [ "$db_count" -ne 1 ]; then
+  echo "preflight: expected exactly 1 db container for the target application, found ${db_count}." >&2
+  echo "preflight:   com.docker.compose.project = ${PROJECT}" >&2
+  echo "preflight:   coolify.applicationId      = ${CTR_BETA_APPLICATION_ID}" >&2
+  echo "preflight:   coolify.resourceName       = ${CTR_BETA_RESOURCE_NAME}" >&2
+  [ "$db_count" -eq 0 ] \
+    && echo "preflight: no database carries all three labels. Check the deployment command,\
+ or bootstrap first (docs/beta-deployment.md)." >&2 \
+    || echo "preflight: refusing to choose between ${db_count} candidates." >&2
+  exit 1
+fi
+db_container="$db_matches"
+
+# The rest of the application, by the same identity. This is what makes a lone database
+# belonging to some other stack insufficient: a database is only beta's if beta's API,
+# socket and web tier are standing next to it under the same application labels.
+declare -A peer_container=()
+for svc in ct-api ct-socket nginx; do
+  matches="$(find_containers "$svc")"
+  count="$(printf '%s' "$matches" | grep -c . || true)"
+  [ "$count" -ge 1 ] \
+    || fail "no ${svc} container carries the target application identity;\
+ this database is not part of the expected beta stack."
+  peer_container[$svc]="$(printf '%s\n' "$matches" | head -n 1)"
+done
+log "application identity verified: project=${PROJECT}\
+ applicationId=${CTR_BETA_APPLICATION_ID} resourceName=${CTR_BETA_RESOURCE_NAME}"
+
+# --- network identity -------------------------------------------------------------
+# Coolify does not deploy this compose file as written: it rewrites it onto an external
+# network named after the application uuid, so `compose run` here would land on
+# "<project>_default", find no `db` and time out against a database that was healthy the
+# whole time. The migrator must join the network the LIVE database is already on.
+#
+# Which one, when a container can be on several, is an identity question rather than an
+# ordering one -- the old `head -n 1` would happily have picked a shared or external network.
+# The answer is the network beta's database and beta's API both sit on: nothing else can
+# carry the migrator to the right mysqld. Coolify's network carries no labels of its own
+# (verified on the live host), so this intersection is the available proof, and more than one
+# answer is an ambiguity, not a choice.
+networks_of() {
+  docker inspect --format '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}' "$1" \
+    | grep . | sort -u
+}
+shared_networks="$(comm -12 \
+  <(networks_of "$db_container") \
+  <(networks_of "${peer_container[ct-api]}"))"
+network_count="$(printf '%s' "$shared_networks" | grep -c . || true)"
+[ "$network_count" -eq 1 ] \
+  || fail "expected exactly 1 network shared by the beta db and ct-api,\
+ found ${network_count}; refusing to pick one."
+NETWORK="$shared_networks"
+
+# --- database identity ------------------------------------------------------------
 # Coolify writes the application's environment here before the build command runs
 # (ApplicationDeploymentJob::BUILD_TIME_ENV_PATH, written by
 # save_buildtime_environment_variables() at line 713 -- two lines before this script). The
 # values are shell-escaped by Coolify for exactly this kind of consumption. Overridable so a
 # local rehearsal can point at its own file.
 ENV_FILE="${PREFLIGHT_ENV_FILE:-/artifacts/build-time.env}"
-
-RELEASE_SHA="${SOURCE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
-
-log() { echo "== preflight: $* =="; }
-
 if [ -f "$ENV_FILE" ]; then
   log "loading environment from $ENV_FILE"
   set -a
@@ -77,6 +222,21 @@ fi
 : "${DB_PASS:?DB_PASS must be set (expected from $ENV_FILE)}"
 DB_DATABASE="${DB_DATABASE:-cybertown}"
 
+# The schema name the running database was created with, read from the container rather than
+# from the file this release happens to ship. It is a consistency check on top of an identity
+# that is already established -- NOT the identity itself, because any CTR stack would answer
+# `cybertown` here. Migrating a verified beta database under a name it does not have would
+# create a second, empty schema beside the citizens.
+db_schema="$(docker inspect --format \
+  '{{range .Config.Env}}{{if (eq (index (split . "=") 0) "MYSQL_DATABASE")}}{{index (split . "=") 1}}{{end}}{{end}}' \
+  "$db_container")"
+[ -n "$db_schema" ] || fail "db container ${db_container} declares no MYSQL_DATABASE."
+[ "$db_schema" = "$DB_DATABASE" ] \
+  || fail "the target database was created as '${db_schema}'\
+ but this release would migrate '${DB_DATABASE}'."
+
+log "target verified: db=${db_container} schema=${db_schema} network=${NETWORK}"
+
 compose() { docker compose -f "$COMPOSE_FILE" --project-name "$PROJECT" "$@"; }
 
 # ---------------------------------------------------------------- phase 1: build
@@ -90,53 +250,13 @@ compose --profile migrate build --pull
 # The image the migration will run as, resolved by ID the instant after it is built, and run
 # by that ID below. `ctr-beta-tooling` is a fixed tag and a fixed tag is exactly how a
 # preflight ends up executing last release's migration files; an image ID captured here
-# cannot be the wrong build.
+# cannot be the wrong build. The tag is the CHECKOUT sha, so what is recorded is what was
+# compiled -- not what a caller said it was.
 MIGRATE_IMAGE_ID="$(docker image inspect --format '{{.Id}}' ctr-beta-tooling)"
 docker image tag "$MIGRATE_IMAGE_ID" "ctr-beta-tooling:${RELEASE_SHA}"
 log "migration image ${MIGRATE_IMAGE_ID} tagged ctr-beta-tooling:${RELEASE_SHA}"
 
 # ------------------------------------------------------- phase 2: migrate, in place
-# Attach the migrator to the network the LIVE database is already on, rather than to
-# whatever network this compose file would create. Coolify does not deploy this file as
-# written: it rewrites it onto an external network named after the application uuid, so a
-# plain `compose run` here would land on "<project>_default", find no `db` and time out
-# against a database that was healthy the whole time. Asking the running container is also
-# simply the honest question -- migrate against the database the old release is serving.
-#
-# `docker ps -a`, not `docker ps`: a database that is restarting, or briefly down, is a
-# database to WAIT for, not a reason to abort a release. A stopped container still reports
-# the network it is attached to and rejoins it when it starts, so this resolves the right
-# network either way, and migrate-db.sh then waits up to 120s for MySQL to answer -- a slow
-# or restarting database is waited out, one that never returns fails the release. What is
-# still fatal is NO container at all, which is a different thing entirely: a wrong
-# COMPOSE_PROJECT_NAME, or a stack that was never bootstrapped.
-db_container="$(docker ps -aq \
-  --filter "label=com.docker.compose.project=${PROJECT}" \
-  --filter "label=com.docker.compose.service=db" | head -n 1)"
-
-if [ -z "$db_container" ]; then
-  # Deliberately fatal, and deliberately not "start one". This script only ever runs as part
-  # of replacing a running release, and that release has a database; `restart: unless-stopped`
-  # and a named volume mean a missing one is a fault to look at, not a state to paper over.
-  #
-  # Starting it here would also be wrong rather than merely eager: Coolify does not deploy
-  # this compose file as written, it rewrites it onto an external network, so a db started
-  # from this file lands on "<project>_default" and the release that follows would create a
-  # SECOND database on the real network -- an empty one, beside the migrated one, with the
-  # citizen data in whichever the application did not pick. Bringing up a first database is
-  # the bootstrap's job; see docs/beta-deployment.md.
-  echo "preflight: no db container at all for compose project ${PROJECT}." >&2
-  echo "preflight: this script migrates a live stack and will not create one." >&2
-  echo "preflight: check COMPOSE_PROJECT_NAME, or bootstrap first (docs/beta-deployment.md)." >&2
-  exit 1
-fi
-
-NETWORK="${PREFLIGHT_NETWORK:-$(docker inspect --format \
-  '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{"\n"}}{{end}}' \
-  "$db_container" | head -n 1)}"
-[ -n "$NETWORK" ] || { echo "preflight: db container ${db_container} is on no network" >&2; exit 1; }
-log "migrating on network ${NETWORK} against db container ${db_container}"
-
 # `migrate-db` is named explicitly. The tooling image's default CMD is `bootstrap-db`, which
 # seeds and refuses a populated database; naming the command is what keeps the seeding path
 # unreachable from a release. --rm so a failed attempt leaves no container to be mistaken for
@@ -144,6 +264,7 @@ log "migrating on network ${NETWORK} against db container ${db_container}"
 #
 # migrate-db.sh waits up to 120s for the database and exits non-zero if it never arrives, so
 # a slow database is waited out and an absent one fails the release instead of hanging it.
+log "migrating on network ${NETWORK} against db container ${db_container}"
 docker run --rm \
   --network "$NETWORK" \
   -e NODE_ENV=production \

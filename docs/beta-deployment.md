@@ -61,15 +61,69 @@ rejected:
 On the `ctr-beta` application, set **Custom Build Command** to:
 
 ```
-COMPOSE_PROJECT_NAME=<application-uuid> bash ./docker/beta/release-preflight.sh
+COMPOSE_PROJECT_NAME=zkoil3p3wo2mozpn833yu2ol CTR_BETA_APPLICATION_ID=1 CTR_BETA_RESOURCE_NAME=ctr-beta bash ./docker/beta/release-preflight.sh
 ```
 
-`COMPOSE_PROJECT_NAME` must be the compose project of the running stack — Coolify names it
-after the application uuid, and passes it to its own compose calls as `--project-name`. It is
-not exported into the build shell, so the command has to state it. There is deliberately no
-default: a wrong value would migrate nothing.
-
 Leave **Custom Start Command** empty. Coolify's own `compose up` is the application rollout.
+
+### Required application identity
+
+All three values are required, none has a default, and an empty one is treated as missing.
+The preflight compares them with the labels Docker reports on the running containers and
+exits non-zero on any disagreement.
+
+| Variable | Compared against | Live beta value |
+|---|---|---|
+| `COMPOSE_PROJECT_NAME` | `com.docker.compose.project` | `zkoil3p3wo2mozpn833yu2ol` (the application uuid) |
+| `CTR_BETA_APPLICATION_ID` | `coolify.applicationId` | `1` |
+| `CTR_BETA_RESOURCE_NAME` | `coolify.resourceName` | `ctr-beta` |
+
+`COMPOSE_PROJECT_NAME` **alone is not an identity**, and treating it as one was a real
+defect: it is a plain string typed into a deployment field, so a value that happens to name
+another existing compose project with a `db` service migrated that project's database and
+exited 0. The other two come from labels Coolify stamps on every container it manages and
+that no other application can carry — the unrelated `ctng-site` application on the same host
+carries `coolify.applicationId=2` / `coolify.resourceName=ctng-site`. `coolify.applicationId`
+is the `applications.id` row: it survives redeploy, rename and image change.
+
+Coolify does not export these, which is why the command states them.
+`generate_coolify_env_variables()` only emits `COOLIFY_RESOURCE_UUID` when the build pack is
+not `dockercompose` or the compose parsing version is 1 or 2 (ctr-beta is `dockercompose` at
+version 5), and `SOURCE_COMMIT` only when `application_settings.include_source_commit_in_build`
+is on (it is off).
+
+### Database target verification
+
+Before anything is built, the preflight resolves the database by **all three** identity labels
+plus `com.docker.compose.service=db`, and requires **exactly one** match. Zero matches fail;
+two or more fail. It never takes the first candidate.
+
+It then requires `ct-api`, `ct-socket` and `nginx` to carry the same application identity, so a
+stray database from another stack cannot satisfy the check on its own; picks the network the
+verified `db` and the verified `ct-api` **both** sit on, failing if that is not exactly one
+network; and checks the schema name the database was created with (`MYSQL_DATABASE`) against
+the `DB_DATABASE` this release would migrate. The schema name is a consistency check on top of
+an identity already proven — any CTR stack would answer `cybertown`, so it is never the proof.
+
+### Release SHA verification
+
+The release identity is always `git rev-parse HEAD` — computed, never supplied.
+
+`SOURCE_COMMIT` is a claim about that checkout, not a substitute for it. If it is set, it must
+resolve to the same commit as `HEAD`, or the release stops before the build. Unset or empty is
+absent rather than a mismatch, which is the normal case here.
+
+The checkout must also descend from the CTR root commit
+`30fd2c250cd1f7154c2c3df03ec23fb47a19e1f4`, so a different repository shipping a file at this
+path cannot migrate beta. The root commit is immutable and needs no remote, so the check holds
+on a detached or shallow checkout and cannot be satisfied by repointing `origin`.
+
+### Wrong-project failure behavior
+
+Every identity check runs in phase 0, before the build and long before the migration. A
+failure prints what was expected against what Docker reported and exits non-zero, so Coolify
+throws `DeploymentException` at line 715 and never reaches line 782: **no image is built, no
+migration runs, no database is touched, and the old release keeps serving.**
 
 ## Migration owner
 
@@ -228,11 +282,19 @@ DB_DATABASE=cybertown
 MYSQL_ROOT_PASSWORD=rootpass
 JWT_SECRET=rehearsal-only
 EOF
+# The overlay reproduces what Coolify does to the deployed stack: an external network named
+# after the project, and the identity labels the preflight verifies. Without the labels the
+# preflight fails closed, which is correct -- an unlabelled stack is not the beta application.
 cat > /tmp/ctrpf/coolify-net.yml <<'EOF'
 networks:
   default:
     name: ctrpf
     external: true
+services:
+  db:      { labels: { coolify.applicationId: "901", coolify.resourceName: ctr-beta-rehearsal } }
+  ct-api:  { labels: { coolify.applicationId: "901", coolify.resourceName: ctr-beta-rehearsal } }
+  ct-socket: { labels: { coolify.applicationId: "901", coolify.resourceName: ctr-beta-rehearsal } }
+  nginx:   { labels: { coolify.applicationId: "901", coolify.resourceName: ctr-beta-rehearsal } }
 EOF
 docker network create ctrpf
 
@@ -249,8 +311,14 @@ docker ps --filter label=com.docker.compose.project=ctrpf \
   --format '{{.Label "com.docker.compose.service"}} {{.ID}}'
 
 # 3. add a deliberately failing migration to api/db/migrations, then run phase 1 ALONE
-COMPOSE_PROJECT_NAME=ctrpf PREFLIGHT_ENV_FILE=/tmp/ctrpf/env \
+COMPOSE_PROJECT_NAME=ctrpf CTR_BETA_APPLICATION_ID=901 CTR_BETA_RESOURCE_NAME=ctr-beta-rehearsal \
+  PREFLIGHT_ENV_FILE=/tmp/ctrpf/env \
   bash ./docker/beta/release-preflight.sh ; echo "preflight exit: $?"
+
+# 3b. the wrong-project gate: name any OTHER existing project and it must refuse, not migrate
+COMPOSE_PROJECT_NAME=<some-other-project> CTR_BETA_APPLICATION_ID=901 \
+  CTR_BETA_RESOURCE_NAME=ctr-beta-rehearsal PREFLIGHT_ENV_FILE=/tmp/ctrpf/env \
+  bash ./docker/beta/release-preflight.sh ; echo "must be non-zero: $?"
 
 # 4. the container IDs from step 2 must be unchanged, and the site must still answer
 docker run --rm --network ctrpf curlimages/curl:8.5.0 -sI http://nginx/ | head -1
