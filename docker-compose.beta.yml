@@ -67,7 +67,14 @@ services:
     image: ctr-beta-api
     restart: unless-stopped
     depends_on:
-      - db
+      # The release gate. ct-api starts ONLY after ct-migrate has exited 0, so the schema is
+      # never older than the code serving against it. If the migration fails, this service
+      # is not started, nginx behind it is not started, and `docker compose up` exits
+      # non-zero -- the deployment fails instead of going green on a mismatched schema.
+      ct-migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_started
     environment:
       NODE_ENV: production
       DB_HOST: db
@@ -174,6 +181,34 @@ services:
       MYSQL_PASSWORD: ${DB_PASS:?set DB_PASS}
     volumes:
       - db-data:/var/lib/mysql
+
+  # The schema migration step, and the single owner of it. It runs on EVERY deployment, in
+  # no profile, so an ordinary `up` always performs it; there is no second migration owner
+  # anywhere in this stack, and the application images have no ts-node to be one.
+  #
+  # Migrations ONLY -- never seeds, never a reset. See docker/beta/migrate-db.sh.
+  #
+  # It is a one-shot: it migrates, prints the schema state and exits. `restart: "no"` is
+  # required, not cosmetic -- under the default restart policy a container that exits 0 is
+  # started again, and compose would then wait forever for a "completed" state it keeps
+  # leaving.
+  ct-migrate:
+    build:
+      context: .
+      dockerfile: docker/beta/api.Dockerfile
+      target: tooling
+    image: ctr-beta-tooling
+    restart: "no"
+    command: ["migrate-db"]
+    depends_on:
+      - db
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:?set DB_USER}
+      DB_PASS: ${DB_PASS:?set DB_PASS}
+      DB_DATABASE: ${DB_DATABASE:-cybertown}
 
   # First-run only, and only when asked for by profile, so an ordinary `up` can never
   # start it. See docker/beta/bootstrap-db.sh for why the order it uses is what it is.

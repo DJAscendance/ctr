@@ -39,8 +39,13 @@ COPY api/tsconfig.json api/tsconfig.prod.json ./
 COPY api/src ./src
 COPY api/db ./db
 COPY docker/beta/bootstrap-db.sh /usr/local/bin/bootstrap-db
+COPY docker/beta/migrate-db.sh /usr/local/bin/migrate-db
 COPY docker/beta/db-helpers.js ./db-helpers.js
-RUN chmod +x /usr/local/bin/bootstrap-db
+RUN chmod +x /usr/local/bin/bootstrap-db /usr/local/bin/migrate-db
+
+# The bootstrap is the first-run tool and stays the default, so `run --rm ct-bootstrap`
+# keeps working with no command. The deployment's migration step is the ct-migrate service,
+# which asks for `migrate-db` explicitly.
 CMD ["bootstrap-db"]
 
 # --------------------------------------------------------------------- runtime
