@@ -72,6 +72,8 @@ export interface AppStore {
         setPlace: (value: Place) => void;
         setUser: (userData: object) => void;
         setBid: (bid: number) => void;
+        /* Base no-unused-vars cannot see TS type params; same as the five above. */
+        // eslint-disable-next-line no-unused-vars
         setOutlandsAvatar: (avatar: OutlandsAvatar | null) => void;
     };
 }
@@ -87,14 +89,14 @@ const appStore = Vue.observable<AppStore>({
             token: localStorage.getItem("token"),
         },
         place: {},
-        outlandsAvatar: null,
+    outlandsAvatar: null,
     },
     methods: {
         destroySession() {
             localStorage.removeItem("token");
             appStore.data.user = {};
             appStore.data.isUser = false;
-            appStore.data.outlandsAvatar = null;
+      appStore.data.outlandsAvatar = null;
         },
         setToken(token: string): void {
             appStore.data.user.token = token;
@@ -122,15 +124,15 @@ const appStore = Vue.observable<AppStore>({
         setBid(bid: number): void {
             localStorage.setItem("bid", bid.toString());
         },
-        /*
-         * Puts on, or takes off, the Outlands gameplay avatar. In memory only:
-         * no localStorage, no cookie, no token, and nothing merged into
-         * `data.user`, so the citizen's identity and their own avatar are
-         * untouched and another tab of the same account never sees this.
-         */
-        setOutlandsAvatar(avatar: OutlandsAvatar | null): void {
-            appStore.data.outlandsAvatar = avatar;
-        },
+    /*
+     * Puts on, or takes off, the Outlands gameplay avatar. In memory only:
+     * no localStorage, no cookie, no token, and nothing merged into
+     * `data.user`, so the citizen's identity and their own avatar are
+     * untouched and another tab of the same account never sees this.
+     */
+    setOutlandsAvatar(avatar: OutlandsAvatar | null): void {
+      appStore.data.outlandsAvatar = avatar;
+    },
     },
 });
 export default appStore;
