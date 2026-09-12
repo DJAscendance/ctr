@@ -89,8 +89,9 @@ is the `applications.id` row: it survives redeploy, rename and image change.
 Coolify does not export these, which is why the command states them.
 `generate_coolify_env_variables()` only emits `COOLIFY_RESOURCE_UUID` when the build pack is
 not `dockercompose` or the compose parsing version is 1 or 2 (ctr-beta is `dockercompose` at
-version 5), and `SOURCE_COMMIT` only when `application_settings.include_source_commit_in_build`
-is on (it is off).
+version 5). `SOURCE_COMMIT` is emitted only when
+`application_settings.include_source_commit_in_build` is on, and it **must** be on — see
+[Release SHA verification](#release-sha-verification) for why the checkout cannot supply it.
 
 ### Database target verification
 
@@ -107,16 +108,42 @@ an identity already proven — any CTR stack would answer `cybertown`, so it is 
 
 ### Release SHA verification
 
-The release identity is always `git rev-parse HEAD` — computed, never supplied.
+**There is no git repository in the build directory.** `deploy_docker_compose_buildpack()`
+calls `cleanup_git()` at `ApplicationDeploymentJob.php:663`, which runs
+`rm -fr {basedir}/.git`, and only then reaches the Custom Build Command at line 715. An
+earlier version of the preflight opened with `git rev-parse HEAD` and could never have
+passed; deployment `cf2a0130-8306-4920-9751-43ec9efae08d` on 2026-09-12 proved it live,
+failing on that line while the old release kept serving.
 
-`SOURCE_COMMIT` is a claim about that checkout, not a substitute for it. If it is set, it must
-resolve to the same commit as `HEAD`, or the release stops before the build. Unset or empty is
-absent rather than a mismatch, which is the normal case here.
+The release sha now comes from `SOURCE_COMMIT` in `/artifacts/build-time.env`, which
+`save_buildtime_environment_variables()` writes at line 713 — the step immediately before the
+preflight. **This requires `Include SOURCE_COMMIT in build` to be ON for the ctr-beta
+application**; with it off the value is absent and the preflight fails closed with a message
+saying so. The shell environment is not a second source: the custom-build branch does not
+prepend `$coolify_variables`, and the helper container is only restarted with the resolved
+commit when `use_build_secrets` is on. `SOURCE_COMMIT` from the environment is honoured as an
+override so the script can be run by hand outside Coolify.
 
-The checkout must also descend from the CTR root commit
-`30fd2c250cd1f7154c2c3df03ec23fb47a19e1f4`, so a different repository shipping a file at this
-path cannot migrate beta. The root commit is immutable and needs no remote, so the check holds
-on a detached or shallow checkout and cannot be satisfied by repointing `origin`.
+The value must be forty lowercase hex characters. Coolify writes the literal `HEAD` or
+`unknown` before it resolves the branch, and both are refused rather than tagged onto an image
+as a release.
+
+This is weaker than what it replaces, and deliberately so rather than by oversight. The sha
+used to be computed from the working tree with `SOURCE_COMMIT` checked against it; now it is
+Coolify's word. It is used for log lines and for tagging the migration image — no gate that
+decides whether a database may be migrated depends on it.
+
+Repository identity is proven by the presence of CTR's first migration,
+`api/db/migrations/20220521061146_init_schema.ts`, instead of the root commit
+`30fd2c250cd1f7154c2c3df03ec23fb47a19e1f4`, which needed git. The filename is effectively
+immutable: knex records applied migrations by name, so every existing CTR database holds that
+exact string and renaming it would re-run `init_schema` against a populated database. It is a
+path rather than a hash, so a hostile repository could create it — it is a cheap early filter,
+not the last line of defence. A checkout that passes it still has to match the application
+labels, resolve to exactly one database container under that identity, share exactly one
+network with it, and agree with `MYSQL_DATABASE` before any migration runs.
+
+`docker/beta/release-preflight.test.sh` covers both gates with no Docker and no database.
 
 ### Wrong-project failure behavior
 

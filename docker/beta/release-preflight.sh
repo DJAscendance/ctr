@@ -61,10 +61,12 @@
 # The expected values are declared by the deployment command and compared with what Docker
 # reports. Coolify does not export them: generate_coolify_env_variables() only emits
 # COOLIFY_RESOURCE_UUID when the build pack is not `dockercompose` or the compose parsing
-# version is 1 or 2 (ctr-beta is dockercompose at version 5), and SOURCE_COMMIT only when
-# application_settings.include_source_commit_in_build is on (it is off). So the command
-# states the identity and this script proves it -- rather than trusting a name Coolify never
-# actually passes. See docs/beta-deployment.md for the exact command.
+# version is 1 or 2 (ctr-beta is dockercompose at version 5). So the command states the
+# identity and this script proves it -- rather than trusting a name Coolify never actually
+# passes. SOURCE_COMMIT is the one value that must come from Coolify, because the checkout
+# has no .git by the time this runs; see the release identity block below. It requires
+# application_settings.include_source_commit_in_build to be ON. See docs/beta-deployment.md
+# for the exact command.
 #
 # What this script may do is deliberately narrow:
 #   * prove the identity of the target application, the release checkout and the database.
@@ -90,37 +92,71 @@ fail() { echo "preflight: $*" >&2; exit 1; }
 # migrated, and every one of them exits non-zero rather than falling back to a guess.
 
 # --- release identity -------------------------------------------------------------
-# The commit that is actually checked out, always computed, never supplied. A release is
-# whatever is in the working tree; anything that disagrees with it is a claim, not a fact.
-CHECKOUT_SHA="$(git rev-parse HEAD 2>/dev/null)" \
-  || fail "cannot read the release checkout (git rev-parse HEAD failed in $PWD)."
+# THERE IS NO GIT REPOSITORY HERE. Coolify deletes it: deploy_docker_compose_buildpack()
+# calls cleanup_git() at ApplicationDeploymentJob.php:663, which runs `rm -fr {basedir}/.git`,
+# fifty lines before it runs this script at line 715. `git rev-parse HEAD` cannot work in
+# this directory and never will on this Coolify version -- it is not a misconfiguration to
+# fix, it is the shape of the build step. Proven live on 2026-09-12 by deployment
+# cf2a0130-8306-4920-9751-43ec9efae08d, which died on the first gate of the previous version
+# of this block while the old release kept serving.
+#
+# The release sha therefore comes from Coolify, the only party here that still knows it.
+# save_buildtime_environment_variables() writes the build-time environment to
+# /artifacts/build-time.env at line 713 -- the step immediately before this one -- and that
+# file carries SOURCE_COMMIT when application_settings.include_source_commit_in_build is on.
+# The shell environment is NOT a second source: the custom-build branch at 715 does not
+# prepend $coolify_variables (only the default branch at 758 does), and the helper container
+# is restarted with the resolved commit only when use_build_secrets is on. So the file is
+# read directly, and SOURCE_COMMIT from the environment is accepted only as an override for
+# running this script outside Coolify.
+#
+# This is a real reduction in strength and it is recorded as one. The old block computed the
+# sha from the working tree and used SOURCE_COMMIT only as a claim to check against it.
+# Nothing in this directory can do that any more, so the sha is now Coolify's word for it.
+# It is used for logging and for tagging the migration image; no identity gate below depends
+# on it. The gates that decide whether a database may be migrated are the application,
+# network and schema proofs, and every one of those is still measured here, not supplied.
+BUILD_TIME_ENV="${CTR_BETA_BUILD_TIME_ENV:-/artifacts/build-time.env}"
 
-# SOURCE_COMMIT is Coolify's claim about which commit it deployed. It used to be allowed to
-# REPLACE the checkout sha, which meant a release could be labelled, tagged and recorded as a
-# commit it was not built from. It is now only ever a claim to be checked: present and equal
-# is fine, present and different stops the release. Empty or unset is absent, not a
-# mismatch -- ctr-beta has include_source_commit_in_build off, so Coolify genuinely does not
-# pass one at build time.
-if [ -n "${SOURCE_COMMIT:-}" ]; then
-  claimed_sha="$(git rev-parse --verify --quiet "${SOURCE_COMMIT}^{commit}" || true)"
-  if [ -z "$claimed_sha" ]; then
-    fail "SOURCE_COMMIT=${SOURCE_COMMIT} does not resolve to a commit in this checkout."
-  fi
-  if [ "$claimed_sha" != "$CHECKOUT_SHA" ]; then
-    fail "SOURCE_COMMIT resolves to ${claimed_sha} but the checkout is at ${CHECKOUT_SHA}."
-  fi
-  log "SOURCE_COMMIT agrees with the checkout"
+release_sha="${SOURCE_COMMIT:-}"
+if [ -z "$release_sha" ] && [ -r "$BUILD_TIME_ENV" ]; then
+  # Last assignment wins, surrounding quotes stripped: the file is KEY=value per line as
+  # Coolify's base64 blob decodes, and a later duplicate is the one a reader would honour.
+  release_sha="$(sed -n 's/^SOURCE_COMMIT=//p' "$BUILD_TIME_ENV" | tail -n 1 | tr -d "\"'")"
 fi
-RELEASE_SHA="$CHECKOUT_SHA"
+if [ -z "$release_sha" ]; then
+  fail "no release sha: SOURCE_COMMIT is unset and ${BUILD_TIME_ENV} does not carry it.
+ Turn on 'Include SOURCE_COMMIT in build' for the ctr-beta application in Coolify."
+fi
+# Forty lowercase hex characters or nothing. Coolify writes the literal 'HEAD' or 'unknown'
+# when it has not resolved the commit, and neither may be tagged onto an image as a release.
+case "$release_sha" in
+  *[!0-9a-f]*) fail "SOURCE_COMMIT=${release_sha} is not a hex commit sha." ;;
+esac
+[ "${#release_sha}" -eq 40 ] \
+  || fail "SOURCE_COMMIT=${release_sha} is not a full 40-character commit sha."
+RELEASE_SHA="$release_sha"
+log "release sha ${RELEASE_SHA}, from the Coolify build-time environment"
 
 # --- repository identity ----------------------------------------------------------
-# A different repository with a file at this path must not be able to migrate beta. The proof
-# is the root commit: it is immutable, it is unique to this history, and reading it needs no
-# remote -- so it still holds on a detached, shallow-fetched or renamed checkout, and cannot
-# be satisfied by pointing `origin` somewhere.
-CTR_ROOT_COMMIT="${CTR_ROOT_COMMIT:-30fd2c250cd1f7154c2c3df03ec23fb47a19e1f4}"
-git merge-base --is-ancestor "$CTR_ROOT_COMMIT" HEAD 2>/dev/null \
-  || fail "this checkout does not descend from the CTR root commit ${CTR_ROOT_COMMIT};
+# A different repository with a file at this path must not be able to migrate beta. The root
+# commit was the old proof and it needed git, which is gone for the reason above. The
+# replacement is the repository's own first migration. Its name is as fixed as a commit id,
+# and for a stronger reason than convention: knex records applied migrations by filename, so
+# every existing CTR database -- beta's included -- holds this exact string in its
+# `migrations` table. Renaming it in the repository would make knex treat it as a new
+# migration and re-run init_schema against a populated database, so it cannot be changed. It
+# is specific to this history, and unlike the root commit it is readable from the working
+# tree alone.
+#
+# It is a weaker proof than the root commit: it is a path, and a hostile repository that set
+# out to satisfy it could create that path. It is not the last line of defence -- a checkout
+# that passes here still has to match the application labels, resolve to exactly one database
+# container under that identity, share exactly one network with it, and agree with
+# MYSQL_DATABASE, before a single migration runs.
+CTR_ROOT_MIGRATION="${CTR_ROOT_MIGRATION:-api/db/migrations/20220521061146_init_schema.ts}"
+[ -f "$CTR_ROOT_MIGRATION" ] \
+  || fail "this checkout has no ${CTR_ROOT_MIGRATION}, so it is not a CTR repository;
  refusing to migrate beta."
 
 # --- application identity ---------------------------------------------------------
