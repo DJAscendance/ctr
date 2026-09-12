@@ -62,8 +62,6 @@ import {
   outlandsTeamOfAvatar,
   blaxxunAvatarNameFor,
   blaxxunAvatarURLFor,
-  avatarToRestoreAfterOutlands,
-  forgetAvatarBeforeOutlands,
 } from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
@@ -255,55 +253,22 @@ export default Vue.extend({
       }
     },
     /*
-     * Puts back the avatar the Outlands entrance replaced.
+     * Takes the Outlands gameplay avatar back off.
      *
-     * Nothing happens unless the entrance actually left a note, so an ordinary
-     * member joining an ordinary place pays nothing for this. A failed restore
-     * is not worth interrupting a world load for - the member simply keeps the
-     * avatar they are wearing - but the note is dropped either way, so a
-     * broken avatar row cannot make every future place join retry forever.
+     * Wearing a side never changed anything: no server write, no new token, and
+     * nothing in localStorage. So leaving is dropping one piece of tab-local
+     * state, and it is done BEFORE the ordinary place is joined or rendered -
+     * there is no frame of a normal world in which a system avatar is the
+     * citizen's identity, and no later `/member/session` is relied on to repair
+     * anything.
      */
-    async restoreAvatarAfterOutlands(generation: number): Promise<void> {
-      const wanted = avatarToRestoreAfterOutlands();
-      if (!wanted) return;
-      if (!this.$store.data.isUser) return;
-      /*
-       * Already back in their own clothes: drop the note and move on. The
-       * store types the avatar id as a string because it arrives inside the
-       * member's token, so the comparison is made on numbers.
-       */
-      if (this.$store.data.user.avatar && Number(this.$store.data.user.avatar.id) === wanted) {
-        forgetAvatarBeforeOutlands();
-        return;
-      }
-      try {
-        const response = await this.$http.post("/member/update_avatar", { avatarId: wanted });
-        if (generation !== this.loadGeneration) return;
-        const list = await this.$http.get("/avatar");
-        if (generation !== this.loadGeneration) return;
-        const restored = (list.data.avatars || []).find(a => a.id === wanted);
-        /*
-         * The token carries the avatar row but nothing decodes it back into
-         * the store, so the fields the world reads are written here - the same
-         * thing the entrance does on the way in.
-         */
-        this.$store.methods.setToken(response.data.token);
-        if (restored) {
-          // The store's avatar type declares only what the token carries; the
-          // API row also carries `directory` and `image`, which the world and
-          // the avatar picker both read. Same cast as applyAvatarIdentity.
-          const worn: any = this.$store.data.user.avatar;
-          worn.id = restored.id;
-          worn.name = restored.name;
-          worn.filename = restored.filename;
-          worn.directory = restored.directory;
-          worn.image = restored.image;
-        }
-      } catch (e) {
-        this.debugMsg("could not restore the avatar worn before Outlands");
-      } finally {
-        forgetAvatarBeforeOutlands();
-      }
+    clearOutlandsAvatar(): void {
+      if (this.$store.data.outlandsAvatar) this.$store.methods.setOutlandsAvatar(null);
+    },
+    /** The entrance has validated a side. Wear it for this visit and load the world. */
+    async wearOutlandsAvatarAndJoin(avatar: any): Promise<void> {
+      this.$store.methods.setOutlandsAvatar(avatar);
+      await this.loadAndJoinPlace();
     },
     async loadAndJoinPlace(): Promise<void> {
       // Bumped once per call, so a load superseded by a later one (rapid
@@ -339,7 +304,7 @@ export default Vue.extend({
        */
       this.outlandsTeamNeeded = false;
       if (isOutlands(this.$store.data.place)) {
-        if (!outlandsTeamOfAvatar(this.$store.data.user && this.$store.data.user.avatar)) {
+        if (!outlandsTeamOfAvatar(this.$store.data.outlandsAvatar)) {
           this.outlandsTeamNeeded = true;
           this.force2d = true;
         } else if (!this.$store.data.view3d) {
@@ -357,15 +322,14 @@ export default Vue.extend({
         }
       } else {
         /*
-         * Anywhere that is not Outlands, the citizen gets their own avatar
-         * back. The entrance dressed them for a side because in Outlands the
-         * avatar file is what carries the side; outside it, a member should
-         * not be left in uniform. Done on the join rather than on the way out,
-         * because leaving is very often a page load and there is no reliable
-         * moment of departure to hang it on.
+         * Anywhere that is not Outlands the uniform comes off. The entrance
+         * dressed them for a side because in Outlands the avatar file is what
+         * carries the side; outside it, a member must not be left in one. Done
+         * on the join rather than on the way out, because leaving is very often
+         * a page load and there is no reliable moment of departure to hang it
+         * on - and a page load starts with no gameplay avatar at all.
          */
-        await this.restoreAvatarAfterOutlands(generation);
-        if (this.loadGeneration !== generation) return;
+        this.clearOutlandsAvatar();
       }
 
       if(this.$route.params.username){
@@ -471,7 +435,19 @@ export default Vue.extend({
       }
     },
     async joinPlace(): Promise<void> {
-      await this.$socket.joinRoom(this.$store.data.place.id, this.$store.data.user.token);
+      /*
+       * The normal authentication token, unchanged - taking a side does not mint
+       * a token and does not touch this one. The gameplay avatar travels beside
+       * it as an id the socket server validates against the database for itself,
+       * so other citizens in the battle see the side without the token ever
+       * carrying it.
+       */
+      const outlandsAvatar = this.$store.data.outlandsAvatar;
+      await this.$socket.joinRoom(
+        this.$store.data.place.id,
+        this.$store.data.user.token,
+        outlandsAvatar ? outlandsAvatar.id : null,
+      );
       this.debugMsg("joined room success", this.$store.data.place.id);
     },
     /** Announces our own current viewpoint once X_ITE has one to report. Also
@@ -1517,10 +1493,17 @@ export default Vue.extend({
         if (!X3D.bxx || typeof X3D.bxx.setIdentityProvider !== "function") return;
         X3D.bxx.setIdentityProvider(() => {
           const user = this.$store.data.user;
-          // The store's avatar type does not declare `directory`, but the row the
-          // API returns carries it - the same field the remote-citizen render path
-          // destructures off a presence avatar.
-          const avatar: any = user && user.avatar;
+          /*
+           * Inside Outlands the citizen is playing as a team avatar, so that is
+           * what the world is told. It is read here and nowhere else: the store's
+           * `user.avatar` is still their own the whole time, which is what every
+           * other place, the avatar picker and the API all keep seeing.
+           *
+           * The store's avatar type does not declare `directory`, but the row the
+           * API returns carries it - the same field the remote-citizen render path
+           * destructures off a presence avatar.
+           */
+          const avatar: any = this.$store.data.outlandsAvatar || (user && user.avatar);
           if (!avatar || !avatar.directory || !avatar.filename) return {};
           return {
             /*
@@ -1672,7 +1655,7 @@ export default Vue.extend({
   mounted() {
     this.startSocketListeners();
     /* The entrance screen wears the side and then asks for the world. */
-    this.$root.$on("outlands-team-selected", this.loadAndJoinPlace);
+    this.$root.$on("outlands-team-selected", this.wearOutlandsAvatarAndJoin);
     // WorldBrowserPage is a v-show singleton (mounted once for the app's
     // lifetime), so this single subscription can't accumulate. On a
     // reconnect-driven resync, re-announce our current viewpoint so a
@@ -1683,7 +1666,7 @@ export default Vue.extend({
     });
   },
   beforeDestroy() {
-    this.$root.$off("outlands-team-selected", this.loadAndJoinPlace);
+    this.$root.$off("outlands-team-selected", this.wearOutlandsAvatarAndJoin);
   },
   async beforeCreate() {
     await this.$socket.start();

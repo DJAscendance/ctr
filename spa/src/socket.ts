@@ -122,16 +122,21 @@ class SocketManager {
    * a newer room / cleared.
    * @param roomId id of room to join
    * @param userToken user's unique token
+   * @param outlandsAvatarId id of the Outlands gameplay avatar being played with, or null
    * @returns promise resolved once the server confirms the (possibly retried) join
    */
-  public joinRoom(roomId: string|number, userToken: string): Promise<void> {
+  public joinRoom(
+    roomId: string|number,
+    userToken: string,
+    outlandsAvatarId: number | null = null,
+  ): Promise<void> {
     // The coordinator only exists once start() has run. leaveRoom, roomReady,
     // lifecyclePhase, pendingJoinId, currentRoom and sendAv all guard this already; joining
     // and onLifecycle were the two that would throw on a call made before start.
     if (!this.coordinator) {
       return Promise.reject(new Error("socket not started - call start() before joinRoom"));
     }
-    return this.coordinator.requestRoom(roomId, userToken);
+    return this.coordinator.requestRoom(roomId, userToken, outlandsAvatarId);
   }
 
   /**

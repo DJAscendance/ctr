@@ -54,6 +54,7 @@ export function joinRoomOverSocket(
   presenceId: string,
   joinId: string,
   timeoutMs: number = DEFAULT_JOIN_TIMEOUT_MS,
+  outlandsAvatarId: number | null = null,
 ): JoinHandle {
   let settled = false;
   let resolveFn: () => void = () => undefined;
@@ -108,7 +109,13 @@ export function joinRoomOverSocket(
 
   socket.on("ROOM_STATE", onRoomState);
   socket.on("JOIN:error", onError);
-  socket.emit("JOIN", { room: roomId, token, presenceId, joinId });
+  /*
+   * `outlandsAvatarId` is a gameplay request, not an identity claim: the server
+   * validates the id against the database and ignores it outside Outlands. The
+   * token is the ordinary authentication token in every case - a side is never
+   * carried by it. See @/libs/outlands.
+   */
+  socket.emit("JOIN", { room: roomId, token, presenceId, joinId, outlandsAvatarId });
 
   return { promise, cancel };
 }

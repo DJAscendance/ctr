@@ -77,6 +77,106 @@ async function getChatAccessStatus(room) {
   return entry;
 }
 
+/*
+ * The Outlands gameplay avatar, checked against the database before anybody is
+ * told about it.
+ *
+ * Outlands decides a citizen's side from the avatar file they are wearing, so
+ * the side has to reach the other clients in the room. It must NOT reach them
+ * by way of the citizen's authentication token: that token is their identity,
+ * it is what localStorage holds, and it is the same token in every other place.
+ * So the client asks for a side by id, and this is where the id is turned into
+ * an avatar - by the API, off the `avatar` table, exactly as the entrance did.
+ *
+ * A client may therefore lie about which of the four it wants and about nothing
+ * else. It cannot name a private avatar, another member's avatar, the Game
+ * Master's, or a row that does not exist, and it cannot wear one anywhere but
+ * Outlands. That keeps the invariant the JOIN handler already had: a presence's
+ * appearance is never taken from client-supplied data.
+ */
+/** How long the Outlands team rows and the Outlands place id are cached. */
+const OUTLANDS_CACHE_MS = 60000;
+let OUTLANDS_PLACE = null;
+let OUTLANDS_AVATARS = null;
+
+/** The place id Outlands is served under, or null when it cannot be read. */
+async function getOutlandsPlaceId() {
+  if (OUTLANDS_PLACE && Date.now() - OUTLANDS_PLACE.fetchedAt < OUTLANDS_CACHE_MS) {
+    return OUTLANDS_PLACE.id;
+  }
+  let id = null;
+  try {
+    const response = await axios.get(`${API_URL}/place/outlands`);
+    id = response.data && response.data.place ? response.data.place.id : null;
+  } catch (err) {
+    console.error("Failed to fetch the Outlands place:", err.message);
+    return OUTLANDS_PLACE ? OUTLANDS_PLACE.id : null;
+  }
+  OUTLANDS_PLACE = { id, fetchedAt: Date.now() };
+  return id;
+}
+
+/** The four playable team rows, as the API serves them to a citizen. */
+async function getOutlandsTeamAvatars(apitoken) {
+  if (OUTLANDS_AVATARS && Date.now() - OUTLANDS_AVATARS.fetchedAt < OUTLANDS_CACHE_MS) {
+    return OUTLANDS_AVATARS.avatars;
+  }
+  let avatars = null;
+  try {
+    const response = await axios.get(`${API_URL}/avatar/outlands`, { headers: { apitoken } });
+    avatars = response.data ? response.data.avatars : null;
+  } catch (err) {
+    console.error("Failed to fetch the Outlands team avatars:", err.message);
+    return OUTLANDS_AVATARS ? OUTLANDS_AVATARS.avatars : null;
+  }
+  if (!Array.isArray(avatars)) return null;
+  OUTLANDS_AVATARS = { avatars, fetchedAt: Date.now() };
+  return avatars;
+}
+
+/*
+ * Whether a value a client put in a JOIN payload is usable as a row id.
+ *
+ * A socket payload is structured data, so the type the client chose arrives
+ * intact and is evidence. Coercing it away is what let a malformed value in:
+ * `Number([13])` is `13` and `Number("13")` is `13`, so the comparison this
+ * guard replaces answered an ARRAY with a real Outlands team avatar. Only a
+ * primitive number that is a safe integer above zero is an id here; an array,
+ * an object, a numeric string, a boolean, a fraction and a magnitude past
+ * 2^53 - 1 are all refused as they arrived, with no second guess at what the
+ * client meant. `Number.isSafeInteger` covers NaN, both infinities, fractions
+ * and unsafe magnitudes on its own, and accepts `13.0`, which IS `13`.
+ *
+ * The API keeps the same rule for its own HTTP boundary in
+ * `api/src/libs/client-id.ts`, named `isClientId` there too. The two servers
+ * are separate packages and cannot share a module, so they share a name and a
+ * test table instead. Change one and change the other.
+ */
+function isClientId(raw) {
+  return typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0;
+}
+
+/*
+ * The avatar a presence in `room` should be shown with.
+ *
+ * Fails CLOSED, in both directions: an id that is not one of the four playable
+ * rows, a room that is not Outlands, or an API that cannot be reached all give
+ * back the citizen's own avatar out of their verified token. A member is never
+ * left invisible and never silently dressed as something the database did not
+ * hand over.
+ */
+async function resolvePresenceAvatar(tokenData, room, outlandsAvatarId, apitoken) {
+  // Covers "no override asked for" (null / undefined / absent) and "the override
+  // is not an id at all" with one answer: the citizen's own verified avatar.
+  if (!isClientId(outlandsAvatarId)) return tokenData.avatar;
+  const outlandsPlaceId = await getOutlandsPlaceId();
+  if (outlandsPlaceId === null || `${outlandsPlaceId}` !== `${room}`) return tokenData.avatar;
+  const avatars = await getOutlandsTeamAvatars(apitoken);
+  if (!avatars) return tokenData.avatar;
+  const chosen = avatars.find(avatar => avatar.id === outlandsAvatarId);
+  return chosen || tokenData.avatar;
+}
+
 function webhookMessage(from, message) {
   return;
   if (!process.env.CHAT_WEBHOOK_URL) return;
@@ -271,7 +371,17 @@ io.on("connection", async function(socket) {
 
     const isNewPresence = !PRESENCE.has(key);
 
-    user.avatar = tokenData.avatar;
+    /*
+     * Identity still comes only from the verified token. The one thing a client
+     * may ask to change is the avatar it is PLAYING as, and only inside
+     * Outlands - resolvePresenceAvatar validates that against the database and
+     * falls back to the token's own avatar for anything else.
+     */
+    const avatar = await resolvePresenceAvatar(
+      tokenData, room, data.outlandsAvatarId, data.token,
+    );
+
+    user.avatar = avatar;
     user.room = room;
     user.username = tokenData.username;
     user.presenceKey = key;
@@ -281,7 +391,7 @@ io.on("connection", async function(socket) {
       presenceId,
       socketId: socket.id, // transport metadata - rebinds to the current socket
       username: tokenData.username,
-      avatar: tokenData.avatar,
+      avatar,
       pos,
       rot,
       room,
@@ -304,7 +414,7 @@ io.on("connection", async function(socket) {
         room,
         memberId,
         presenceId,
-        avatar: tokenData.avatar,
+        avatar,
         username: tokenData.username,
       });
     }

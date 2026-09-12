@@ -789,7 +789,19 @@ export class MemberService {
    * error
    */
   public async updateAvatar(memberId: number, avatarId: number): Promise<void> {
-    const avatar = await this.avatarRepository.getByIdAndMemberId(
+    /*
+     * `getByIdAndMemberId` answers with a LIST, and an empty list is not
+     * `undefined`. The guard this replaces tested the list itself, so it was
+     * never true and every id this query refused was written anyway: another
+     * citizen's private avatar, a rejected upload, and -- once the Outlands
+     * rows became system avatars -- any of them. Only a foreign key violation
+     * stopped a completely made-up id.
+     *
+     * This is the one place a citizen's persistent avatar is written, so the
+     * query's answer is honoured here and the restriction holds for every
+     * caller: the avatar picker, a hand-made request, and anything added later.
+     */
+    const [avatar] = await this.avatarRepository.getByIdAndMemberId(
       avatarId,
       memberId,
     );

@@ -71,6 +71,7 @@ test("initial join emits a correlated JOIN, resolves the caller, and reports rea
   const p = track(s.coord.requestRoom("room-A", "token"));
   assert.deepStrictEqual(s.lastJoin(), {
     room: "room-A", token: "token", presenceId: "pres-1", joinId: "jid-1",
+    outlandsAvatarId: null,
   });
   assert.strictEqual(s.coord.roomReady, false); // not ready until confirmed
 

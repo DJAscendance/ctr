@@ -214,6 +214,8 @@ describe("joinRoomOverSocket (correlated JOIN)", () => {
 
     assert.deepStrictEqual(lastJoin(), {
       room: "room-1", token: "token", presenceId: "presence-1", joinId: "join-1",
+      // No side asked for: an ordinary place JOIN carries no gameplay avatar.
+      outlandsAvatarId: null,
     });
 
     emitter.emit("ROOM_STATE", { room: "room-1", joinId: "join-1", presences: [] });

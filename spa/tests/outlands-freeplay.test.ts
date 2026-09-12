@@ -38,9 +38,6 @@ import {
   outlandsEntranceActive,
   blaxxunAvatarURLFor,
   blaxxunAvatarNameFor,
-  rememberAvatarBeforeOutlands,
-  avatarToRestoreAfterOutlands,
-  forgetAvatarBeforeOutlands,
 } from "../src/libs/outlands";
 import { PresenceStore, presenceKey } from "../src/presence";
 import { RemoteMemberRegistry } from "../src/remote-members";
@@ -111,29 +108,13 @@ test("an ordinary avatar is on no side, and neither is the Game Master's", () =>
 test("the entrance stands in front of Outlands only, and only until a side is worn", () => {
   assert.strictEqual(isOutlands(OUTLANDS_PLACE), true);
   assert.strictEqual(isOutlands(PLAZA), false);
+  // The question is asked of the tab-local gameplay avatar, never of the
+  // citizen's own: taking a side does not change who they are.
+  assert.strictEqual(outlandsEntranceActive(OUTLANDS_PLACE, null), true);
   assert.strictEqual(
-    outlandsEntranceActive(OUTLANDS_PLACE, { avatar: { filename: "default.wrl" } }), true,
+    outlandsEntranceActive(OUTLANDS_PLACE, { filename: "redm.wrl" }), false,
   );
-  assert.strictEqual(
-    outlandsEntranceActive(OUTLANDS_PLACE, { avatar: { filename: "redm.wrl" } }), false,
-  );
-  assert.strictEqual(
-    outlandsEntranceActive(PLAZA, { avatar: { filename: "default.wrl" } }), false,
-  );
-});
-
-test("the avatar worn before Outlands is remembered once and given back once", () => {
-  forgetAvatarBeforeOutlands();
-  rememberAvatarBeforeOutlands({ id: 7, filename: "jaz.wrl" });
-  assert.strictEqual(avatarToRestoreAfterOutlands(), 7);
-  // Switching sides must not overwrite the note with a team avatar.
-  rememberAvatarBeforeOutlands({ id: 16, filename: "redm.wrl" });
-  assert.strictEqual(avatarToRestoreAfterOutlands(), 7);
-  forgetAvatarBeforeOutlands();
-  assert.strictEqual(avatarToRestoreAfterOutlands(), 0);
-  // A citizen who arrived already in uniform leaves no note at all.
-  rememberAvatarBeforeOutlands({ id: 16, filename: "redm.wrl" });
-  assert.strictEqual(avatarToRestoreAfterOutlands(), 0);
+  assert.strictEqual(outlandsEntranceActive(PLAZA, null), false);
 });
 
 /* -------------------------------------------------------------------------
@@ -447,7 +428,11 @@ console.log("\nOutlands free-play - what the outgoing world gives back");
 
 const read = (p: string) => fs.readFileSync(path.join(SPA, p), "utf8");
 const PAGE = read("src/pages/world-browser/WorldBrowserPage.vue");
+const ENTRANCE = read("src/components/place/outlands/entrance.vue");
 const EVENTS = read("src/libs/x_ite_mods/bxx_events.js");
+const LIB = read("src/libs/outlands.ts");
+const STORE = read("src/appStore.ts");
+const SERVER = read("server.js");
 
 test("the browser hands back the event mask and the event routes on request", () => {
   assert.ok(/b\.releaseBlaxxunWorldState = function \(\)/.test(EVENTS));
@@ -483,8 +468,10 @@ test("leaving 3D altogether also releases it, before the world is replaced", () 
 });
 
 test("the entrance listener is taken off again when the page goes away", () => {
-  assert.ok(/\$root\.\$on\("outlands-team-selected", this\.loadAndJoinPlace\)/.test(PAGE));
-  assert.ok(/\$root\.\$off\("outlands-team-selected", this\.loadAndJoinPlace\)/.test(PAGE));
+  assert.ok(/\$root\.\$on\("outlands-team-selected", this\.wearOutlandsAvatarAndJoin\)/.test(PAGE));
+  assert.ok(
+    /\$root\.\$off\("outlands-team-selected", this\.wearOutlandsAvatarAndJoin\)/.test(PAGE),
+  );
 });
 
 test("the remote node still wears the presence key, never the username", () => {
@@ -492,11 +479,85 @@ test("the remote node still wears the presence key, never the username", () => {
   assert.strictEqual(/registerBlaxxunAvatar\([^)]*username/.test(PAGE), false);
 });
 
-test("a citizen leaving Outlands is given their own avatar back", () => {
-  assert.ok(/await this\.restoreAvatarAfterOutlands\(generation\);/.test(PAGE));
+test("the entrance reads the Outlands route, never the ordinary avatar library", () => {
+  assert.ok(/\$http\.get\("\/avatar\/outlands"\)/.test(ENTRANCE),
+    "the entrance no longer reads the Outlands-only avatar route");
+  assert.strictEqual(/\$http\.get\("\/avatar"\)/.test(ENTRANCE), false,
+    "the entrance is reading the ordinary avatar library again");
+});
+
+test("choosing a side never touches the persistent avatar-change path", () => {
+  assert.ok(/\$http\.post\("\/avatar\/outlands"/.test(ENTRANCE),
+    "the entrance no longer wears a side through the Outlands route");
+  assert.strictEqual(/update_avatar/.test(ENTRANCE), false,
+    "the entrance is writing the citizen's permanent avatar again");
+});
+
+test("wearing a side never replaces the citizen's authentication token", () => {
+  assert.strictEqual(/setToken/.test(ENTRANCE), false,
+    "the entrance is writing the authentication token again");
+  assert.strictEqual(/response\.data\.token/.test(ENTRANCE), false,
+    "the entrance is reading a token back out of the Outlands response");
+  assert.ok(/\$root\.\$emit\("outlands-team-selected", response\.data\.avatar\)/.test(ENTRANCE),
+    "the entrance no longer hands the validated gameplay row to the page");
+});
+
+test("the side lives in tab-local state, never in durable browser storage", () => {
+  assert.strictEqual(/localStorage\.\w/.test(ENTRANCE), false,
+    "the entrance is touching browser storage again");
+  assert.strictEqual(/outlandsPreviousSelf/.test(ENTRANCE + PAGE + LIB), false,
+    "the token-backup key is back");
+  // The store's holder is in memory only: the only localStorage write in the
+  // store is setToken's, and nothing merges the gameplay avatar into `user`.
+  const setter = new RegExp(
+    "setOutlandsAvatar\\(avatar: OutlandsAvatar \\| null\\): void \\{"
+    + "\\s+appStore\\.data\\.outlandsAvatar = avatar;\\s+\\}",
+  );
+  assert.ok(setter.test(STORE),
+    "the store no longer keeps the gameplay avatar in memory alone");
+  const durable = /outlandsAvatar[^\n]*localStorage|localStorage[^\n]*outlandsAvatar/;
+  assert.strictEqual(durable.test(STORE), false,
+    "the gameplay avatar reached localStorage");
+});
+
+test("the world is told the side; every other consumer still sees the citizen's own avatar", () => {
+  assert.ok(/const avatar: any = this\.\$store\.data\.outlandsAvatar \|\| \(user && user\.avatar\)/
+    .test(PAGE), "the identity provider no longer prefers the gameplay avatar");
+  // The side reaches other clients as an id the socket server validates, never
+  // as an avatar claim inside the authentication token.
+  assert.ok(/outlandsAvatar \? outlandsAvatar\.id : null/.test(PAGE),
+    "JOIN no longer carries the gameplay avatar id");
+  assert.ok(/joinRoom\(\n\s+this\.\$store\.data\.place\.id,\n\s+this\.\$store\.data\.user\.token,/
+    .test(PAGE), "JOIN no longer uses the citizen's own token");
+});
+
+test("the uniform comes off before any ordinary place is joined", () => {
   const branch = PAGE.slice(PAGE.indexOf("if (isOutlands(this.$store.data.place))"));
-  assert.ok(branch.indexOf("restoreAvatarAfterOutlands") > branch.indexOf("} else {"),
-    "the restore is not on the not-Outlands branch");
+  const elseAt = branch.indexOf("} else {");
+  assert.ok(branch.indexOf("this.clearOutlandsAvatar();") > elseAt,
+    "the clear is not on the not-Outlands branch");
+  // Sequence B: nothing waits on a later /member/session to put the citizen
+  // back in their own avatar - the clear is synchronous and local.
+  assert.strictEqual(/\$http[^\n]*member\/session/.test(PAGE), false,
+    "the page is relying on a session refresh to repair the avatar");
+  const clear = PAGE.slice(PAGE.indexOf("clearOutlandsAvatar(): void {"));
+  assert.strictEqual(/\$http|await/.test(clear.slice(0, clear.indexOf("},"))), false,
+    "taking the uniform off now asks the server for something");
+});
+
+test("the socket server validates a requested side against the database", () => {
+  assert.ok(/async function resolvePresenceAvatar\(/.test(SERVER),
+    "the socket server no longer resolves the gameplay avatar itself");
+  assert.ok(/const avatar = await resolvePresenceAvatar\(/.test(SERVER),
+    "the presence avatar is no longer the resolved one");
+  // A room that is not Outlands, and an id the API did not hand over, both fall
+  // back to the avatar in the verified token.
+  assert.ok(/\$\{API_URL\}\/avatar\/outlands/.test(SERVER),
+    "the socket server no longer asks the API which rows are playable");
+  assert.ok(/`\$\{outlandsPlaceId\}` !== `\$\{room\}`\) return tokenData\.avatar/.test(SERVER),
+    "a side is no longer refused outside Outlands");
+  assert.ok(/return chosen \|\| tokenData\.avatar/.test(SERVER),
+    "an unvalidated id no longer falls back to the citizen's own avatar");
 });
 
 /* -------------------------------------------------------------------------
@@ -521,6 +582,15 @@ const OUTLANDS_AVATAR_DIRS: { [file: string]: string } = {
 };
 const RECOVERED = "assets/worlds/ne_game/vrml/avatars";
 const SEED = read("../api/db/seed/14-avatars.outlands.seed.ts");
+/*
+ * The five rows themselves live beside the seeds rather than inside one,
+ * because two callers write them: the seed, which fills a fresh install, and
+ * 20260911190000_sync_outlands_avatars, which fills a Beta database that was
+ * deployed before the seed existed. A deployment runs migrations and not seeds,
+ * so both paths exist and neither may hold its own copy of these ids.
+ */
+const AVATAR_DATA = read("../api/db/seed_data/outlands_avatars.ts");
+const AVATAR_SYNC = read("../api/db/migrations/20260911190000_sync_outlands_avatars.ts");
 
 test("all five historical avatars are served where a member's avatar is served from", () => {
   for (const [file, dir] of Object.entries(OUTLANDS_AVATAR_DIRS)) {
@@ -566,16 +636,31 @@ test("every file one of them asks for is actually in the tree", () => {
   }
 });
 
-test("the seed puts each row in the directory its files are in", () => {
+test("the canonical rows put each avatar in the directory its files are in", () => {
   for (const [file, dir] of Object.entries(OUTLANDS_AVATAR_DIRS)) {
     assert.ok(
       new RegExp(`id: ${dir}, name: '[^']+', filename: '${file}', image: '${file.replace(/\.wrl$/, ".jpg")}'`)
-        .test(SEED),
-      `the seed row for ${file} is not id ${dir}`,
+        .test(AVATAR_DATA),
+      `the canonical row for ${file} is not id ${dir}`,
     );
   }
-  assert.ok(/directory: String\(avatar\.id\)/.test(SEED),
-    "the seed no longer keeps directory equal to id");
+  assert.ok(/return String\(avatar\.id\)/.test(AVATAR_DATA),
+    "the canonical rows no longer keep directory equal to id");
+  assert.ok(/directory: directoryOf\(avatar\)/.test(SEED),
+    "the seed no longer takes its directory from the canonical rule");
+  assert.ok(/directory: directoryOf\(avatar\)/.test(AVATAR_SYNC),
+    "the sync migration no longer takes its directory from the canonical rule");
+});
+
+test("the seed and the sync migration read the same five rows", () => {
+  assert.ok(/from '\.\.\/seed_data\/outlands_avatars'/.test(SEED),
+    "the seed no longer reads the canonical Outlands rows");
+  assert.ok(/from '\.\.\/seed_data\/outlands_avatars'/.test(AVATAR_SYNC),
+    "the sync migration no longer reads the canonical Outlands rows");
+  assert.strictEqual(/id: 1[23456], name:/.test(SEED), false,
+    "the seed has grown its own copy of the Outlands rows");
+  assert.strictEqual(/id: 1[23456], name:/.test(AVATAR_SYNC), false,
+    "the sync migration has grown its own copy of the Outlands rows");
 });
 
 test("the seed leaves rows that are not its own alone", () => {

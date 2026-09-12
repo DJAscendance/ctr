@@ -22,17 +22,25 @@ type Row = {
   private: number;
 };
 
+/*
+ * The five Outlands system avatars, as a fresh install must end up holding
+ * them: active, so the Outlands entrance's own path can reach them, and
+ * `private = 1` with no owner, so the ordinary avatar library and the
+ * persistent avatar-change path both refuse them for every citizen. The same
+ * state 20260911190000_sync_outlands_avatars writes -- a fresh install and a
+ * deployed one must not differ.
+ */
 const REQUIRED: Row[] = [
   { id: 12, name: 'Outlands Game Master', filename: 'gm.wrl', image: 'gm.jpg',
-    directory: '12', status: 1, private: 0 },
+    directory: '12', status: 1, private: 1 },
   { id: 13, name: 'Outlands Blue Team (female)', filename: 'bluef.wrl', image: 'bluef.jpg',
-    directory: '13', status: 1, private: 0 },
+    directory: '13', status: 1, private: 1 },
   { id: 14, name: 'Outlands Blue Team (male)', filename: 'bluem.wrl', image: 'bluem.jpg',
-    directory: '14', status: 1, private: 0 },
+    directory: '14', status: 1, private: 1 },
   { id: 15, name: 'Outlands Red Team (female)', filename: 'redf.wrl', image: 'redf.jpg',
-    directory: '15', status: 1, private: 0 },
+    directory: '15', status: 1, private: 1 },
   { id: 16, name: 'Outlands Red Team (male)', filename: 'redm.wrl', image: 'redm.jpg',
-    directory: '16', status: 1, private: 0 },
+    directory: '16', status: 1, private: 1 },
 ];
 
 /** The row every database already has, so "leave rows you do not own alone" is testable. */

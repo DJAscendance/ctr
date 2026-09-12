@@ -64,6 +64,8 @@ export class ReconnectCoordinator {
   // --- logical intent ---
   private desiredRoom: string | number | null = null;
   private desiredToken: string | null = null;
+  /** The Outlands gameplay avatar this intent is being played with, or null. */
+  private desiredOutlandsAvatarId: number | null = null;
   /** Bumped whenever the logical intent changes (new room / cleared), so a
    * settlement from a prior intent can be recognised as stale and ignored. */
   private intentGeneration = 0;
@@ -126,7 +128,11 @@ export class ReconnectCoordinator {
    * when the room is authoritatively joined - possibly by a later attempt if
    * the transport is down or drops mid-join. Supersedes any prior intent.
    */
-  public requestRoom(room: string | number, token: string): Promise<void> {
+  public requestRoom(
+    room: string | number,
+    token: string,
+    outlandsAvatarId: number | null = null,
+  ): Promise<void> {
     // A newer intent supersedes the previous one: reject its still-pending
     // caller so nobody waits forever on an abandoned room.
     this.rejectLogical(new Error("JOIN cancelled: superseded"));
@@ -135,6 +141,9 @@ export class ReconnectCoordinator {
     const generation = this.intentGeneration;
     this.desiredRoom = room;
     this.desiredToken = token;
+    // Re-sent on every retry: a reconnect mid-battle has to rejoin wearing the
+    // same side, and the coordinator is the only thing that knows the intent.
+    this.desiredOutlandsAvatarId = outlandsAvatarId;
     this.phaseValue = "joining";
 
     const promise = new Promise<void>((resolve, reject) => {
@@ -174,6 +183,7 @@ export class ReconnectCoordinator {
     this.intentGeneration += 1;
     this.desiredRoom = null;
     this.desiredToken = null;
+    this.desiredOutlandsAvatarId = null;
     this.sawDisconnect = false;
     this.abortCurrentAttempt("cleared");
     this.rejectLogical(new Error("JOIN cancelled: cleared"));
@@ -237,6 +247,7 @@ export class ReconnectCoordinator {
       this.presenceId,
       joinId,
       this.joinTimeoutMs,
+      this.desiredOutlandsAvatarId,
     );
     this.currentAttempt = handle;
 

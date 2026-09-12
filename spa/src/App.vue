@@ -565,7 +565,7 @@ export default Vue.extend({
      * Outlands never had.
      */
     outlandsEntrance(): boolean {
-      return outlandsEntranceActive(this.$store.data.place, this.$store.data.user);
+      return outlandsEntranceActive(this.$store.data.place, this.$store.data.outlandsAvatar);
     },
   },
 });

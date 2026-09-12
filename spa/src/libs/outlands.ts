@@ -61,73 +61,18 @@ export function isOutlands(place: any): boolean {
 
 /**
  * True while the historical Outlands entrance stands in front of the world:
- * Outlands has been asked for and the member is not wearing a side yet.
+ * Outlands has been asked for and no side has been taken yet.
+ *
+ * The side is asked of the tab-local gameplay avatar, NEVER of the citizen's
+ * own avatar. Taking a side does not change who the citizen is: their avatar
+ * row, their `member.avatar_id` and their authentication token are all exactly
+ * what they were, so there is nothing about the member to read here.
  *
  * The entrance replaces the ordinary place screen rather than sitting inside
  * it, so the normal place chrome asks this before drawing itself.
  */
-export function outlandsEntranceActive(place: any, user: any): boolean {
-  return isOutlands(place) && !outlandsTeamOfAvatar(user && user.avatar);
-}
-
-/*
- * Leaving Outlands has to give the citizen their own face back.
- *
- * The entrance makes a member wear a team avatar, because in Outlands the
- * avatar file is what carries the side. That is right inside the world and
- * wrong everywhere else: a citizen who walks out to the Plaza is still dressed
- * as a soldier, and stays that way until they change it by hand. The team
- * avatars are also built for the Outlands world alone - they carry a weapon in
- * one hand - so wearing one around Cybertown is not a cosmetic problem only.
- *
- * So the entrance writes down what the member was wearing before it changes
- * anything, and the first place they join that is not Outlands puts it back.
- * The note lives in localStorage rather than in memory, because leaving is very
- * often a page load: a legacy link jump, a reload, or simply closing the tab
- * and coming back.
- */
-const PREVIOUS_AVATAR_KEY = "outlandsPreviousAvatarId";
-
-/**
- * Remembers the avatar a member wore before the Outlands entrance dressed them
- * for a side.
- *
- * Only the first call inside one visit is kept. Switching sides at the
- * entrance calls this again, and the second call must not overwrite the note
- * with the team avatar the first swap already applied - that would leave the
- * citizen in uniform for good.
- *
- * A member who arrives already wearing a team avatar has nothing worth
- * remembering, so nothing is written and nothing is restored later.
- */
-export function rememberAvatarBeforeOutlands(avatar: any): void {
-  try {
-    if (!avatar || !avatar.id) return;
-    if (outlandsTeamOfAvatar(avatar)) return;
-    if (localStorage.getItem(PREVIOUS_AVATAR_KEY)) return;
-    localStorage.setItem(PREVIOUS_AVATAR_KEY, String(avatar.id));
-  } catch (e) {
-    /* A browser with storage turned off simply does not get the restore. */
-  }
-}
-
-/** The avatar id waiting to be restored, or 0 when there is none. */
-export function avatarToRestoreAfterOutlands(): number {
-  try {
-    const id = Number(localStorage.getItem(PREVIOUS_AVATAR_KEY));
-    return Number.isFinite(id) && id > 0 ? id : 0;
-  } catch (e) {
-    return 0;
-  }
-}
-
-/** Drops the note, whether it was used or abandoned. */
-export function forgetAvatarBeforeOutlands(): void {
-  try {
-    localStorage.removeItem(PREVIOUS_AVATAR_KEY);
-  } catch (e) {
-    /* nothing to drop */
-  }
+export function outlandsEntranceActive(place: any, outlandsAvatar: any): boolean {
+  return isOutlands(place) && !outlandsTeamOfAvatar(outlandsAvatar);
 }
 
 /*
