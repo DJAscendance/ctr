@@ -1,58 +1,145 @@
 # CTR beta deployment — schema migrations
 
-How the beta deployment keeps the database schema in step with the code it ships.
+How a beta release brings the database schema up to date, and why it does it *before* it
+touches the running site.
 
 ## Why this exists
 
-The 2026-09-11 Outlands release put new application code on beta while the schema stayed one
-migration behind. Coolify built and started the containers; nothing in the deployment path
-ran `knex migrate:latest`. Migration 49 was applied by hand, afterwards, against a database
-that had already been serving the new code. A release must not be able to do that again.
+Two incidents, not one.
+
+**New code, old schema.** The 2026-09-11 Outlands release put new application code on beta
+while the schema stayed one migration behind. Nothing in the deployment path ran
+`knex migrate:latest`. Migration 49 was applied by hand, afterwards, against a database that
+had already been serving the new code.
+
+**The first fix took the site down instead.** The obvious repair — make `ct-api` wait on a
+`ct-migrate` service with `condition: service_completed_successfully` — gets the *ordering*
+right and the *availability* wrong. Coolify force-stops the running containers before it runs
+`compose up` (`ApplicationDeploymentJob::deploy_docker_compose_buildpack()`:
+`stop_running_container` at line 782, `start_by_compose_file` at line 806). A migration that
+failed inside `up` therefore failed with the old API, socket and nginx already destroyed and
+the new ones refusing to start. Measured on a disposable stack: `service "ct-migrate" didn't
+complete successfully: exit 1`, and nginx/ct-api/ct-socket all gone, with no automatic
+recovery. A bad migration must cancel its own release, not the site.
+
+## The two-phase release
+
+```
+   OLD RELEASE HEALTHY AND SERVING
+              |
+              v
+   [715] MIGRATION PREFLIGHT  ── docker/beta/release-preflight.sh
+     build the new release's images
+     run its migrations against the live database
+              |
+        +-----+-----+
+        |           |
+      FAIL        PASS
+        |           |
+        v           v
+   RELEASE      [782] stop old containers
+   ABORTED      [806] start new containers
+        |
+   OLD RELEASE STILL SERVING
+   (nothing was stopped)
+```
+
+Phase 1 runs as Coolify's **Custom Build Command**. That field is not an arbitrary choice: it
+is the only hook that runs both *after* the new release is cloned and *before* the old
+containers are stopped. The alternatives were checked against Coolify 4.1.2's own source and
+rejected:
+
+| Hook | Runs | Verdict |
+|---|---|---|
+| `pre_deployment_command` | line 635, via `docker exec` into the **currently running** container | Rejected — that is the OLD image. It cannot run the new release's migration files, and it silently skips itself when no container is running. |
+| **`docker_compose_custom_build_command`** | line 715, in the builder container, on the **cloned new release** | **Selected.** Before line 782; a non-zero exit throws `DeploymentException` and the release stops. |
+| `docker_compose_custom_start_command` | line 806 | Rejected — the old release is already destroyed at 782. |
+| `post_deployment_command` | after the new containers are up | Rejected — that is new code meeting an old schema again. |
+
+### Required Coolify configuration
+
+On the `ctr-beta` application, set **Custom Build Command** to:
+
+```
+COMPOSE_PROJECT_NAME=<application-uuid> bash ./docker/beta/release-preflight.sh
+```
+
+`COMPOSE_PROJECT_NAME` must be the compose project of the running stack — Coolify names it
+after the application uuid, and passes it to its own compose calls as `--project-name`. It is
+not exported into the build shell, so the command has to state it. There is deliberately no
+default: a wrong value would migrate nothing.
+
+Leave **Custom Start Command** empty. Coolify's own `compose up` is the application rollout.
 
 ## Migration owner
 
-One service owns migrations: **`ct-migrate`** in `docker-compose.beta.yml`.
+One script owns migrations: **`docker/beta/migrate-db.sh`**, run from the `ct-migrate`
+service's image (`tooling` target of `docker/beta/api.Dockerfile`).
 
-It is a one-shot container built from the `tooling` target of `docker/beta/api.Dockerfile`
-and runs `docker/beta/migrate-db.sh`. It is in no profile, so every ordinary `up` runs it.
-
-Nothing else migrates. The API and socket images are built from the `runtime` and `socket`
+`ct-migrate` sits behind the `migrate` profile, so an ordinary `up` never starts it. Only the
+preflight asks for it. The API and socket images are built from the `runtime` and `socket`
 targets, which carry neither ts-node nor `db/migrations`, so they cannot become a second
-migration owner even by accident. There is no replica race to reason about.
+migration owner even by accident.
 
-## Startup order
-
-```
-db
-  └─ ct-migrate          (waits for db, migrates, exits 0)
-       └─ ct-api         (depends_on: condition: service_completed_successfully)
-            ├─ ct-socket
-            └─ nginx
-```
-
-`ct-api` starts only after `ct-migrate` has exited successfully. `ct-socket` and `nginx` sit
-behind `ct-api`, so a blocked migration blocks the whole ingress, not just the API.
-
-`restart: "no"` on `ct-migrate` is required, not cosmetic. Under the default restart policy
-Docker restarts a container that exits 0, and compose would then wait forever for a
-"completed" state the container keeps leaving.
+The preflight runs the migration by **image ID**, captured the instant after the build. A
+fixed tag like `ctr-beta-tooling` is exactly how a preflight ends up running last release's
+migration files; an ID cannot be stale. The ID and the release SHA are both printed into the
+deployment log, and the image is also tagged `ctr-beta-tooling:<release-sha>`.
 
 ## Migration command
 
 `docker/beta/migrate-db.sh`, in order:
 
 1. `node db-helpers.js wait` — retries the MySQL connection until it succeeds, gives up after
-   120 s with the driver's own error. This is the database-readiness step; there is no fixed
-   sleep anywhere in the path.
-2. `node db-helpers.js create` — `CREATE DATABASE IF NOT EXISTS`. A no-op against the
-   existing beta database; it only saves a manual step on a fresh disposable stack.
+   120 s with the driver's own error. No fixed sleep anywhere in the path.
+2. `node db-helpers.js create` — `CREATE DATABASE IF NOT EXISTS`. A no-op against the existing
+   beta database; it only saves a manual step on a fresh disposable stack.
 3. `knex migrate:latest --knexfile src/knexfile.ts`
 4. `knex migrate:list` — prints the resulting schema state into the deployment log.
 
+## Expand first: preflight migrations must be backward compatible
+
+The schema is updated **while the previous release is still serving it**. For the length of
+the preflight, and for however long a failed rollout takes to sort out, old code is running
+against the new schema. A migration that runs before application replacement must therefore
+be compatible with the release that is already deployed.
+
+Safe in a single release:
+
+* add a table
+* add a nullable column
+* add an index, where the lock is acceptable
+* insert new, independent rows
+
+Needs to be split across two releases (expand now, contract later):
+
+* drop a column the current code reads
+* rename a required column
+* drop a table the current code uses
+* change the meaning of an existing field incompatibly
+
+Expand-first is what makes the previous release re-deployable after a failure, which is the
+recovery path below. This is an operational rule, not an automated check — no classifier
+inspects your migration.
+
 ## No seeds. Ever.
 
-The deployment path runs migrations **only**. It never runs `db:seed`, `db:init`,
-`bootstrap-db`, a reset, or a drop.
+The release path runs migrations **only**. It never runs `db:seed`, `db:init`, `bootstrap-db`,
+a reset, or a drop. The complete set of commands it can reach:
+
+```
+release-preflight.sh : docker compose --profile migrate build --pull
+                       docker image tag
+                       docker run --rm ... <image-id> migrate-db
+migrate-db.sh        : node db-helpers.js wait
+                       node db-helpers.js create
+                       knex migrate:latest
+                       knex migrate:list
+```
+
+`migrate-db` is named explicitly on the `docker run` line. The tooling image's default `CMD`
+is `bootstrap-db`, so naming the command is what keeps the seeding path unreachable from a
+release.
 
 Seed files insert rows, and several are written for an empty database; re-running them
 against a live one duplicates or overwrites citizen-visible data. A release that needs new
@@ -64,55 +151,57 @@ profile and is never part of a deployment.
 
 ## Failure behavior
 
-`migrate-db.sh` runs under `set -euo pipefail`. There is no `|| true`, no `; exit 0`, no
-background execution.
+`release-preflight.sh` and `migrate-db.sh` both run under `set -euo pipefail`. No `|| true`,
+no `; exit 0`, no background execution.
 
-A failing migration therefore exits non-zero, and:
+**Preflight fails** (bad migration, build failure, database never returns):
 
-* `ct-api`, `ct-socket` and `nginx` are created but never started — no traffic is served;
-* `docker compose up -d` exits 1 with
-  `service "ct-migrate" didn't complete successfully: exit 1`;
-* Coolify runs `docker compose --project-name <uuid> ... up --build -d` through
-  `execute_remote_command`, whose `ignore_errors` defaults to `false`, so a non-zero exit
-  throws and the deployment is marked **failed**.
+* the build command exits non-zero;
+* Coolify throws `DeploymentException` and marks the deployment **failed**;
+* line 782 is never reached, so nginx, ct-api and ct-socket are **not stopped**;
+* the old release keeps serving, on the same container IDs, with no gap.
 
-A failed migration cannot produce a green deployment.
+**Database temporarily down**: the migrator waits (up to 120 s) and proceeds when MySQL
+returns. The rollout waits with it. A database that never returns fails the release, and
+again the old containers are not touched.
+
+**No db container at all** is fatal and deliberate. The preflight will not create one: Coolify
+rewrites this compose file onto an external network, so a database started from the file as
+written lands on `<project>_default`, and the rollout would then create a *second*, empty
+database on the real network. Bringing up a first database is the bootstrap's job.
+
+## Do not automatically roll a migration back
+
+If the **application rollout** fails after the migration has already succeeded, the database
+stays forward. Nothing runs `down()` automatically, and nothing should: a `down()` that drops
+a column or a table destroys data, and it would run at exactly the moment the system is
+already in a bad state.
+
+The supported response, in order:
+
+1. **Stop.** Do not redeploy repeatedly.
+2. **Preserve evidence** — deployment log, container state, `knex migrate:list`.
+3. **Restore service** with the last release that works against the current schema. Because
+   preflight migrations are expand-first, that is normally the *previous* release, redeployed
+   unchanged.
+4. Fix forward in a new release, or restore the verified backup, under an approved recovery
+   plan.
+
+Note what Coolify's own rolling behaviour costs here: the old containers were already stopped
+at line 782 before the rollout failed at 806, so this case *is* an outage. It is not caused by
+the preflight — the preflight had already passed — and it is the same exposure any compose
+release on this platform has.
 
 ## Idempotence and locking
 
-`migrate:latest` applies only the migrations absent from the `migrations` table, so a deploy
-with nothing pending logs `Already up to date` and exits 0. Redeploys and container restarts
-are safe and change no rows.
+`migrate:latest` applies only the migrations absent from the `migrations` table, so a release
+with nothing pending logs `Already up to date`, exits 0, and changes no rows. Redeploys are
+safe.
 
-Knex takes a row lock in `migrations_lock` for the duration of a run. With two migrators
-started at once, one applies the batch and the other reports `Already up to date`; the
-migration is applied exactly once and the lock is released either way. The stack does not
-rely on this — it has a single migration owner — but the protection is there.
+Knex takes a row lock in `migrations_lock` for the duration of a run. The stack does not rely
+on this — it has a single migration owner — but the protection is there.
 
-## Local verification
-
-Runs the real deployment path against a disposable, populated database.
-
-```shell
-# env file with DB_USER, DB_PASS, DB_DATABASE, MYSQL_ROOT_PASSWORD, JWT_SECRET
-DC="docker compose -p ctrmig -f docker-compose.beta.yml --env-file /tmp/ctr-mig.env"
-
-$DC --profile bootstrap build
-$DC up -d db
-$DC --profile bootstrap run --rm ct-bootstrap   # populate a FRESH disposable database
-
-$DC up -d                                       # the deployment path; runs ct-migrate
-$DC logs ct-migrate
-$DC exec -T nginx curl -sI localhost/
-
-$DC down -v                                     # disposable: -v removes the fixture volume
-```
-
-To rehearse a pending migration, put the fixture one migration behind before `up -d` —
-delete that migration's row from the `migrations` table and undo its effect by hand. Do not
-add a throwaway migration to `api/db/migrations`; migration history is permanent.
-
-## Automatic migration does not replace the backup rule
+## The backup rule still applies
 
 A migration-bearing beta release still requires, in order:
 
@@ -122,5 +211,54 @@ A migration-bearing beta release still requires, in order:
 4. deployment;
 5. post-deploy checks.
 
-Automatic migration removes the "new code, old schema" failure. It does not make a bad
-migration recoverable. Only the backup does that.
+The preflight removes "new code, old schema" and it removes "a bad migration takes the site
+down". It does not make a bad migration recoverable. Only the backup does that.
+
+## Local verification
+
+Rehearses the real release path against a disposable, populated database. Nothing here
+touches beta.
+
+```shell
+# 1. a disposable stack on a Coolify-shaped external network
+cat > /tmp/ctrpf/env <<'EOF'
+DB_USER=ctr
+DB_PASS=ctrpass
+DB_DATABASE=cybertown
+MYSQL_ROOT_PASSWORD=rootpass
+JWT_SECRET=rehearsal-only
+EOF
+cat > /tmp/ctrpf/coolify-net.yml <<'EOF'
+networks:
+  default:
+    name: ctrpf
+    external: true
+EOF
+docker network create ctrpf
+
+DC="docker compose -f docker-compose.beta.yml -f /tmp/ctrpf/coolify-net.yml \
+    --env-file /tmp/ctrpf/env --project-name ctrpf"
+
+$DC --profile bootstrap build
+$DC up -d db
+$DC --profile bootstrap run --rm ct-bootstrap    # populate a FRESH disposable database
+$DC up -d                                        # release A, healthy
+
+# 2. record what must survive a failed release
+docker ps --filter label=com.docker.compose.project=ctrpf \
+  --format '{{.Label "com.docker.compose.service"}} {{.ID}}'
+
+# 3. add a deliberately failing migration to api/db/migrations, then run phase 1 ALONE
+COMPOSE_PROJECT_NAME=ctrpf PREFLIGHT_ENV_FILE=/tmp/ctrpf/env \
+  bash ./docker/beta/release-preflight.sh ; echo "preflight exit: $?"
+
+# 4. the container IDs from step 2 must be unchanged, and the site must still answer
+docker run --rm --network ctrpf curlimages/curl:8.5.0 -sI http://nginx/ | head -1
+
+$DC down -v                                      # disposable: -v removes the fixture volume
+rm -f api/db/migrations/<the throwaway migration>
+docker network rm ctrpf
+```
+
+Delete the throwaway migration afterwards. Migration history is permanent — never commit a
+rehearsal fixture.

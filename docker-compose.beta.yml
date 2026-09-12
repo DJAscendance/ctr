@@ -67,14 +67,17 @@ services:
     image: ctr-beta-api
     restart: unless-stopped
     depends_on:
-      # The release gate. ct-api starts ONLY after ct-migrate has exited 0, so the schema is
-      # never older than the code serving against it. If the migration fails, this service
-      # is not started, nginx behind it is not started, and `docker compose up` exits
-      # non-zero -- the deployment fails instead of going green on a mismatched schema.
-      ct-migrate:
-        condition: service_completed_successfully
-      db:
-        condition: service_started
+      # NOT the migration gate. The schema is brought up to date BEFORE this file is used to
+      # replace anything, by docker/beta/release-preflight.sh in the release's build phase.
+      #
+      # An earlier revision made ct-api `depends_on` ct-migrate with
+      # `condition: service_completed_successfully`. That ordering is correct and the
+      # availability is not: Coolify force-stops the running containers BEFORE it runs
+      # `compose up` (ApplicationDeploymentJob::deploy_docker_compose_buildpack,
+      # stop_running_container at line 782, start at 806), so a migration that failed here
+      # failed with the old API, socket and nginx already gone and the new ones refusing to
+      # start. A bad migration took the site down instead of cancelling its own release.
+      - db
     environment:
       NODE_ENV: production
       DB_HOST: db
@@ -182,17 +185,24 @@ services:
     volumes:
       - db-data:/var/lib/mysql
 
-  # The schema migration step, and the single owner of it. It runs on EVERY deployment, in
-  # no profile, so an ordinary `up` always performs it; there is no second migration owner
-  # anywhere in this stack, and the application images have no ts-node to be one.
+  # The schema migration step, and the single owner of it. It runs on EVERY deployment --
+  # but from the release's BUILD phase, not from `up`. docker/beta/release-preflight.sh
+  # builds this image and runs this command while the previous release is still serving,
+  # and aborts the release if it fails. There is no second migration owner anywhere in this
+  # stack, and the application images have no ts-node to be one.
+  #
+  # The profile is what keeps that true. In no profile, an ordinary `up` would start this
+  # container alongside the new application -- a migration racing the code that depends on
+  # it, and a second owner of the same ledger. `profiles` means only an explicit
+  # `--profile migrate` reaches it, and the preflight is the only caller that asks.
   #
   # Migrations ONLY -- never seeds, never a reset. See docker/beta/migrate-db.sh.
   #
   # It is a one-shot: it migrates, prints the schema state and exits. `restart: "no"` is
   # required, not cosmetic -- under the default restart policy a container that exits 0 is
-  # started again, and compose would then wait forever for a "completed" state it keeps
-  # leaving.
+  # started again.
   ct-migrate:
+    profiles: ["migrate"]
     build:
       context: .
       dockerfile: docker/beta/api.Dockerfile
