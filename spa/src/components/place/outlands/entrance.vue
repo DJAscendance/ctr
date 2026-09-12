@@ -252,7 +252,7 @@ import Vue from "vue";
 import {
   OUTLANDS_TEAM_AVATARS,
   RED_TEAM,
-  rememberAvatarBeforeOutlands,
+  rememberSelfBeforeOutlands,
 } from "@/libs/outlands";
 
 /*
@@ -387,13 +387,20 @@ export default Vue.extend({
       this.busy = true;
       try {
         /*
-         * Write down what they were wearing before the side goes on, so that
-         * leaving Outlands can give it back. This has to happen before the
-         * swap: once the POST returns, the member's own avatar is gone from
-         * the store and there is nothing left to remember.
+         * Write down the token and the avatar they had before the side goes
+         * on, so that leaving Outlands can give both back. This has to happen
+         * before the swap: once the POST returns, the team token has replaced
+         * theirs in the store and there is nothing left to remember.
+         *
+         * Their own avatar is untouched in the database throughout - the POST
+         * below only issues a token that says they are wearing a side - so the
+         * note is the only thing the restore needs, and no server call is made
+         * to undo anything.
          */
-        rememberAvatarBeforeOutlands(this.$store.data.user.avatar);
-        const response = await this.$http.post("/member/update_avatar", {
+        rememberSelfBeforeOutlands(
+          this.$store.data.user.token, { ...this.$store.data.user.avatar },
+        );
+        const response = await this.$http.post("/avatar/outlands", {
           avatarId: avatar.id,
         });
         /*
@@ -420,7 +427,14 @@ export default Vue.extend({
     },
   },
   mounted() {
-    this.$http.get("/avatar")
+    /*
+     * The Outlands avatars are system gameplay resources and are deliberately
+     * NOT in the ordinary avatar library: a citizen may not list one and may
+     * not wear one as their main avatar. This route is the one place that
+     * serves them, it serves only the four playable ones, and it still reads
+     * them out of the database - a missing row is still a missing choice.
+     */
+    this.$http.get("/avatar/outlands")
       .then(response => {
         const library = {};
         response.data.avatars.forEach(avatar => {

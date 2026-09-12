@@ -30,7 +30,7 @@ import {
 } from '../../libs/economy';
 import { sendMemberApprovedEmail } from '../../libs/mail';
 import { isMemberApprovalRequired } from '../../libs/site-config';
-import { Member, ObjectInstance, Place } from '../../types/models';
+import { Avatar, Member, ObjectInstance, Place } from '../../types/models';
 import { MemberInfoView, MemberAdminView } from '../../types/views';
 import { SessionInfo } from 'session-info.interface';
 import { RosterService, RosterView } from '../roster/roster.service';
@@ -789,12 +789,43 @@ export class MemberService {
    * error
    */
   public async updateAvatar(memberId: number, avatarId: number): Promise<void> {
-    const avatar = await this.avatarRepository.getByIdAndMemberId(
+    /*
+     * `getByIdAndMemberId` answers with a LIST, and an empty list is not
+     * `undefined`. The guard this replaces tested the list itself, so it was
+     * never true and every id this query refused was written anyway: another
+     * citizen's private avatar, a rejected upload, and -- once the Outlands
+     * rows became system avatars -- any of them. Only a foreign key violation
+     * stopped a completely made-up id.
+     *
+     * This is the one place a citizen's persistent avatar is written, so the
+     * query's answer is honoured here and the restriction holds for every
+     * caller: the avatar picker, a hand-made request, and anything added later.
+     */
+    const [avatar] = await this.avatarRepository.getByIdAndMemberId(
       avatarId,
       memberId,
     );
     if (_.isUndefined(avatar)) throw new Error(`No avatar exists with id ${avatarId}`);
     await this.memberRepository.update(memberId, { avatar_id: avatarId });
+  }
+
+  /**
+   * A token for a member that says they are wearing the given avatar, without
+   * making them wear it.
+   *
+   * Outlands decides a citizen's side from the avatar they wear, and the socket
+   * server reads that avatar out of the verified token, so other citizens in the
+   * battle only see a side if the token carries it. That is gameplay state for
+   * one visit, not a change of appearance: `member.avatar_id` is deliberately
+   * NOT written, so the citizen's own avatar is exactly what it was when they
+   * leave, and a reload simply returns them to the entrance to choose again.
+   * @param memberId id of the member the token is for
+   * @param avatar the avatar row the token should carry
+   * @returns promise resolving in the encoded token
+   */
+  public async getMemberTokenWearing(memberId: number, avatar: Avatar): Promise<string> {
+    const member = await this.memberRepository.findById(memberId);
+    return this.encodeMemberToken(member, avatar);
   }
 
   /**
@@ -839,8 +870,8 @@ export class MemberService {
    * @param member member object to encode a token for
    * @returns promise resolving in encoded token, or rejecting on error
    */
-  private async encodeMemberToken(member: Member): Promise<string> {
-    const avatar = await this.avatarRepository.find({ id: member.avatar_id });
+  private async encodeMemberToken(member: Member, wearing?: Avatar): Promise<string> {
+    const avatar = wearing ?? await this.avatarRepository.find({ id: member.avatar_id });
     return jwt.sign(
       {
         id: member.id,

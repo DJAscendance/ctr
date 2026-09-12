@@ -62,8 +62,8 @@ import {
   outlandsTeamOfAvatar,
   blaxxunAvatarNameFor,
   blaxxunAvatarURLFor,
-  avatarToRestoreAfterOutlands,
-  forgetAvatarBeforeOutlands,
+  selfToRestoreAfterOutlands,
+  forgetSelfBeforeOutlands,
 } from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
@@ -255,54 +255,46 @@ export default Vue.extend({
       }
     },
     /*
-     * Puts back the avatar the Outlands entrance replaced.
+     * Puts back the citizen the Outlands entrance dressed for a side.
+     *
+     * Wearing a side never changed anything on the server: `POST
+     * /avatar/outlands` only issues a token that says a team avatar is worn,
+     * and `member.avatar_id` still names the citizen's own avatar the whole
+     * time. So giving it back is putting their own token and their own avatar
+     * row back into the store, and there is nothing to ask the server to undo.
      *
      * Nothing happens unless the entrance actually left a note, so an ordinary
-     * member joining an ordinary place pays nothing for this. A failed restore
-     * is not worth interrupting a world load for - the member simply keeps the
-     * avatar they are wearing - but the note is dropped either way, so a
-     * broken avatar row cannot make every future place join retry forever.
+     * member joining an ordinary place pays nothing for this.
      */
     async restoreAvatarAfterOutlands(generation: number): Promise<void> {
-      const wanted = avatarToRestoreAfterOutlands();
-      if (!wanted) return;
+      const previous = selfToRestoreAfterOutlands();
+      if (!previous) return;
+      if (generation !== this.loadGeneration) return;
       if (!this.$store.data.isUser) return;
-      /*
-       * Already back in their own clothes: drop the note and move on. The
-       * store types the avatar id as a string because it arrives inside the
-       * member's token, so the comparison is made on numbers.
-       */
-      if (this.$store.data.user.avatar && Number(this.$store.data.user.avatar.id) === wanted) {
-        forgetAvatarBeforeOutlands();
-        return;
-      }
       try {
-        const response = await this.$http.post("/member/update_avatar", { avatarId: wanted });
-        if (generation !== this.loadGeneration) return;
-        const list = await this.$http.get("/avatar");
-        if (generation !== this.loadGeneration) return;
-        const restored = (list.data.avatars || []).find(a => a.id === wanted);
         /*
-         * The token carries the avatar row but nothing decodes it back into
-         * the store, so the fields the world reads are written here - the same
-         * thing the entrance does on the way in.
+         * Already back in their own clothes: drop the note and move on. The
+         * store types the avatar id as a string because it arrives inside the
+         * member's token, so the comparison is made on numbers.
          */
-        this.$store.methods.setToken(response.data.token);
-        if (restored) {
-          // The store's avatar type declares only what the token carries; the
-          // API row also carries `directory` and `image`, which the world and
-          // the avatar picker both read. Same cast as applyAvatarIdentity.
-          const worn: any = this.$store.data.user.avatar;
-          worn.id = restored.id;
-          worn.name = restored.name;
-          worn.filename = restored.filename;
-          worn.directory = restored.directory;
-          worn.image = restored.image;
+        if (
+          this.$store.data.user.avatar
+          && Number(this.$store.data.user.avatar.id) === Number(previous.avatar.id)
+        ) {
+          return;
         }
-      } catch (e) {
-        this.debugMsg("could not restore the avatar worn before Outlands");
+        this.$store.methods.setToken(previous.token);
+        // The store's avatar type declares only what the token carries; the
+        // remembered row also carries `directory` and `image`, which the world
+        // and the avatar picker both read. Same cast as applyAvatarIdentity.
+        const worn: any = this.$store.data.user.avatar;
+        worn.id = previous.avatar.id;
+        worn.name = previous.avatar.name;
+        worn.filename = previous.avatar.filename;
+        worn.directory = previous.avatar.directory;
+        worn.image = previous.avatar.image;
       } finally {
-        forgetAvatarBeforeOutlands();
+        forgetSelfBeforeOutlands();
       }
     },
     async loadAndJoinPlace(): Promise<void> {

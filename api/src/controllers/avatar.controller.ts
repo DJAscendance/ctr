@@ -2,6 +2,7 @@ import { Request, Response} from 'express';
 import {Container} from 'typedi';
 import validator from 'validator';
 
+import { isOutlandsTeamAvatar } from '../libs';
 import {
   AvatarService,
   MemberService
@@ -34,6 +35,78 @@ class AvatarController {
       console.error(error);
       response.status(400).json({
         error: 'A problem occurred while trying to fetch avatars.',
+      });
+    }
+  }
+
+  /**
+   * The four playable Outlands team avatars.
+   *
+   * The Outlands entrance used to read the ordinary avatar library, which
+   * forced the five system avatars to be public. They are not citizen avatars:
+   * they carry a weapon, they decide a side, and the Game Master's was never a
+   * choice at all. So they are hidden from the library and served here instead,
+   * to an authenticated citizen only, which is the same expectation entering
+   * Outlands already carries.
+   */
+  public async getOutlandsTeamAvatars(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+    try {
+      const avatars = await this.avatarService.getOutlandsTeamAvatars();
+      response.status(200).json({ avatars });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({
+        error: 'A problem occurred while trying to fetch the Outlands team avatars.',
+      });
+    }
+  }
+
+  /**
+   * Wears one of the four team avatars for this visit to Outlands.
+   *
+   * Answers with a token that says the citizen is wearing it. Nothing is
+   * written: `member.avatar_id` is untouched, so the avatar they chose for
+   * themselves is still theirs when they leave.
+   */
+  public async wearOutlandsTeamAvatar(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+    const { avatarId } = request.body;
+    if (!avatarId) {
+      response.status(400).json({
+        error: 'Please pass an avatar id.',
+      });
+      return;
+    }
+    try {
+      const avatars = await this.avatarService.getOutlandsTeamAvatars();
+      /*
+       * The id is checked against the rows this endpoint itself serves, not
+       * against the avatar table. An id that is not one of the four playable
+       * Outlands avatars is refused here, so this path cannot become a second
+       * way to put on an arbitrary avatar -- including the Game Master's.
+       */
+      const chosen = avatars.find(
+        avatar => Number(avatar.id) === Number(avatarId) && isOutlandsTeamAvatar(avatar.filename),
+      );
+      if (!chosen) {
+        response.status(400).json({
+          error: 'That is not an Outlands team avatar.',
+        });
+        return;
+      }
+      const token = await this.memberService.getMemberTokenWearing(session.id, chosen);
+      response.status(200).json({
+        message: 'Success',
+        token,
+        avatar: chosen,
+      });
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({
+        error: 'That avatar could not be worn.',
       });
     }
   }

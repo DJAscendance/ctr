@@ -23,14 +23,20 @@ export CTR_QA_USER2=testqa2     CTR_QA_PASS2=testqa
 export CTR_QA_USER_2D=testqa2d  CTR_QA_PASS_2D=testqa   # a member whose chatdefault is 0
 
 DISPLAY=:1 node qa/outlands/tools/check-entrance.js
+DISPLAY=:1 node qa/outlands/tools/check-system-avatars.js
 DISPLAY=:1 node qa/outlands/tools/check-freeplay.js
 DISPLAY=:1 node qa/outlands/tools/check-lifecycle.js
 DISPLAY=:1 node qa/outlands/tools/check-stale-place.js
 CTR_TRANSITIONS=100 DISPLAY=:1 node qa/outlands/tools/check-memory.js
 ```
 
-Every account needs the Outlands team avatars in the `avatar` table
-(`api/db/seed/14-avatars.outlands.seed.ts`). Nothing else is seeded.
+The stack needs the Outlands team avatars in the `avatar` table
+(`api/db/seed/14-avatars.outlands.seed.ts`, or the
+`20260911190000_sync_outlands_avatars` migration on a deployed database). They
+are system rows: `private = 1` with no `member_id`, so no citizen can list one
+or wear one as their main avatar, and the entrance reads them through
+`GET /api/avatar/outlands` instead of the ordinary library. Nothing else is
+seeded.
 `CTR_QA_USER_2D` must be a member whose `chatdefault` is 0; that column, not
 `is_3d`, is what puts a member in the 3D view.
 
@@ -39,6 +45,7 @@ Every account needs the Outlands team avatars in the `avatar` table
 | Tool | What it proves |
 |---|---|
 | `check-entrance.js` | the historical entrance screen: all four choices end to end, the Game Master absent, a typed match password refused rather than dropped into free play, the world withheld until a side is worn, a 2D-default citizen carried into the 3D battle zone, and the ordinary avatar given back on the way out — across a page load |
+| `check-system-avatars.js` | that the five Outlands avatars are system resources and nothing else: the ordinary avatar library returns none of them, the ordinary avatar picker shows none of them, all five ids are refused by the persistent avatar-change path even when it is called directly, an ordinary public avatar still works, and the citizen's permanent avatar is unchanged before, during and after a visit to Outlands |
 | `check-freeplay.js` | the historical entrance, the four choices, red/blue mapping, the world's own spawn, W/D/A, the ammunition contract, Beamer, Repulsor, AAPD, ammo dispensers, beam-out, respawn and friendly fire — two authenticated citizens, on opposite sides |
 | `check-lifecycle.js` | two presences of ONE member as two targets, room state, leaving, returning, rapid Plaza/Outlands navigation, and what the outgoing world gives back |
 | `check-memory.js` | 100 entrance-to-battle-to-Plaza cycles: heap slope, one canvas, no retained citizen, no retained gameplay browser state, flat socket listeners |

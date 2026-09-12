@@ -22,12 +22,20 @@ import { OUTLANDS_AVATARS, OutlandsAvatar, directoryOf } from '../seed_data/outl
  * The columns this migration owns on an existing row. Everything else --
  * `id`, `member_id`, `gestures`, the timestamps -- is left as deployed.
  *
- * `status` and `private` are owned because they are what makes a row reachable:
- * `AvatarRepository.findAllForMemberId` serves `status = 1` and either
- * `private = 0` or the caller's own private avatar, so a stock Outlands row
- * left at the schema default `status = 2` is present and still invisible to the
- * entrance. Repairing presence without repairing reachability would not fix the
- * defect.
+ * `status` and `private` are owned because together they are what decides who
+ * may reach a row. `AvatarRepository.findAllForMemberId` serves `status = 1`
+ * and either `private = 0` or the caller's OWN private avatar, and
+ * `getByIdAndMemberId` applies the same rule to the persistent avatar-change
+ * path. These five are system gameplay resources, not citizen avatars: they
+ * carry a weapon, they decide a side in Outlands, and the Game Master's was
+ * never a public choice. So they are written `private = 1` with no owner, and
+ * because a row with `member_id = NULL` is nobody's own private avatar, both
+ * of those queries refuse them for every citizen. The Outlands entrance
+ * reaches them through `AvatarRepository.findSystemByFilenames`, which is the
+ * one path allowed to.
+ *
+ * `status = 1` still matters: that narrow path requires it too, so a row left
+ * at the schema default `status = 2` is present and still unreachable.
  */
 export const SYNCED_FIELDS = ['name', 'filename', 'image', 'directory', 'status', 'private'];
 
@@ -39,7 +47,7 @@ function canonicalRow(avatar: OutlandsAvatar): Record<string, unknown> {
     image: avatar.image,
     directory: directoryOf(avatar),
     status: 1,
-    private: 0,
+    private: 1,
   };
 }
 

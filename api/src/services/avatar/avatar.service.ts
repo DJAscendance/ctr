@@ -3,6 +3,7 @@ const fs = require('fs');
 import { Service } from 'typedi';
 import { Avatar } from 'models';
 
+import { OUTLANDS_TEAM_AVATARS } from '../../libs';
 import {
   AvatarRepository,
 } from '../../repositories';
@@ -37,6 +38,33 @@ export class AvatarService {
    */
   public async getResults(memberId : number): Promise<Avatar[]> {
     return await this.avatarRepository.findAllForMemberId(memberId);
+  }
+
+  /**
+   * The four playable Outlands team avatars, with the side each one carries.
+   *
+   * This is the ONLY path that serves an Outlands system avatar to a citizen.
+   * The rows are marked `private = 1` with no owner, so `getResults` -- the
+   * ordinary avatar library -- cannot see them, and `MemberService.updateAvatar`
+   * cannot wear one. The Game Master is left out here as well: it is a system
+   * avatar the world may use, never a choice offered to a citizen.
+   *
+   * The database stays authoritative. Nothing is invented when a row is
+   * missing; the caller gets fewer than four choices and the entrance says so,
+   * which is the same signal the missing-rows defect produced before.
+   * @returns promise resolving in the playable rows, each carrying its team
+   */
+  public async getOutlandsTeamAvatars(): Promise<(Avatar & { team: number })[]> {
+    const filenames = OUTLANDS_TEAM_AVATARS.map(entry => entry.filename);
+    const rows = await this.avatarRepository.findSystemByFilenames(filenames);
+    // Returned in the canonical order rather than the database's, so the
+    // entrance draws the Red pair then the Blue pair however the rows arrive.
+    return OUTLANDS_TEAM_AVATARS
+      .map(entry => {
+        const row = rows.find(candidate => candidate.filename === entry.filename);
+        return row ? { ...row, team: entry.team } : null;
+      })
+      .filter(row => row !== null);
   }
 
   public async removeAllAvatars(userId : number): Promise<any> {

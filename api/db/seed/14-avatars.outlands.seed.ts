@@ -66,6 +66,11 @@ export async function seed(knex: Knex): Promise<void> {
     image: avatar.image,
     directory: directoryOf(avatar),
     status: 1,
-    private: 0,
+    // System gameplay avatars, not citizen avatars. `private = 1` with no
+    // owner is what keeps them out of the ordinary avatar library and out of
+    // the persistent avatar-change path; the Outlands entrance reads them
+    // through its own narrow route. The same value the synchronisation
+    // migration writes -- a fresh install and a deployed one must not differ.
+    private: 1,
   })));
 }

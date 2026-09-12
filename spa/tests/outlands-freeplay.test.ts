@@ -38,9 +38,9 @@ import {
   outlandsEntranceActive,
   blaxxunAvatarURLFor,
   blaxxunAvatarNameFor,
-  rememberAvatarBeforeOutlands,
-  avatarToRestoreAfterOutlands,
-  forgetAvatarBeforeOutlands,
+  rememberSelfBeforeOutlands,
+  selfToRestoreAfterOutlands,
+  forgetSelfBeforeOutlands,
 } from "../src/libs/outlands";
 import { PresenceStore, presenceKey } from "../src/presence";
 import { RemoteMemberRegistry } from "../src/remote-members";
@@ -122,18 +122,23 @@ test("the entrance stands in front of Outlands only, and only until a side is wo
   );
 });
 
-test("the avatar worn before Outlands is remembered once and given back once", () => {
-  forgetAvatarBeforeOutlands();
-  rememberAvatarBeforeOutlands({ id: 7, filename: "jaz.wrl" });
-  assert.strictEqual(avatarToRestoreAfterOutlands(), 7);
-  // Switching sides must not overwrite the note with a team avatar.
-  rememberAvatarBeforeOutlands({ id: 16, filename: "redm.wrl" });
-  assert.strictEqual(avatarToRestoreAfterOutlands(), 7);
-  forgetAvatarBeforeOutlands();
-  assert.strictEqual(avatarToRestoreAfterOutlands(), 0);
+test("the citizen's own token and avatar are remembered once and given back once", () => {
+  forgetSelfBeforeOutlands();
+  rememberSelfBeforeOutlands("own.token", { id: 7, filename: "jaz.wrl" });
+  assert.strictEqual(selfToRestoreAfterOutlands()?.avatar.id, 7);
+  assert.strictEqual(selfToRestoreAfterOutlands()?.token, "own.token");
+  // Switching sides must not overwrite the note with a team avatar or its token.
+  rememberSelfBeforeOutlands("team.token", { id: 16, filename: "redm.wrl" });
+  assert.strictEqual(selfToRestoreAfterOutlands()?.avatar.id, 7);
+  assert.strictEqual(selfToRestoreAfterOutlands()?.token, "own.token");
+  forgetSelfBeforeOutlands();
+  assert.strictEqual(selfToRestoreAfterOutlands(), null);
   // A citizen who arrived already in uniform leaves no note at all.
-  rememberAvatarBeforeOutlands({ id: 16, filename: "redm.wrl" });
-  assert.strictEqual(avatarToRestoreAfterOutlands(), 0);
+  rememberSelfBeforeOutlands("team.token", { id: 16, filename: "redm.wrl" });
+  assert.strictEqual(selfToRestoreAfterOutlands(), null);
+  // A note without a token is not a restore anyone can use.
+  rememberSelfBeforeOutlands("", { id: 7, filename: "jaz.wrl" });
+  assert.strictEqual(selfToRestoreAfterOutlands(), null);
 });
 
 /* -------------------------------------------------------------------------
@@ -447,6 +452,7 @@ console.log("\nOutlands free-play - what the outgoing world gives back");
 
 const read = (p: string) => fs.readFileSync(path.join(SPA, p), "utf8");
 const PAGE = read("src/pages/world-browser/WorldBrowserPage.vue");
+const ENTRANCE = read("src/components/place/outlands/entrance.vue");
 const EVENTS = read("src/libs/x_ite_mods/bxx_events.js");
 
 test("the browser hands back the event mask and the event routes on request", () => {
@@ -490,6 +496,29 @@ test("the entrance listener is taken off again when the page goes away", () => {
 test("the remote node still wears the presence key, never the username", () => {
   assert.ok(/registerBlaxxunAvatar\(collision, key\)/.test(PAGE));
   assert.strictEqual(/registerBlaxxunAvatar\([^)]*username/.test(PAGE), false);
+});
+
+test("the entrance reads the Outlands route, never the ordinary avatar library", () => {
+  assert.ok(/\$http\.get\("\/avatar\/outlands"\)/.test(ENTRANCE),
+    "the entrance no longer reads the Outlands-only avatar route");
+  assert.strictEqual(/\$http\.get\("\/avatar"\)/.test(ENTRANCE), false,
+    "the entrance is reading the ordinary avatar library again");
+});
+
+test("choosing a side never touches the persistent avatar-change path", () => {
+  assert.ok(/\$http\.post\("\/avatar\/outlands"/.test(ENTRANCE),
+    "the entrance no longer wears a side through the Outlands route");
+  assert.strictEqual(/update_avatar/.test(ENTRANCE), false,
+    "the entrance is writing the citizen's permanent avatar again");
+});
+
+test("leaving Outlands restores locally and asks the server to undo nothing", () => {
+  const restore = PAGE.slice(PAGE.indexOf("async restoreAvatarAfterOutlands"));
+  const body = restore.slice(0, restore.indexOf("async loadAndJoinPlace"));
+  assert.strictEqual(/update_avatar/.test(body), false,
+    "the restore writes the permanent avatar again");
+  assert.ok(/setToken\(previous\.token\)/.test(body),
+    "the restore no longer puts the citizen's own token back");
 });
 
 test("a citizen leaving Outlands is given their own avatar back", () => {

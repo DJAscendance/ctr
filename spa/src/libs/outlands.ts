@@ -76,21 +76,33 @@ export function outlandsEntranceActive(place: any, user: any): boolean {
  * The entrance makes a member wear a team avatar, because in Outlands the
  * avatar file is what carries the side. That is right inside the world and
  * wrong everywhere else: a citizen who walks out to the Plaza is still dressed
- * as a soldier, and stays that way until they change it by hand. The team
- * avatars are also built for the Outlands world alone - they carry a weapon in
- * one hand - so wearing one around Cybertown is not a cosmetic problem only.
+ * as a soldier. The team avatars are also built for the Outlands world alone -
+ * they carry a weapon in one hand - so wearing one around Cybertown is not a
+ * cosmetic problem only.
  *
- * So the entrance writes down what the member was wearing before it changes
- * anything, and the first place they join that is not Outlands puts it back.
+ * Wearing a side is NOT a change of avatar. `POST /avatar/outlands` answers
+ * with a token that says the citizen is wearing a team avatar and writes
+ * nothing, so `member.avatar_id` still names the avatar they chose for
+ * themselves the whole time they are in the battle. Giving it back is
+ * therefore putting their own token back, not asking the server to change
+ * anything - there is nothing on the server to change.
+ *
  * The note lives in localStorage rather than in memory, because leaving is very
  * often a page load: a legacy link jump, a reload, or simply closing the tab
  * and coming back.
  */
-const PREVIOUS_AVATAR_KEY = "outlandsPreviousAvatarId";
+const PREVIOUS_SELF_KEY = "outlandsPreviousSelf";
+
+export interface OutlandsPreviousSelf {
+  /** The member's own token, the one that names their own avatar. */
+  token: string;
+  /** The avatar row the page was drawing them with. */
+  avatar: any;
+}
 
 /**
- * Remembers the avatar a member wore before the Outlands entrance dressed them
- * for a side.
+ * Remembers the token and the avatar a member had before the Outlands entrance
+ * dressed them for a side.
  *
  * Only the first call inside one visit is kept. Switching sides at the
  * entrance calls this again, and the second call must not overwrite the note
@@ -100,31 +112,34 @@ const PREVIOUS_AVATAR_KEY = "outlandsPreviousAvatarId";
  * A member who arrives already wearing a team avatar has nothing worth
  * remembering, so nothing is written and nothing is restored later.
  */
-export function rememberAvatarBeforeOutlands(avatar: any): void {
+export function rememberSelfBeforeOutlands(token: string, avatar: any): void {
   try {
-    if (!avatar || !avatar.id) return;
+    if (!token || !avatar || !avatar.id) return;
     if (outlandsTeamOfAvatar(avatar)) return;
-    if (localStorage.getItem(PREVIOUS_AVATAR_KEY)) return;
-    localStorage.setItem(PREVIOUS_AVATAR_KEY, String(avatar.id));
+    if (localStorage.getItem(PREVIOUS_SELF_KEY)) return;
+    localStorage.setItem(PREVIOUS_SELF_KEY, JSON.stringify({ token, avatar }));
   } catch (e) {
     /* A browser with storage turned off simply does not get the restore. */
   }
 }
 
-/** The avatar id waiting to be restored, or 0 when there is none. */
-export function avatarToRestoreAfterOutlands(): number {
+/** The token and avatar waiting to be restored, or null when there is none. */
+export function selfToRestoreAfterOutlands(): OutlandsPreviousSelf | null {
   try {
-    const id = Number(localStorage.getItem(PREVIOUS_AVATAR_KEY));
-    return Number.isFinite(id) && id > 0 ? id : 0;
+    const raw = localStorage.getItem(PREVIOUS_SELF_KEY);
+    if (!raw) return null;
+    const note = JSON.parse(raw);
+    if (!note || !note.token || !note.avatar || !note.avatar.id) return null;
+    return note;
   } catch (e) {
-    return 0;
+    return null;
   }
 }
 
 /** Drops the note, whether it was used or abandoned. */
-export function forgetAvatarBeforeOutlands(): void {
+export function forgetSelfBeforeOutlands(): void {
   try {
-    localStorage.removeItem(PREVIOUS_AVATAR_KEY);
+    localStorage.removeItem(PREVIOUS_SELF_KEY);
   } catch (e) {
     /* nothing to drop */
   }

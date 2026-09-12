@@ -64,7 +64,7 @@ async function wearOrdinaryAvatar(page, avatarId = 1) {
     const list = await app.$http.get('/avatar');
     const row = (list.data.avatars || []).find(a => a.id === id);
     if (row) Object.assign(app.$store.data.user.avatar, row);
-    localStorage.removeItem('outlandsPreviousAvatarId');
+    localStorage.removeItem('outlandsPreviousSelf');
   }, avatarId);
 }
 
@@ -78,7 +78,22 @@ const wornAvatar = page => page.evaluate(() => {
     directory: a && a.directory,
     view3d: !!app.$store.data.view3d,
     place: app.$store.data.place && app.$store.data.place.slug,
-    note: localStorage.getItem('outlandsPreviousAvatarId'),
+    /*
+     * The entrance's note. Wearing a side no longer writes the citizen's
+     * permanent avatar -- `POST /avatar/outlands` only issues a token -- so
+     * the note now carries their own token AND their own avatar row, and the
+     * restore is a local swap. The gate still only cares which avatar is
+     * coming back, so the id is what is reported.
+     */
+    note: (() => {
+      const raw = localStorage.getItem('outlandsPreviousSelf');
+      if (!raw) return null;
+      try {
+        return String(JSON.parse(raw).avatar.id);
+      } catch (e) {
+        return null;
+      }
+    })(),
   };
 });
 

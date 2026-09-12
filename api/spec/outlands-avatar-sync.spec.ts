@@ -65,9 +65,11 @@ function staleRow(filename: string): Record<string, unknown> {
     image: 'stale.jpg',
     directory: 'stale',
     // The state that makes the defect invisible: the row is present and the
-    // avatar library still will not serve it.
+    // Outlands entrance still will not serve it, because that path requires
+    // `status = 1`. `private = 0` is drifted too -- a system avatar left
+    // public is a row a citizen could list and wear.
     status: 2,
-    private: 1,
+    private: 0,
   };
 }
 
@@ -81,7 +83,7 @@ function seededRow(filename: string): Record<string, unknown> {
     image: canonical.image,
     directory: String(canonical.id),
     status: 1,
-    private: 0,
+    private: 1,
   };
 }
 
@@ -96,11 +98,25 @@ async function countAvatars(): Promise<number> {
 
 /**
  * What `AvatarRepository.findAllForMemberId` serves a member who owns nothing:
- * active and public. The entrance reads this list, so it is the only definition
- * of "the avatar library has it" that matters.
+ * active and public. The Outlands avatars must NEVER be in this list -- they
+ * are system gameplay resources, not citizen avatars -- so this is the negative
+ * control the corrected product rule is measured against.
  */
 async function publicLibraryFiles(): Promise<string[]> {
   const rows = await db('avatar').where({ status: 1, private: 0 }).select('filename');
+  return rows.map(row => row.filename);
+}
+
+/**
+ * What `AvatarRepository.findSystemByFilenames` serves the Outlands entrance:
+ * active, unowned, and reached by file name regardless of `private`.
+ */
+async function outlandsSystemFiles(): Promise<string[]> {
+  const rows = await db('avatar')
+    .where({ status: 1 })
+    .whereNull('member_id')
+    .whereIn('filename', OUTLANDS_AVATARS.map(avatar => avatar.filename))
+    .select('filename');
   return rows.map(row => row.filename);
 }
 
@@ -153,13 +169,21 @@ describeWithDb('outlands avatar sync', () => {
     expect(await countAvatars()).toBe(OUTLANDS_AVATARS.length + 1);
   });
 
-  it('gives the entrance all four team avatars through the public library', async () => {
+  it('gives the entrance all four team avatars and the library none of them', async () => {
     await db('avatar').insert(UNRELATED);
-    expect(await publicLibraryFiles()).not.toEqual(expect.arrayContaining(TEAM_FILES));
+    expect(await outlandsSystemFiles()).not.toEqual(expect.arrayContaining(TEAM_FILES));
 
     await syncOutlandsAvatars(db);
 
-    expect(await publicLibraryFiles()).toEqual(expect.arrayContaining(TEAM_FILES));
+    // The Outlands-only path finds every one of them.
+    expect(await outlandsSystemFiles()).toEqual(expect.arrayContaining(TEAM_FILES));
+    // The ordinary citizen library finds none of them, the Game Master included.
+    const library = await publicLibraryFiles();
+    for (const avatar of OUTLANDS_AVATARS) {
+      expect(library).not.toContain(avatar.filename);
+    }
+    // and it still holds the avatars that are genuinely public.
+    expect(library).toContain('sparkie.wrl');
   });
 
   it('inserts only the rows that are missing and keeps the ids of the rest', async () => {
@@ -196,7 +220,7 @@ describeWithDb('outlands avatar sync', () => {
     expect(after.image).toBe('redm.jpg');
     expect(after.directory).toBe('16');
     expect(Number(after.status)).toBe(1);
-    expect(Number(after.private)).toBe(0);
+    expect(Number(after.private)).toBe(1);
   });
 
   it('matches every canonical field and leaves unrelated avatars alone', async () => {
@@ -219,7 +243,7 @@ describeWithDb('outlands avatar sync', () => {
       if (row.image !== avatar.image) mismatches.push(`${avatar.filename}: image`);
       if (row.directory !== String(avatar.id)) mismatches.push(`${avatar.filename}: directory`);
       if (Number(row.status) !== 1) mismatches.push(`${avatar.filename}: status`);
-      if (Number(row.private) !== 0) mismatches.push(`${avatar.filename}: private`);
+      if (Number(row.private) !== 1) mismatches.push(`${avatar.filename}: private`);
     }
     expect(mismatches).toEqual([]);
 
