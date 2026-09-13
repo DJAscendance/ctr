@@ -1,4 +1,5 @@
 import HomePage from "./pages/HomePage.vue";
+import NewsPage from "./pages/News.vue";
 import AboutPage from "./pages/AboutPage.vue";
 import ConstitutionPage from './pages/Constitution.vue';
 import RulesRegulationsPage from "./pages/RulesandRegulationPage.vue";
@@ -77,6 +78,7 @@ import Transactions from "@/pages/admin/transactions/search.vue";
 import BetaSignups from "@/pages/admin/beta-signups/BetaSignups.vue";
 import UserObjectSearch from "@/pages/admin/objects/instances/search.vue";
 import SeizedObjects from "@/pages/admin/objects/instances/seized.vue";
+import NewsEditor from "@/pages/admin/news/editor.vue";
 
 import MallRulesPage from "@/pages/mall/MallRulesPage.vue";
 import MallUploadPage from "@/pages/mall/MallUploadPage.vue";
@@ -115,6 +117,14 @@ export default [
     name: "home",
     meta: {
       title: "Welcome to Cybertown",
+    },
+  },
+  {
+    path: "/news",
+    component: NewsPage,
+    name: "news",
+    meta: {
+      title: "Cybertown Virtual News",
     },
   },
   {
@@ -551,6 +561,14 @@ export default [
           title: "Member Search - Admin Panel",
         },
       },
+      {
+        path: "/admin/news",
+        component: NewsEditor,
+        name: "NewsEditor",
+        meta: {
+        title: "Edit Cybertown News",
+  },
+},
       {
         path: "/admin/member/user/:id",
         component: UserMain,
