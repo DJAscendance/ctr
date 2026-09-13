@@ -377,7 +377,9 @@ test("both Mall clock Scripts still fetch their time on load", () => {
 });
 
 test("the 12-hour dial subtracts 24 then 12", () => {
-  const world = read(SHOPPING);
+  // shopping.wrl is a CRLF file, so the two lines are compared after
+  // normalising the line endings rather than by matching a bare \n.
+  const world = read(SHOPPING).replace(/\r\n/g, "\n");
   assert.ok(/if\(hour >= 24\)\{hour -= 24;\}\n if\(hour >= 12\)\{hour -= 12;\}/.test(world),
     "the AnalogClock hour arithmetic is not the corrected one");
   assert.ok(!/hour -= 23;/.test(world), "the off-by-one hour subtraction is back");
