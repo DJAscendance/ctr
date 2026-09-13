@@ -336,6 +336,78 @@ DEF Anim Script { url "vrmlscript: function f(a, t) { return a; }" }
         expect(findingCodes(findings)).toContain('decoded_exceeds_upload_limit');
       });
 
+    /*
+     * The size rule the Checker must keep straight.
+     *
+     * `ObjectController.add` measures `request.files.wrlFile.size` -- the bytes
+     * that arrive, which for a gzip-compressed upload is the compressed size.
+     * That is the hard gate. The decompressed size is a fact about the same
+     * file and nothing enforces it, so reporting it as anything stronger than
+     * information would have the Checker contradicting the gate the object
+     * already passed. The live Pixel Forge Printer is exactly this shape:
+     * roughly 47 KB stored against roughly 232 KB decoded.
+     */
+    describe('the compressed-versus-decoded size rule', () => {
+      const LIMIT = 81920;
+
+      it('leaves a compressed upload under the limit unremarked on size', async () => {
+        const padding = `\n# ${'x'.repeat(200000)}\n`;
+        const stored = zlib.gzipSync(Buffer.from(POCKET_MOON + padding));
+        writeAsset('uuid-moon', 'moon.wrl', stored);
+
+        const inspection = await service.inspect(3339);
+
+        // The premise of the whole rule: this file passed upload because the
+        // bytes that arrived were small, and the test is worthless if they
+        // were not.
+        expect(inspection.source.storedBytes).toBeLessThan(LIMIT);
+        expect(inspection.source.decodedBytes).toBeGreaterThan(LIMIT);
+        expect(findingCodes(inspection.findings)).not.toContain('too_large');
+        expect(findingCodes(inspection.findings)).not.toContain('gzip_too_large');
+      });
+
+      it('reports the decoded size as information, never as a reason to refuse',
+        async () => {
+          const padding = `\n# ${'x'.repeat(200000)}\n`;
+          writeAsset('uuid-moon', 'moon.wrl',
+            zlib.gzipSync(Buffer.from(POCKET_MOON + padding)));
+
+          const findings = (await service.inspect(3339)).findings;
+          const size = findings.find(f => f.code === 'decoded_exceeds_upload_limit');
+
+          expect(size).toBeDefined();
+          expect(size.severity).toBe('warning');
+          // `needs_staff_review` would say the facts could not be established.
+          // They were: the file decompressed cleanly and was measured.
+          expect(size.severity).not.toBe('needs_staff_review');
+          expect(size.message).toContain('Upload validation measures the compressed size');
+        });
+
+      it('does not raise the decoded-size finding for a file that is small either way',
+        async () => {
+          writeAsset('uuid-moon', 'moon.wrl', zlib.gzipSync(Buffer.from(POCKET_MOON)));
+
+          const inspection = await service.inspect(3339);
+
+          expect(inspection.source.decodedBytes).toBeLessThan(LIMIT);
+          expect(findingCodes(inspection.findings))
+            .not.toContain('decoded_exceeds_upload_limit');
+        });
+
+      it('measures an uncompressed upload by the same stored bytes the gate used',
+        async () => {
+          // Negative control for the rule above: with no compression there is
+          // no gap, so stored and decoded must agree. A Checker that reported a
+          // gap here would be measuring the wrong thing.
+          writeAsset('uuid-moon', 'moon.wrl', Buffer.from(POCKET_MOON));
+
+          const inspection = await service.inspect(3339);
+
+          expect(inspection.source.encoding).toBe('identity');
+          expect(inspection.source.storedBytes).toBe(inspection.source.decodedBytes);
+        });
+    });
+
     it('reports a missing WorldInfo without refusing to render the rest', async () => {
       writeAsset('uuid-moon', 'moon.wrl', '#VRML V2.0 utf8\nShape {}\n');
 
