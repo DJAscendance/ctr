@@ -230,7 +230,30 @@ export default Vue.extend({
       this.sharedObjectsMap.set(obj.id, sharedObject);
     },
     debugMsg,
-    async getPlace(): Promise<void> {
+    /*
+     * Reads this place's objects for one specific load.
+     *
+     * The load generation is minted by loadAndJoinPlace() and handed in here,
+     * then re-checked at the point of commit. A hard reload fires the view3d
+     * and $route watchers in the same tick, so two loads are in flight on one
+     * component and either fetch can answer last. Two faults come out of that,
+     * and both are closed here:
+     *
+     *   - The stock is assigned, never pushed into the array that is already
+     *     there. Pushing let the superseded fetch land its copy beside the live
+     *     fetch's copy, and the live run then built one SharedObject root per
+     *     copy - one mall_object, two roots in the scene.
+     *   - The generation is re-checked AFTER the await, before anything is
+     *     written. Assignment alone is not enough: a slow answer belonging to a
+     *     load a newer one has already superseded would otherwise paint its
+     *     stock over the newer load's. loadAndJoinPlace()'s own check sits
+     *     after `await this.getPlace(...)`, so it runs too late to stop that
+     *     write - by then the stale value is already in this.sharedObjects.
+     *
+     * Both branches take the same rule, because both write the same state:
+     * only the load that still owns the page may commit what it fetched.
+     */
+    async getPlace(generation: number): Promise<void> {
       this.debugMsg("get place");
       document.title = `${this.$store.data.place.name  } - Cybertown`;
       let objectResponse = null;
@@ -238,19 +261,12 @@ export default Vue.extend({
       try {
         if(this.$store.data.place.type === "shop"){
           objectResponse = await this.$http.get(`/mall/objects/${this.$store.data.place.id}`);
-          /*
-           * Assigned, never pushed into the array that is already there. A hard
-           * reload fires the view3d and $route watchers in the same tick, and each
-           * starts a loadAndJoinPlace() whose getPlace() runs to the end whatever
-           * its generation. Pushing let the superseded fetch land its copy of the
-           * stock beside the live fetch's copy, and the live run then built one
-           * SharedObject root per copy - one mall_object, two roots. The
-           * object_instance branch below assigns, which is why only shops did it.
-           */
+          if (this.loadGeneration !== generation) return;
           this.sharedObjects = objectResponse.data.objects.filter(obj => obj.status === 1);
         } else {
           objectResponse = await this.$http.get(`/place/${  this.$store.data.place.id 
           }/object_instance`);
+          if (this.loadGeneration !== generation) return;
           this.sharedObjects = objectResponse.data.object_instance;
         }
       } catch(e) {
@@ -293,7 +309,7 @@ export default Vue.extend({
       this.presenceStore = new PresenceStore();
       this.clearRenderedPresences();
       this.attachRemoteMembers();
-      await this.getPlace();
+      await this.getPlace(generation);
       if (this.loadGeneration !== generation) return;
 
       if(this.$store.data.place.slug === "clubdir"){
