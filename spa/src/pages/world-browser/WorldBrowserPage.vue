@@ -237,12 +237,17 @@ export default Vue.extend({
       this.sharedObjects = [];
       try {
         if(this.$store.data.place.type === "shop"){
-          const objectResponse = await this.$http.get(`/mall/objects/${this.$store.data.place.id}`);
-          objectResponse.data.objects.forEach(obj => {
-            if(obj.status === 1){
-              this.sharedObjects.push(obj);
-            }
-          });
+          objectResponse = await this.$http.get(`/mall/objects/${this.$store.data.place.id}`);
+          /*
+           * Assigned, never pushed into the array that is already there. A hard
+           * reload fires the view3d and $route watchers in the same tick, and each
+           * starts a loadAndJoinPlace() whose getPlace() runs to the end whatever
+           * its generation. Pushing let the superseded fetch land its copy of the
+           * stock beside the live fetch's copy, and the live run then built one
+           * SharedObject root per copy - one mall_object, two roots. The
+           * object_instance branch below assigns, which is why only shops did it.
+           */
+          this.sharedObjects = objectResponse.data.objects.filter(obj => obj.status === 1);
         } else {
           objectResponse = await this.$http.get(`/place/${  this.$store.data.place.id 
           }/object_instance`);
