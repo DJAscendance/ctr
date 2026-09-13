@@ -137,6 +137,49 @@ test("the viewer loads the wrapper file that actually exists", () => {
     "the wrapper was renamed on one side only");
 });
 
+test("every page that loads the preview wrapper loads a file that is there", () => {
+  /*
+   * The Checker is not the only caller. `ObjectProperties.vue` mounts its own
+   * browser in `#objectModel` and loads the same wrapper, and it does not use a
+   * LoadSensor -- so renaming the file for the Checker's sake broke a page that
+   * never had the bug, silently, because the old file was still sitting on the
+   * server from before the deploy.
+   *
+   * This walks the source rather than naming the callers, so a third one
+   * arriving later is covered too.
+   */
+  const roots = [path.join(SPA, "src")];
+  const sources: string[] = [];
+  while (roots.length) {
+    const dir = roots.pop() as string;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        roots.push(full);
+      } else if (/\.(vue|ts|js)$/.test(entry.name)) {
+        sources.push(full);
+      }
+    }
+  }
+
+  const references: { file: string; url: string }[] = [];
+  for (const file of sources) {
+    const text: string = fs.readFileSync(file, "utf8");
+    for (const match of text.matchAll(/["'](\/assets\/object\/ObjectPreview\.[a-z0-9]+)["']/g)) {
+      references.push({ file: path.relative(SPA, file), url: match[1] });
+    }
+  }
+
+  assert.ok(references.length >= 2,
+    `expected the wrapper to be loaded from more than one page, found ${references.length}`);
+
+  for (const reference of references) {
+    const onDisk = path.join(SPA, reference.url.replace(/^\//, ""));
+    assert.ok(fs.existsSync(onDisk),
+      `${reference.file} loads ${reference.url}, which is not in the repo`);
+  }
+});
+
 /* --- 2. The item boundary ---------------------------------------------- */
 
 test("the reference grid the checker judges against is still VRML97", () => {

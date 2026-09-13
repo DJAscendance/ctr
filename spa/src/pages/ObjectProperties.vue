@@ -328,7 +328,12 @@ methods: {
   loadObjectPreview() {
     const browser = X3D.createBrowser();
     document.querySelector("#objectModel").appendChild(browser);
-    const objectURL = '/assets/object/ObjectPreview.wrl';
+    // Same wrapper the Mall Checker uses, and the only one there is. This page
+    // adds a plain Inline and waits on a timer rather than watching a
+    // LoadSensor, so it was never hit by the specification-version error that
+    // moved the file to X3D 3.3 -- but it still has to load the file that
+    // exists.
+    const objectURL = '/assets/object/ObjectPreview.x3dv';
     const objectViewer = X3D.getBrowser();
     objectViewer.loadURL(new X3D.MFString(objectURL));
     setTimeout(this.loadObject, 3000);
