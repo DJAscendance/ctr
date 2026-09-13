@@ -15,6 +15,7 @@ const SUITES = [
   "tests/.compiled/tests/outlands-strict-avatar-id.test.js",
   "tests/.compiled/tests/xite-16-migration.test.js",
   "tests/.compiled/tests/world-browser-shop-stock.test.js",
+  "tests/.compiled/tests/mall-xite16-recovery.test.js",
   "tests/.compiled/tests/outlands-freeplay.test.js",
   "tests/.compiled/tests/map-background-selector.test.js",
   "tests/.compiled/tests/hood-map-background-selector.test.js",
