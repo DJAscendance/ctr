@@ -521,6 +521,9 @@ export default Vue.extend({
       "relax_is.js",
       "arrow_keys.js",
       "viewpoint_bind.js",
+      // A world that drives a BOUND viewpoint's position moves the citizen.
+      // The Mall elevator is the proven case; see the file for the measurement.
+      "viewpoint_drive.js",
       "allow_sf_string.js",
       "bxx_node_name.js",
       "bxx_auth.js",
