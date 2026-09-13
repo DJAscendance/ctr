@@ -6,7 +6,7 @@
       <div class="text-center p-4">
         <div v-if="state === 'loading'">Loading model&hellip;</div>
         <div v-else-if="state === 'failed'" class="text-red-500">
-          The 3D viewer could not load this object.
+          {{ failureHeadline }}
           <div class="text-xs mt-1">{{ failureReason }}</div>
         </div>
       </div>
@@ -16,6 +16,13 @@
 
 <script lang="ts">
 import Vue from "vue";
+
+import {
+  PreviewFailure,
+  describePreviewFailure,
+  loadReportReader,
+  viewerFailure,
+} from "@/components/mall/preview-load";
 
 /**
  * The Mall object preview, rendered with the X_ITE build the app already loads.
@@ -36,12 +43,20 @@ import Vue from "vue";
  * Completion is reported by X_ITE's own LoadSensor rather than by a fixed delay.
  * The previous checker waited a blind 3000ms twice and showed an empty black
  * screen whenever the model took longer.
+ *
+ * 3. The preview world is X3D 3.3, not VRML97, and that is what makes point 2
+ *    possible under X_ITE 16.2.0. LoadSensor is an X3D node (Networking, level
+ *    3, specification 3.0 and later) and 16.2.0 enforces a node's specification
+ *    range against the scene's declared version, so creating one into a
+ *    `#VRML V2.0 utf8` scene throws. The wrapper's version is a property of the
+ *    wrapper only: uploaded objects arrive through an Inline, parse their own
+ *    VRML97 header and are still held to it. See ObjectPreview.x3dv.
  */
 
 declare const X3D: any;
 
 /** Empty world that starts the browser. Loading it is what boots the render loop. */
-const PREVIEW_WORLD = "/assets/object/ObjectPreview.wrl";
+const PREVIEW_WORLD = "/assets/object/ObjectPreview.x3dv";
 
 /** The Mall size and position reference grid staff judge the object against. */
 const REFERENCE_GRID = "/assets/object/MallReference.wrl";
@@ -120,9 +135,30 @@ export default Vue.extend({
   data() {
     return {
       state: "loading",
+      failureKind: "viewer",
       failureReason: "",
       callbackKey: `mall-checker-${(callbackSequence += 1)}`,
     };
+  },
+  computed: {
+    /**
+     * One line naming what went wrong, so a checker can tell an uploader's
+     * broken file apart from a viewer that never started and from a file the
+     * server did not hand over. Reporting all three as a viewer failure sent
+     * checkers looking in the wrong place.
+     */
+    failureHeadline(): string {
+      switch (this.failureKind) {
+      case "http":
+        return "This object's file could not be fetched from the server.";
+      case "invalid":
+        return "This object's file could not be read as VRML.";
+      case "timeout":
+        return "This object's preview did not finish loading.";
+      default:
+        return "The 3D viewer could not load this object.";
+      }
+    },
   },
   watch: {
     objectUrl(url: string) {
@@ -172,7 +208,7 @@ export default Vue.extend({
       const own = internalsFor(this);
       this.clearBackstop();
       own.backstop = window.setTimeout(
-        () => this.fail(generation, "The viewer did not report that it finished loading."),
+        () => this.reportFailedLoad(generation, this.objectUrl, true),
         BACKSTOP_MS,
       );
     },
@@ -215,7 +251,7 @@ export default Vue.extend({
         own.objectInline = object;
         scene.addRootNode(object);
 
-        this.watchObject(generation, scene, object);
+        this.watchObject(generation, scene, object, this.objectUrl);
       } catch (error) {
         this.fail(generation, String((error as Error).message || error));
       }
@@ -236,18 +272,19 @@ export default Vue.extend({
 
       const generation = (own.generation += 1);
       this.state = "loading";
+      this.failureKind = "viewer";
       this.failureReason = "";
       this.armBackstop(generation);
 
       try {
         own.objectInline.url = new X3D.MFString(url);
-        this.watchObject(generation, own.browser.currentScene, own.objectInline);
+        this.watchObject(generation, own.browser.currentScene, own.objectInline, url);
       } catch (error) {
         this.fail(generation, String((error as Error).message || error));
       }
     },
 
-    watchObject(generation: number, scene: any, object: any) {
+    watchObject(generation: number, scene: any, object: any, url: string) {
       // The generation check below suppresses a stale callback's *effects*; it
       // does not release the node. Both have to happen or the scene grows for
       // the length of the review session.
@@ -258,14 +295,25 @@ export default Vue.extend({
       const sensor = scene.createNode("LoadSensor");
       sensor.timeOut = LOAD_TIMEOUT_SECONDS;
       sensor.watchList = new X3D.MFNode(object);
+      /*
+       * The sensor's opening report is dropped when it is negative; see
+       * `loadReportReader`. Without that, every object in the queue showed a
+       * load failure for as long as its model took to arrive.
+       */
+      const read = loadReportReader();
       sensor.addFieldCallback(key, "isLoaded", (loaded: any) => {
         if (!this.isCurrent(generation)) {
           return; // belongs to an object the checker has already moved past
         }
-        if (loaded && loaded.valueOf()) {
+        switch (read(!!(loaded && loaded.valueOf()))) {
+        case "loaded":
           this.succeed(generation);
-        } else {
-          this.fail(generation, "The object file could not be loaded into the viewer.");
+          break;
+        case "failed":
+          this.reportFailedLoad(generation, url, false);
+          break;
+        default:
+          break;
         }
       });
       scene.addRootNode(sensor);
@@ -305,6 +353,39 @@ export default Vue.extend({
       }
     },
 
+    /**
+     * Reports a load that did not succeed, after finding out why.
+     *
+     * The probe runs only on the failure path, so a preview that works still
+     * makes exactly one request for the object file. It is a HEAD with the
+     * cache bypassed: what is wanted is what the server says about the file
+     * now, not a status remembered from the request the Inline already made.
+     *
+     * A probe that itself fails leaves the status null, which the classifier
+     * treats as "not known" rather than as "the object is fine" -- an unreached
+     * server is not evidence against the uploader.
+     */
+    async reportFailedLoad(generation: number, url: string, timedOut: boolean) {
+      if (!this.isCurrent(generation)) {
+        return;
+      }
+
+      let status: number | null = null;
+      if (!timedOut && url) {
+        try {
+          const response = await fetch(url, { method: "HEAD", cache: "no-store" });
+          status = response.status;
+        } catch (error) {
+          status = null;
+        }
+      }
+
+      if (!this.isCurrent(generation)) {
+        return; // the checker moved on while the probe was in flight
+      }
+      this.settle(generation, describePreviewFailure({ url, status, timedOut }));
+    },
+
     succeed(generation: number) {
       if (!this.isCurrent(generation)) {
         return;
@@ -314,14 +395,20 @@ export default Vue.extend({
       this.$emit("loaded");
     },
 
+    /** A problem on the viewer's own side, before the object was ever reached. */
     fail(generation: number, reason: string) {
+      this.settle(generation, viewerFailure(reason));
+    },
+
+    settle(generation: number, failure: PreviewFailure) {
       if (!this.isCurrent(generation)) {
         return;
       }
       this.clearBackstop();
       this.state = "failed";
-      this.failureReason = reason;
-      this.$emit("failed", reason);
+      this.failureKind = failure.kind;
+      this.failureReason = failure.message;
+      this.$emit("failed", failure.message, failure.kind);
     },
 
     clearBackstop() {

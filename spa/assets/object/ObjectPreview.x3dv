@@ -1,0 +1,37 @@
+#X3D V3.3 utf8
+PROFILE Full
+
+# The Mall Checker's preview wrapper. NOT a Mall item.
+#
+# This file is X3D 3.3 in the Classic VRML encoding, and the extension says so.
+# Uploaded Mall objects are still VRML97 and are still required to be: they are
+# pulled in through an Inline, which parses its own `#VRML V2.0 utf8` header and
+# keeps its own specification version. Nothing here relaxes that rule.
+#
+# The version is what makes the wrapper work at all under X_ITE 16.2.0.
+# `ObjectViewer` reports load completion with a LoadSensor, and LoadSensor is an
+# X3D node - Networking component, level 3, specification 3.0 and later. It does
+# not exist in VRML97. X_ITE 4.x created it into a `#VRML V2.0 utf8` scene
+# regardless; 16.2.0 checks the node's specification range against the scene's
+# declared version in `X3DExecutionContext.createNode` and throws
+#
+#   Node type 'LoadSensor' does not match specification version in '<url>'
+#
+# which surfaced in the Checker as "The 3D viewer could not load this object"
+# over a model that had in fact loaded perfectly well.
+#
+# Keep this at V3.3 specifically. X_ITE only aliases LoadSensor's `watchList`
+# field onto `children` for scenes declaring 3.3 or lower; at 4.0 the field is
+# named `children` and `sensor.watchList = ...` silently stops watching anything.
+WorldInfo {
+ title "ObjectPreview"
+ info [
+  "Blank world to view objects in."
+ ]
+}
+
+DEF Scene Group {}
+NavigationInfo {
+headlight TRUE
+type "EXAMINE"
+}
