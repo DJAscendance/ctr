@@ -30,6 +30,7 @@ const SUITES = [
   "tests/.compiled/tests/legacy-url-policy.test.js",
   "tests/.compiled/tests/site-config.test.js",
   "tests/.compiled/tests/navigation-place.test.js",
+  "tests/.compiled/tests/movement-speed.test.js",
 ];
 
 let failed = false;

@@ -1,4 +1,8 @@
 import Vue from "vue";
+import {
+    clampMovementSpeed,
+    MOVEMENT_SPEED_STORAGE_KEY,
+} from "./helpers/movement-speed.helper";
 
 /** Represents the shape of user data object on the global app store */
 export interface User {
@@ -64,6 +68,13 @@ export interface AppStore {
         view3d: boolean;
         place: Place;
         outlandsAvatar: OutlandsAvatar | null;
+        /**
+         * Local-only walk-speed preference. Never sent to the server: a guest,
+         * or a citizen on a fresh device, must move at the CTR default without
+         * an account record to read, so this lives in localStorage exactly like
+         * `token` does, not on the {@link User}.
+         */
+        movementSpeedMultiplier: number;
     };
     methods: {
         destroySession: () => void;
@@ -72,6 +83,7 @@ export interface AppStore {
         setPlace: (value: Place) => void;
         setUser: (userData: object) => void;
         setBid: (bid: number) => void;
+        setMovementSpeedMultiplier: (value: number) => void;
         /* Base no-unused-vars cannot see TS type params; same as the five above. */
         // eslint-disable-next-line no-unused-vars
         setOutlandsAvatar: (avatar: OutlandsAvatar | null) => void;
@@ -90,6 +102,7 @@ const appStore = Vue.observable<AppStore>({
         },
         place: {},
     outlandsAvatar: null,
+        movementSpeedMultiplier: clampMovementSpeed(localStorage.getItem(MOVEMENT_SPEED_STORAGE_KEY)),
     },
     methods: {
         destroySession() {
@@ -123,6 +136,16 @@ const appStore = Vue.observable<AppStore>({
         },
         setBid(bid: number): void {
             localStorage.setItem("bid", bid.toString());
+        },
+        /**
+         * Clamps before it ever reaches state or storage, so a corrupt or
+         * out-of-range value (including one edited directly into localStorage)
+         * can never propagate to the viewer.
+         */
+        setMovementSpeedMultiplier(value: number): void {
+            const clamped = clampMovementSpeed(value);
+            appStore.data.movementSpeedMultiplier = clamped;
+            localStorage.setItem(MOVEMENT_SPEED_STORAGE_KEY, clamped.toString());
         },
     /*
      * Puts on, or takes off, the Outlands gameplay avatar. In memory only:

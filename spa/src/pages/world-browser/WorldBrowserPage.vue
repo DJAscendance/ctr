@@ -57,6 +57,7 @@ import { RemoteMemberRegistry } from "@/remote-members";
 import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
 import { sharedEventNodes } from "../../libs/shared-events";
 import { releaseWorldScripts } from "@/libs/world-scripts";
+import { effectiveMovementSpeed } from "@/helpers/movement-speed.helper";
 import {
   isOutlands,
   outlandsTeamOfAvatar,
@@ -1376,6 +1377,7 @@ export default Vue.extend({
        */
       this.releaseWorldScriptState(browser);
       this.applyAvatarIdentity();
+      this.applyMovementSpeed();
       /*
        * This run owns the promise loadURL hands back. Dropping it was the
        * defect: the browser callback below is keyed by the component, so a
@@ -1595,6 +1597,27 @@ export default Vue.extend({
         });
       } catch (error) {
         console.warn("could not publish the avatar identity", error);
+      }
+    },
+    /*
+     * Publishes the effective walk-speed multiplier to movement_speed.js's
+     * getSpeedFactor() patch.
+     *
+     * Read at call time off the store, exactly like applyAvatarIdentity()
+     * above, so there is no per-world state to clean up: a world's override
+     * (or its absence) is resolved fresh from this.$store.data.place on
+     * every read, including every frame of an in-progress walk, so a place
+     * change can never leak the previous world's speed forward.
+     */
+    applyMovementSpeed(): void {
+      try {
+        if (!X3D.bxx || typeof X3D.bxx.setSpeedMultiplierProvider !== "function") return;
+        X3D.bxx.setSpeedMultiplierProvider(() => effectiveMovementSpeed(
+          this.$store.data.place.world_filename,
+          this.$store.data.movementSpeedMultiplier,
+        ));
+      } catch (error) {
+        console.warn("could not publish the movement speed multiplier", error);
       }
     },
     startX3DListeners(browserbak: any, generation: number): void {

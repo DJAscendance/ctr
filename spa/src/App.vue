@@ -520,6 +520,7 @@ export default Vue.extend({
       "relax_route.js",
       "relax_is.js",
       "arrow_keys.js",
+      "movement_speed.js",
       "viewpoint_bind.js",
       // A world that drives a BOUND viewpoint's position moves the citizen.
       // The Mall elevator is the proven case; see the file for the measurement.
@@ -541,7 +542,6 @@ export default Vue.extend({
       // Must stay last of the loadURL wrappers: bxx_auth.js and bxx_events.js both
       // wrap loadURL, and a suppressed legacy call must not reach either of them.
       "bxx_url.js",
-      //'speed_multiplier.js',
       //'fix_stairs.js',
     ];
     for (const patch of x3dPatches) {
