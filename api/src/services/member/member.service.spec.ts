@@ -49,7 +49,6 @@ describe('MemberService', () => {
     roleAssignmentRepository = createSpyObj(RoleAssignmentRepository);
     roleAssignmentRepository.getByMemberId.mockResolvedValue([]);
     const roleRepository = createSpyObj(RoleRepository);
-    roleRepository.roleMap = {};
     transactionRepository = createSpyObj(TransactionRepository);
     walletRepository = createSpyObj(WalletRepository);
     Container.reset();
