@@ -18,6 +18,7 @@ const {
   buildRobotsTxt,
   decorateIndexHtml,
 } = require("./site-config");
+const { cityTimeVrml } = require("./city-time");
 const USERS = new Map();
 
 // Read once at boot. The environment cannot change under a running process, and the built
@@ -220,6 +221,18 @@ if (SITE_CONFIG.noindex) {
 // reachable without a login stays reachable to anyone who ignores it.
 app.get("/robots.txt", (req, res) => {
   res.type("text/plain").send(ROBOTS_TXT);
+});
+
+// City Time for the Mall's own clocks. The shape, the timezone and the reason
+// the answer is City Time minus two hours all live in spa/city-time.js.
+//
+// No caching: the point is that a citizen who re-enters the Mall gets the time
+// now, not the time the first visitor saw.
+app.get("/citytime.wrl", (req, res) => {
+  res
+    .type("model/vrml")
+    .set("Cache-Control", "no-store")
+    .send(cityTimeVrml(new Date()));
 });
 
 // `index: false` matters. express.static answers a directory request by serving the

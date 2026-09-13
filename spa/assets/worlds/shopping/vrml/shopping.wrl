@@ -1078,7 +1078,7 @@ eventIn SFBool set_bind
 exposedField SFVec3f position 0 0 0
 exposedField SFRotation rotation 0 1 0 0
 exposedField SFVec3f scale 1 1 1 
-exposedField MFString scriptUrl "http://www.cybertown.com/cgi-bin/games/vrmltime.pl"
+exposedField MFString scriptUrl "/citytime.wrl"  #hg 09/2026 was cybertown.com/cgi-bin/games/vrmltime.pl; CTR serves it from spa/server.js
 eventOut SFBool isNight
 eventOut SFVec2f time
 
@@ -1413,7 +1413,7 @@ PROTO AnalogClock[
 eventIn SFTime getTime
 exposedField SFVec3f position 0 0 0
 exposedField SFRotation rotation 0 1 0 0 
-exposedField MFString scriptUrl ["http://www.cybertown.com/cgi-bin/games/vrmltime.pl"]
+exposedField MFString scriptUrl ["/citytime.wrl"] #hg 09/2026 was cybertown.com/cgi-bin/games/vrmltime.pl; CTR serves it from spa/server.js
 exposedField MFNode minuteChildren [
  Transform{translation 0 .5 0 scale 1 1 .25
   children Shape{
@@ -1469,8 +1469,12 @@ function receive(v,t){
  if (v.length==0) return; // hg 
  min = v[0].min; 
  hour = v[0].hour + 2;
- if(hour >= 24){hour -= 23;}
- if(hour >= 12){hour -= 11;}
+ // hg 09/2026: was -= 23 and -= 11. A 24-hour reading becomes a 12-hour dial
+ // by subtracting 24 then 12, which is what DayNight already does. The
+ // off-by-one ran every hour from noon on one hour fast and put midnight on
+ // 1 o clock. Only visible now that the clock has a live time source again.
+ if(hour >= 24){hour -= 24;}
+ if(hour >= 12){hour -= 12;}
  set_min(min,t);
  set_hour(hour,t);
 }
