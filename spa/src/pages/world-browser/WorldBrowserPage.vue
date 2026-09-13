@@ -256,21 +256,45 @@ export default Vue.extend({
     async getPlace(generation: number): Promise<void> {
       this.debugMsg("get place");
       document.title = `${this.$store.data.place.name  } - Cybertown`;
-      let objectResponse = null;
       this.sharedObjects = [];
+      const objects = await this.fetchPlaceObjects();
+      if (objects === null) return;
+      if (this.loadGeneration !== generation) return;
+      this.sharedObjects = objects;
+    },
+    /*
+     * The objects that belong in THIS place, from the endpoint its type is
+     * stocked from.
+     *
+     * A shop's stock is mall_object: rows the mall staff drop through
+     * POST /mall/drop, read back with GET /mall/objects/:placeId, and filtered
+     * to the approved ones. Every other place holds object_instance: the copies
+     * citizens own, read with GET /place/:id/object_instance. The two are
+     * different tables and a shop has no object_instance stock of its own.
+     *
+     * This is the ONE place that decision is made. It used to be made twice:
+     * getPlace() branched on the type, and onSharedObjectEvent() did not - it
+     * always re-read /place/:id/object_instance. So the first SharedObject event
+     * in a shop replaced every mall_object the shopper could see with the (near
+     * always empty) object_instance list, and the shop looked cleared out until
+     * the page was reloaded. Proven with two clients: a shopper watching two
+     * approved items lost both the moment another citizen dropped anything.
+     *
+     * Returns null when the fetch failed, which is NOT the same as "this place
+     * is empty" and must never be committed as stock.
+     */
+    async fetchPlaceObjects(): Promise<any[] | null> {
+      const place = this.$store.data.place;
       try {
-        if(this.$store.data.place.type === "shop"){
-          objectResponse = await this.$http.get(`/mall/objects/${this.$store.data.place.id}`);
-          if (this.loadGeneration !== generation) return;
-          this.sharedObjects = objectResponse.data.objects.filter(obj => obj.status === 1);
-        } else {
-          objectResponse = await this.$http.get(`/place/${  this.$store.data.place.id 
-          }/object_instance`);
-          if (this.loadGeneration !== generation) return;
-          this.sharedObjects = objectResponse.data.object_instance;
+        if (place.type === "shop") {
+          const response = await this.$http.get(`/mall/objects/${place.id}`);
+          return response.data.objects.filter(obj => obj.status === 1);
         }
-      } catch(e) {
+        const response = await this.$http.get(`/place/${place.id}/object_instance`);
+        return response.data.object_instance;
+      } catch (e) {
         console.error(e);
+        return null;
       }
     },
     /*
@@ -945,27 +969,43 @@ export default Vue.extend({
         );
       }
     },
+    /*
+     * Another citizen in this room added, moved or removed something, so this
+     * client re-reads what is on the floor here.
+     *
+     * The re-read goes through fetchPlaceObjects(), so a shop re-reads its
+     * mall_object stock and an ordinary place re-reads object_instance - the
+     * same rule the first load used. Re-reading object_instance in a shop is
+     * what used to empty the shelves for everyone except the citizen who acted.
+     *
+     * Load ownership is the PR #40 rule and it applies here too: the fetch is
+     * awaited, and by the time it answers the citizen may already have walked
+     * into another place. The generation is taken before the fetch and re-checked
+     * before anything is written, so a late answer belonging to the room we have
+     * left can neither paint its objects into the new room nor clear it. A failed
+     * fetch (null) is also not committed - the scene keeps what it has rather
+     * than being emptied by a network error.
+     */
     async onSharedObjectEvent(event): Promise<void> {
-      if(this.$store.data.view3d){
+      const generation = this.loadGeneration;
+      const objects = await this.fetchPlaceObjects();
+      if (objects === null) return;
+      if (this.loadGeneration !== generation) return;
+
+      if (this.$store.data.view3d) {
         const browser = X3D.getBrowser();
         this.sharedObjects.forEach(sharedObject => {
           const object = this.sharedObjectsMap.get(sharedObject.id);
           browser.currentScene.removeRootNode(object);
           this.sharedObjectsMap.delete(sharedObject.id);
         });
-        this.sharedObjects = [];
-        const objectInstanceResponse = await this.$http.get(`/place/${  this.$store.data.place.id 
-        }/object_instance`);
-        this.sharedObjects = objectInstanceResponse.data.object_instance;
+        this.sharedObjects = objects;
         this.sharedObjectsMap = new Map();
         this.sharedObjects.forEach((object) => {
           this.addSharedObject(object, browser);
         });
       } else {
-        this.sharedObjects = [];
-        const objectInstanceResponse = await this.$http.get(`/place/${  this.$store.data.place.id 
-        }/object_instance`);
-        this.sharedObjects = objectInstanceResponse.data.object_instance;
+        this.sharedObjects = objects;
       }
     },
     /**

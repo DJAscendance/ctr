@@ -47,7 +47,9 @@ const read = (rel: string): string => fs.readFileSync(path.join(SPA, rel), "utf8
  * signature are removed; the body is byte-for-byte what ships.
  */
 function liftMethod(source: string, name: string): any {
-  const head = new RegExp(`async ${name}\\(([^)]*)\\)\\s*:\\s*Promise<void>\\s*\\{`);
+  // The return annotation is Promise<void> for getPlace() and
+  // Promise<any[] | null> for fetchPlaceObjects(); accept either.
+  const head = new RegExp(`async ${name}\\(([^)]*)\\)\\s*:\\s*Promise<[^>]*>\\s*\\{`);
   const match = head.exec(source);
   assert.ok(match, `${name}() not found in ${WORLD_PAGE}`);
   const params = match![1].replace(/:\s*[A-Za-z<>[\]| ]+/g, "");
@@ -121,6 +123,11 @@ function placeComponent(type: string, payloads: any[]): any {
     },
     debugMsg: () => { /* no debug output under test */ },
     sharedObjects: [] as any[],
+    sharedObjectsMap: new Map(),
+    // The real one, lifted from the component: getPlace() and
+    // onSharedObjectEvent() both read their stock through it, so the endpoint
+    // choice under test is the shipped one.
+    fetchPlaceObjects,
     settle: async (order: number[]): Promise<void> => {
       for (const n of order) {
         assert.ok(pending[n], `load ${n} never started a fetch`);
@@ -131,7 +138,10 @@ function placeComponent(type: string, payloads: any[]): any {
   };
 }
 
-const getPlace = liftMethod(read(WORLD_PAGE), "getPlace");
+const SOURCE = read(WORLD_PAGE);
+const fetchPlaceObjects = liftMethod(SOURCE, "fetchPlaceObjects");
+const getPlace = liftMethod(SOURCE, "getPlace");
+const onSharedObjectEvent = liftMethod(SOURCE, "onSharedObjectEvent");
 
 /**
  * Starts one load exactly the way loadAndJoinPlace() does: mint the next
@@ -225,14 +235,14 @@ test("ordinary place: a single load still holds its objects", async () => {
 
 // --- the source contract ----------------------------------------------------
 
-test("the shop branch assigns the stock, it does not push into the shared array", () => {
-  const source = read(WORLD_PAGE).replace(/\/\*[\s\S]*?\*\//g, " ");
-  const shopBranch = /type === "shop"\)\s*\{([\s\S]*?)\}\s*else\s*\{/.exec(source);
-  assert.ok(shopBranch, "the shop branch of getPlace() was not found");
+test("the stock is assigned, never pushed into the array already there", () => {
+  const source = SOURCE.replace(/\/\*[\s\S]*?\*\//g, " ");
+  const shopBranch = /type === "shop"\)\s*\{([\s\S]*?)\}\n/.exec(source);
+  assert.ok(shopBranch, "the shop branch was not found");
   assert.ok(!/sharedObjects\.push\(/.test(shopBranch![1]),
-    "getPlace() pushes shop stock into this.sharedObjects again");
-  assert.ok(/this\.sharedObjects\s*=/.test(shopBranch![1]),
-    "getPlace() no longer assigns this.sharedObjects in the shop branch");
+    "the shop branch pushes stock into this.sharedObjects again");
+  assert.ok(/this\.sharedObjects\s*=\s*objects/.test(source),
+    "getPlace() no longer assigns the fetched stock");
 });
 
 test("loadAndJoinPlace hands its generation to getPlace", () => {
@@ -240,6 +250,110 @@ test("loadAndJoinPlace hands its generation to getPlace", () => {
   assert.ok(/await this\.getPlace\(generation\)/.test(source),
     "loadAndJoinPlace() no longer passes its generation into getPlace()");
 });
+
+// --- the live refresh a SharedObject event triggers --------------------------
+
+/*
+ * A component already holding a shop's stock, ready to receive a SharedObject
+ * event. `$socket` and X3D are never reached: the 2D branch is the one under
+ * test, and it is the branch that decides which endpoint is re-read.
+ */
+function refreshComponent(type: string, held: any[], payload: any): any {
+  const fetched: string[] = [];
+  return {
+    loadGeneration: 7,
+    fetched,
+    fetchPlaceObjects,
+    sharedObjects: held.slice(),
+    sharedObjectsMap: new Map(held.map((o: any) => [o.id, o])),
+    $store: { data: { view3d: false, place: { id: 807, name: "Antique Shop", type } } },
+    $http: {
+      get: (url: string) => {
+        fetched.push(url);
+        return Promise.resolve({ data: payload });
+      },
+    },
+  };
+}
+
+test("a SharedObject event in a SHOP re-reads the shop's mall_object stock", async () => {
+  // The fault: the refresh always read /place/:id/object_instance, so the first
+  // event another citizen caused replaced every approved mall_object the shopper
+  // could see with a list that, in a shop, is all but always empty.
+  const held = [{ id: 101, name: "Stocked" }, { id: 102, name: "Also stocked" }];
+  const vmx = refreshComponent("shop", held, shopStock(101));
+  await onSharedObjectEvent.call(vmx, { event: "add", objectId: 9 });
+  assert.deepStrictEqual(Array.from(vmx.fetched), ["/mall/objects/807"],
+    `a shop refresh read the wrong endpoint: ${JSON.stringify(vmx.fetched)}`);
+  assert.deepStrictEqual(heldIds(vmx), [101],
+    `the shop lost its mall_object stock on a SharedObject event: ${
+      JSON.stringify(vmx.sharedObjects)}`);
+});
+
+test("a SharedObject event in an ORDINARY place still re-reads object_instance",
+  async () => {
+    const vmx = refreshComponent("public", [{ id: 1, name: "Old" }], placeStock(202));
+    await onSharedObjectEvent.call(vmx, { event: "add", objectId: 9 });
+    assert.deepStrictEqual(Array.from(vmx.fetched), ["/place/807/object_instance"],
+      `an ordinary place refresh read the wrong endpoint: ${JSON.stringify(vmx.fetched)}`);
+    assert.deepStrictEqual(heldIds(vmx), [202],
+      "the ordinary place did not take the refreshed object_instance list");
+  });
+
+test("a refresh that answers after the citizen has left does not commit", async () => {
+  // PR #40's rule, applied to the refresh: the fetch is awaited, and by the time
+  // it answers the citizen may be somewhere else. A late answer for the room we
+  // left must neither paint into the new room nor clear it.
+  const held = [{ id: 101, name: "Stocked" }];
+  let release: (v: any) => void = () => undefined;
+  const vmx: any = {
+    loadGeneration: 7,
+    fetchPlaceObjects,
+    sharedObjects: held.slice(),
+    sharedObjectsMap: new Map(held.map((o: any) => [o.id, o])),
+    $store: { data: { view3d: false, place: { id: 807, name: "Antique Shop", type: "shop" } } },
+    $http: { get: () => new Promise(resolve => { release = resolve; }) },
+  };
+  const run = onSharedObjectEvent.call(vmx, { event: "add", objectId: 9 });
+  vmx.loadGeneration = 8;               // the citizen walked into another place
+  release({ data: shopStock(999) });
+  await run;
+  assert.deepStrictEqual(heldIds(vmx), [101],
+    `a superseded refresh committed its stock: ${JSON.stringify(vmx.sharedObjects)}`);
+});
+
+test("a failed refresh leaves the stock alone instead of emptying the room", async () => {
+  const held = [{ id: 101, name: "Stocked" }];
+  const vmx: any = {
+    loadGeneration: 7,
+    fetchPlaceObjects,
+    sharedObjects: held.slice(),
+    sharedObjectsMap: new Map(held.map((o: any) => [o.id, o])),
+    $store: { data: { view3d: false, place: { id: 807, name: "Antique Shop", type: "shop" } } },
+    $http: { get: () => Promise.reject(new Error("network down")) },
+  };
+  await onSharedObjectEvent.call(vmx, { event: "add", objectId: 9 });
+  assert.deepStrictEqual(heldIds(vmx), [101],
+    "a failed refresh emptied the room");
+});
+
+test("control: the as-shipped refresh emptied a shop of its mall_object stock",
+  async () => {
+    // The shipped body, run the same way: it reads object_instance whatever the
+    // place type, so the shop's stock is replaced by an empty list.
+    const asShipped = vm.runInNewContext(`(async function (event) {
+      this.sharedObjects = [];
+      const objectInstanceResponse =
+        await this.$http.get("/place/" + this.$store.data.place.id + "/object_instance");
+      this.sharedObjects = objectInstanceResponse.data.object_instance;
+    })`, { console });
+    const held = [{ id: 101, name: "Stocked" }, { id: 102, name: "Also stocked" }];
+    const vmx = refreshComponent("shop", held, { object_instance: [] });
+    await asShipped.call(vmx, { event: "add", objectId: 9 });
+    assert.deepStrictEqual(Array.from(vmx.fetched), ["/place/807/object_instance"]);
+    assert.strictEqual(vmx.sharedObjects.length, 0,
+      "the control no longer reproduces the emptied shop, so this suite proves nothing");
+  });
 
 // --- negative controls ------------------------------------------------------
 
