@@ -20,11 +20,10 @@ RUN npm ci
 # ------------------------------------------------------------------ spa build
 FROM deps AS build
 COPY spa/ ./
-# No NODE_OPTIONS is set here, and none is set globally. `npm run build` goes through
-# spa/scripts/vue-cli-service.js, which adds --openssl-legacy-provider only when the
-# running Node is 17 or newer. On this Node 24 base the wrapper does add the flag, and
-# that is the only thing keeping webpack 4's MD4 hashes working against OpenSSL 3. The
-# bridge is temporary -- it goes away with the webpack 5 upgrade, not in this phase.
+# No NODE_OPTIONS is set here, and none is set globally. `npm run build` calls
+# vue-cli-service directly. webpack 5 hashes with an algorithm OpenSSL 3 still provides,
+# so the --openssl-legacy-provider bridge webpack 4 needed on this Node 24 base is gone.
+# Do not reintroduce it: a legacy-provider flag here would re-enable MD4 for no reason.
 RUN npm run build
 
 # --------------------------------------------------------------- socket server
