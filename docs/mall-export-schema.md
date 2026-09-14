@@ -107,7 +107,7 @@ API process TZ = UTC               ->  2026-08-20T08:02:43.000Z
 API process TZ = America/New_York  ->  2026-08-20T12:02:43.000Z
 ```
 
-Production runs the stock `node:14` image (UTC) against a UTC MySQL, so values are
+Production runs the stock official Node image (UTC) against a UTC MySQL, so values are
 correct there today - but by coincidence of two defaults rather than by design.
 Pinning it is a CTR-wide change and is tracked separately; this export refuses to
 paper over it.

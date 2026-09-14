@@ -7,11 +7,11 @@
  * re-enables the old algorithms and is the documented bridge for exactly this case.
  *
  * The flag cannot simply be written into the npm script. It does not exist before Node 17,
- * and the `node:14` image the beta still builds and runs on refuses to start when it is set.
- * Both runtimes have to work while the container cutover is still pending, so the decision is
- * made here, at launch, from the version of Node actually executing this file. Nothing is
- * exported to a shell, a profile or a container environment: the variable is built for the
- * child process only.
+ * and a Node 14 runtime refuses to start when it is set. The beta images are on Node 24 now,
+ * but the legacy `master` deploy host still builds on Node 14, so both runtimes still have to
+ * work. The decision is therefore made here, at launch, from the version of Node actually
+ * executing this file. Nothing is exported to a shell, a profile or a container environment:
+ * the variable is built for the child process only.
  *
  * This file is a bridge, not architecture. Vue CLI 5 / webpack 5 hashes with an algorithm
  * OpenSSL 3 still provides, and this wrapper goes away with that upgrade.

@@ -37,7 +37,7 @@ We utilise docker to manage the entire development environment and to make it ea
 You will need to have the following already installed on your machine and a basic understanding in order to 
 run the development environment:
 
-* [node/npm][node] (version 14.18.1)
+* [node/npm][node] (version 24.21.0)
 * [docker][docker-ce]
 
 You may also wish to install Docker for Desktop if you wish. For beginners, there are plenty of tutorials 
@@ -54,11 +54,24 @@ well; `spa/` carries its own `.tool-versions` because it is also built on its ow
 and 26. Node 26 is deliberately excluded: `jsonwebtoken` still reaches `SlowBuffer` through
 `jws` -> `jwa` -> `buffer-equal-constant-time`, and Node 26 removed it.
 
-**The production containers still run Node 14.21.3.** That split is temporary and expected:
-this step moves the developer and build baseline only, so that Node 24 is proven before the
-runtime images are cut over. The legacy `master` deploy host also still requires Node 14.
-The npm 6 inside `node:14` does not enforce a package's own `engines` field, so `npm ci`
-there is silent and all four beta image targets still build.
+**The beta Docker runtime is Node 24.21.0 as well.** Every Node stage in
+`docker/beta/spa.Dockerfile` and `docker/beta/api.Dockerfile` -- SPA build, socket runtime,
+API build, API runtime and the API tooling image -- and both Node services in
+`docker-compose.yml` use one immutable digest pin:
+
+```
+node:24.21.0-bookworm@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0
+```
+
+Pinning by digest, not by a floating `node:24` or `node:lts` tag, is what makes the runtime
+version deterministic. Moving off `node:14` also moved the base OS from Debian 10 (buster,
+glibc 2.28) to Debian 12 (bookworm, glibc 2.36); the native modules -- `bcrypt`, `sharp`,
+`mysql2` -- are proven on that base, not assumed. The nginx image keeps its own separate
+pin and is unchanged.
+
+**The legacy `master` production host still requires Node 14.** It is a different host with
+a different deploy path (`.github/workflows/main.yml`) and it was not part of this cutover.
+Do not assume a change that lands on beta reaches it.
 
 ##### webpack 4 and OpenSSL 3
 
@@ -67,7 +80,8 @@ plain `vue-cli-service` compile on Node 24 fails with `ERR_OSSL_EVP_UNSUPPORTED`
 `serve`, `build` and `dev` scripts in `spa/package.json` therefore run through
 `spa/scripts/vue-cli-service.js`, which adds `--openssl-legacy-provider` to the child
 process only, and only when the running Node is 17 or newer. Node 14 gets nothing, because
-it rejects the flag outright.
+it rejects the flag outright. Now that the beta SPA image builds on Node 24, that build does
+take the flag, so the bridge is load-bearing in Docker and not only on a developer machine.
 
 Do not set `NODE_OPTIONS=--openssl-legacy-provider` anywhere else - not in a shell profile,
 a Dockerfile or a compose file. It is a build-time bridge for webpack 4 alone. The Vue CLI 5
