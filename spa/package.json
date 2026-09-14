@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=14.18.1 <15"
+    "node": ">=24.21.0 <25"
   },
   "scripts": {
     "serve": "vue-cli-service serve --mode development --watch",

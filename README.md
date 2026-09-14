@@ -45,17 +45,20 @@ and videos online on installation and the basics of node, npm and docker.
 
 #### Node runtime
 
-The development baseline is **Node 14.18.1**. It is declared in `.tool-versions` (asdf),
-`.nvmrc` (nvm) and the `engines` field of `api/package.json` and `spa/package.json`. Both
-tools search parent directories, so one file at the repository root covers `api/` and
-`spa/` as well.
+The development and build baseline is **Node 24.21.0**. It is declared in `.tool-versions`
+(asdf), `.nvmrc` (nvm) and the `engines` field of `api/package.json` and `spa/package.json`.
+Both tools search parent directories, so the files at the repository root cover `api/` as
+well; `spa/` carries its own `.tool-versions` because it is also built on its own.
 
-The `node:14` Docker image the compose stack runs is **Node 14.21.3**. That is why `engines`
-is written as `>=14.18.1 <15` rather than a single exact version: it has to accept both the
-local baseline and the container, while still refusing a newer major.
+`engines` is written as `>=24.21.0 <25`. It accepts the 24.x line and refuses 14.x, 22.x, 25
+and 26. Node 26 is deliberately excluded: `jsonwebtoken` still reaches `SlowBuffer` through
+`jws` -> `jwa` -> `buffer-equal-constant-time`, and Node 26 removed it.
 
-A migration to a modern Node LTS is planned but **not active**. Do not install Node 24 for
-this repository yet; the build chain has not been moved.
+**The production containers still run Node 14.21.3.** That split is temporary and expected:
+this step moves the developer and build baseline only, so that Node 24 is proven before the
+runtime images are cut over. The legacy `master` deploy host also still requires Node 14.
+The npm 6 inside `node:14` does not enforce a package's own `engines` field, so `npm ci`
+there is silent and all four beta image targets still build.
 
 ### Initial Setup
 
