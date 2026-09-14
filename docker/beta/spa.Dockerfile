@@ -38,7 +38,8 @@ CMD ["sh", "-c", "TARGET_ROOT=/usr/src/app/assets seed-assets object avatars \
 # nginx serves /assets and /externprotos off disk and proxies everything else, so it needs
 # the same asset tree the other two services write into: the tracked files from the image
 # plus the runtime volumes mounted over the two upload subtrees.
-FROM nginx:alpine AS web
+# Pinned by digest: nginx 1.31.2 on Alpine 3.23.5. Same image the tag pointed at.
+FROM nginx:alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa AS web
 COPY docker/nginx/vhost.conf /etc/nginx/conf.d/cybertown.conf
 COPY spa/assets /var/www/cybertown/spa/assets
 COPY spa/assets/object /opt/seed-assets/object
