@@ -16,6 +16,9 @@ import {
   MAX_MOVEMENT_SPEED_MULTIPLIER,
   MIN_MOVEMENT_SPEED_MULTIPLIER,
   MOVEMENT_SPEED_STORAGE_KEY,
+  movementSpeedFactor,
+  normalisedSpeedFactor,
+  REFERENCE_WORLD_SPEED,
   WORLD_SPEED_OVERRIDES,
 } from "../src/helpers/movement-speed.helper";
 
@@ -554,6 +557,127 @@ test("the movement contract itself is untouched by the move", () => {
   assert.strictEqual(MAX_MOVEMENT_SPEED_MULTIPLIER, 6);
   assert.strictEqual(WORLD_SPEED_OVERRIDES["jail.wrl"], 1);
   assert.strictEqual(MOVEMENT_SPEED_STORAGE_KEY, "movementSpeedMultiplier");
+});
+
+/* --------------------------- 16. ONE DIAL, ONE PACE, EVERY WORLD ---- */
+console.log("\n16. ONE DIAL, ONE PACE, EVERY WORLD");
+
+/*
+ * X_ITE steps the avatar by `NavigationInfo.speed * getSpeedFactor() * ...`.
+ * These assertions are about the PRODUCT of the first two terms, because that
+ * is what the citizen feels; a factor on its own means nothing without the
+ * world's authored speed beside it.
+ *
+ * The authored numbers below are read from the shipped worlds:
+ *   shop.wrl 2.25 (the reference), shopping.wrl 1, enter.wrl 10,
+ *   carshowcase.wrl 10, beach.wrl 3.5, largeitems.wrl omits the field
+ *   entirely, so X3D's default of 1 applies.
+ */
+const AUTHORED = {
+  shop: 2.25,
+  mall: 1,
+  largeItems: 1,
+  carShowcase: 10,
+  plaza: 10,
+  beach: 3.5,
+};
+
+/** What the engine actually multiplies by: authored speed x our factor. */
+const pace = (authored: number, dial: number, world?: string): number =>
+  authored * movementSpeedFactor(world || "somewhere.wrl", dial, authored);
+
+test("the reference world is left exactly as it was", () => {
+  assert.strictEqual(REFERENCE_WORLD_SPEED, 2.25, "shop.wrl's authored speed");
+  assert.strictEqual(normalisedSpeedFactor(AUTHORED.shop, 2.5), 2.5,
+    "in the reference world the correction is 1, so the dial passes straight through");
+  assert.strictEqual(normalisedSpeedFactor(AUTHORED.shop, 0.5), 0.5);
+  assert.strictEqual(normalisedSpeedFactor(AUTHORED.shop, 6), 6);
+});
+
+test("one dial setting is one pace in every world", () => {
+  const want = REFERENCE_WORLD_SPEED * 2.5;
+  for (const [name, authored] of Object.entries(AUTHORED)) {
+    assert.ok(Math.abs(pace(authored, 2.5) - want) < 1e-9,
+      `${name}: ${pace(authored, 2.5)} != ${want}`);
+  }
+});
+
+test("that holds across the whole range, not just at the default", () => {
+  for (const dial of [0.5, 1, 2.5, 4, 6]) {
+    const want = REFERENCE_WORLD_SPEED * dial;
+    for (const [name, authored] of Object.entries(AUTHORED)) {
+      assert.ok(Math.abs(pace(authored, dial) - want) < 1e-9,
+        `${name} at x${dial}: ${pace(authored, dial)} != ${want}`);
+    }
+  }
+});
+
+test("the two worlds the owner reported now match each other", () => {
+  /* "2.5 in the car showcase feels like 6, and 2.5 in the large item shop
+   * feels like 0.5" - a tenfold gap, because one authors 10 and the other
+   * authors nothing at all. */
+  const before = AUTHORED.carShowcase / AUTHORED.largeItems;
+  assert.strictEqual(before, 10, "the gap this fixes");
+  assert.strictEqual(pace(AUTHORED.carShowcase, 2.5), pace(AUTHORED.largeItems, 2.5));
+});
+
+test("the dial still means faster is faster, and the ends still clamp", () => {
+  const slow = pace(AUTHORED.mall, 0.5);
+  const mid = pace(AUTHORED.mall, 2.5);
+  const fast = pace(AUTHORED.mall, 6);
+  assert.ok(slow < mid && mid < fast, "monotonic");
+  assert.strictEqual(pace(AUTHORED.mall, 0.1), slow, "below the minimum clamps");
+  assert.strictEqual(pace(AUTHORED.mall, 99), fast, "above the maximum clamps");
+});
+
+test("an unreadable authored speed falls back to the old behaviour, not a guess", () => {
+  for (const bad of [undefined, null, NaN, Infinity, 0, -3, "abc", {}]) {
+    assert.strictEqual(normalisedSpeedFactor(bad, 2.5), 2.5,
+      `${String(bad)} should pass the dial through unchanged`);
+  }
+});
+
+test("a numeric string authored speed is still read", () => {
+  assert.strictEqual(normalisedSpeedFactor("2.25", 2.5), 2.5);
+  assert.strictEqual(normalisedSpeedFactor("1", 2.5), 2.5 * 2.25);
+});
+
+test("a pinned world keeps its raw factor and is NOT normalised", () => {
+  /* jail.wrl authors no speed, so X3D's default 1 applies. The override says
+   * 1, meaning X_ITE's own untouched default; normalising it would redefine
+   * that as the reference pace and speed the cell UP, which is the opposite
+   * of why the entry exists. */
+  assert.strictEqual(WORLD_SPEED_OVERRIDES["jail.wrl"], 1);
+  assert.strictEqual(movementSpeedFactor("jail.wrl", 6, 1), 1, "preference cannot raise it");
+  assert.strictEqual(movementSpeedFactor("vrml/jail.wrl", 6, 1), 1, "matched on basename");
+  assert.strictEqual(movementSpeedFactor("jail.wrl", 0.5, 1), 1, "nor lower it");
+  assert.strictEqual(pace(1, 6, "jail.wrl"), 1, "the cell keeps the engine default pace");
+});
+
+test("the citizen's own preference still drives every world that is not pinned", () => {
+  assert.strictEqual(movementSpeedFactor("shop.wrl", 4, AUTHORED.shop), 4);
+  assert.ok(movementSpeedFactor("shopping.wrl", 4, AUTHORED.mall)
+    > movementSpeedFactor("shopping.wrl", 2.5, AUTHORED.mall));
+});
+
+test("the dial the panel shows is the dial, not the engine factor", () => {
+  /* effectiveMovementSpeed is what WalkSpeedPanel renders; normalisation
+   * happens after it, on the way to X_ITE, so the citizen always sees the
+   * number they chose. */
+  assert.strictEqual(effectiveMovementSpeed("carshowcase.wrl", 2.5), 2.5);
+  assert.strictEqual(effectiveMovementSpeed("largeitems.wrl", 2.5), 2.5);
+  assert.notStrictEqual(movementSpeedFactor("carshowcase.wrl", 2.5, AUTHORED.carShowcase),
+    movementSpeedFactor("largeitems.wrl", 2.5, AUTHORED.largeItems));
+});
+
+test("the published contract is unchanged", () => {
+  assert.strictEqual(DEFAULT_MOVEMENT_SPEED_MULTIPLIER, 2.5);
+  assert.strictEqual(MIN_MOVEMENT_SPEED_MULTIPLIER, 0.5);
+  assert.strictEqual(MAX_MOVEMENT_SPEED_MULTIPLIER, 6);
+  assert.strictEqual(MOVEMENT_SPEED_STORAGE_KEY, "movementSpeedMultiplier");
+  assert.ok(isValidMovementSpeed(2.5) && !isValidMovementSpeed(7));
+  assert.strictEqual(formatSpeedInput(1), "1");
+  assert.strictEqual(clampMovementSpeed("9"), 6);
 });
 
 /* ------------------------------------------------------------------ */

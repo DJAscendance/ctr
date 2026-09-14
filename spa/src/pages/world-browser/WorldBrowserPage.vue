@@ -77,7 +77,7 @@ import { RemoteMemberRegistry } from "@/remote-members";
 import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
 import { sharedEventNodes } from "../../libs/shared-events";
 import { releaseWorldScripts } from "@/libs/world-scripts";
-import { effectiveMovementSpeed } from "@/helpers/movement-speed.helper";
+import { movementSpeedFactor } from "@/helpers/movement-speed.helper";
 import {
   isOutlands,
   outlandsTeamOfAvatar,
@@ -1719,9 +1719,15 @@ export default Vue.extend({
     applyMovementSpeed(): void {
       try {
         if (!X3D.bxx || typeof X3D.bxx.setSpeedMultiplierProvider !== "function") return;
-        X3D.bxx.setSpeedMultiplierProvider(() => effectiveMovementSpeed(
+        /* `authoredWorldSpeed` is the bound NavigationInfo.speed, handed in by
+         * the patch because only it can see the live scene. Dividing it back
+         * out is what makes one dial setting mean one pace in every world -
+         * see movementSpeedFactor. A pinned world (jail.wrl) keeps its raw
+         * factor and is not normalised at all. */
+        X3D.bxx.setSpeedMultiplierProvider((authoredWorldSpeed: unknown) => movementSpeedFactor(
           this.$store.data.place.world_filename,
           this.$store.data.movementSpeedMultiplier,
+          authoredWorldSpeed,
         ));
       } catch (error) {
         console.warn("could not publish the movement speed multiplier", error);
