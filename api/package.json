@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "REST API for Cybertown Revival",
   "main": "api.ts",
+  "engines": {
+    "node": ">=14.18.1 <15"
+  },
   "scripts": {
     "build": "tsc",
     "build:prod": "tsc --project tsconfig.prod.json",

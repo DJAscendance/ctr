@@ -2,6 +2,9 @@
   "name": "ct-spa",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=14.18.1 <15"
+  },
   "scripts": {
     "serve": "vue-cli-service serve --mode development --watch",
     "build": "vue-cli-service build",

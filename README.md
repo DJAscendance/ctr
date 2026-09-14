@@ -43,6 +43,20 @@ run the development environment:
 You may also wish to install Docker for Desktop if you wish. For beginners, there are plenty of tutorials 
 and videos online on installation and the basics of node, npm and docker.
 
+#### Node runtime
+
+The development baseline is **Node 14.18.1**. It is declared in `.tool-versions` (asdf),
+`.nvmrc` (nvm) and the `engines` field of `api/package.json` and `spa/package.json`. Both
+tools search parent directories, so one file at the repository root covers `api/` and
+`spa/` as well.
+
+The `node:14` Docker image the compose stack runs is **Node 14.21.3**. That is why `engines`
+is written as `>=14.18.1 <15` rather than a single exact version: it has to accept both the
+local baseline and the container, while still refusing a newer major.
+
+A migration to a modern Node LTS is planned but **not active**. Do not install Node 24 for
+this repository yet; the build chain has not been moved.
+
 ### Initial Setup
 
 1. Clone this repository to your machine.
