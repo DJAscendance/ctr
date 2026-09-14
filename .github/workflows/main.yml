@@ -1,4 +1,20 @@
-# This is a basic workflow to help you get started with Actions
+# Legacy SSH deployment for the original CTR production host.
+#
+# Phase 2B hardening (2026-09-14). The deploy still has the same shape - pull on
+# the host, install, build - but four unsafe behaviours were removed:
+#
+#   * `npm install` became `npm ci`. The live host now installs exactly what the
+#     committed lockfiles pin instead of re-resolving floating ranges at deploy
+#     time. This legacy path has no build artifact to ship, so an install on the
+#     host is still required; `npm ci` is the deterministic form of it.
+#   * `npm version minor` was removed outright. A deployment must never rewrite a
+#     tracked package file, or create a commit and tag, on the server.
+#   * `npm run db:migrate` is no longer part of the automatic push deploy. It runs
+#     only from a manual `workflow_dispatch` whose operator has confirmed a
+#     restore-verified database backup.
+#   * The remote Node major version is checked before anything installs, so a host
+#     that drifted off Node 14 fails the deploy instead of quietly building
+#     against the wrong runtime.
 
 name: CI
 
@@ -8,8 +24,18 @@ on:
   push:
     branches: [ master ]
 
-  # Allows you to run this workflow manually from the Actions tab
+  # Allows you to run this workflow manually from the Actions tab. The manual run
+  # is also the only way to apply a database migration.
   workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: "Run db:migrate on the live host (backup must already be verified)"
+        type: boolean
+        default: false
+      backup_verified:
+        description: "Type BACKUP-VERIFIED to confirm a restore-tested backup exists"
+        type: string
+        default: ""
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
@@ -20,33 +46,45 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-          
+
       - name: running ssh remote commands
         uses: appleboy/ssh-action@master
+        env:
+          # True only for a manual run that both asked for migrations and typed
+          # the backup confirmation. A push deploy can never set this.
+          RUN_MIGRATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_migrations && inputs.backup_verified == 'BACKUP-VERIFIED' }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SERVER_KEY }}
+          envs: RUN_MIGRATIONS
           script: |
             set -e
             git --version
             node --version
             npm --version
+            NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+            if [ "$NODE_MAJOR" != "14" ]; then
+              echo -e "\e[1;41m Deploy host runs Node $NODE_MAJOR. This release line builds on Node 14. Stopping."
+              exit 1
+            fi
             cd ctr
             echo -e "\e[1;42m Pulling from github..."
             git checkout -- \*
             git pull origin master
             cd api
-            echo -e "\e[1;42m Installing API packages..."
-            npm install
+            echo -e "\e[1;42m Installing API packages from the lockfile..."
+            npm ci
             npm run build:prod
-            echo -e "\e[1;42m Migrating database to latest schema..."
-            npm run db:migrate
+            if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+              echo -e "\e[1;42m Migrating database to latest schema..."
+              npm run db:migrate
+            else
+              echo -e "\e[1;43m Skipping database migration. Re-run this workflow manually with run_migrations set and backup_verified typed, after a restore-tested backup."
+            fi
             cd ..
             cd spa
-            echo -e "\e[1;42m Increment SPA minor version number..."
-            npm version minor
-            echo -e "\e[1;42m Installing SPA packages..."
-            npm install
+            echo -e "\e[1;42m Installing SPA packages from the lockfile..."
+            npm ci
             echo -e "\e[1;42m Building SPA..."
             npm run build
