@@ -12,7 +12,7 @@
 # Build context is the repository root.
 
 # ---------------------------------------------------------------- dependencies
-FROM node:14 AS deps
+FROM node:24.21.0-bookworm@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0 AS deps
 WORKDIR /usr/src/app
 COPY spa/package.json spa/package-lock.json ./
 RUN npm ci
@@ -20,10 +20,11 @@ RUN npm ci
 # ------------------------------------------------------------------ spa build
 FROM deps AS build
 COPY spa/ ./
-# Nothing is set here. `npm run build` goes through spa/scripts/vue-cli-service.js, which
-# adds --openssl-legacy-provider only when the running Node is 17 or newer. On this node:14
-# base it adds nothing -- the flag does not exist before Node 17 and node:14 refuses to
-# start with it -- and the build works because OpenSSL 1.1 still offers webpack 4 its MD4.
+# No NODE_OPTIONS is set here, and none is set globally. `npm run build` goes through
+# spa/scripts/vue-cli-service.js, which adds --openssl-legacy-provider only when the
+# running Node is 17 or newer. On this Node 24 base the wrapper does add the flag, and
+# that is the only thing keeping webpack 4's MD4 hashes working against OpenSSL 3. The
+# bridge is temporary -- it goes away with the webpack 5 upgrade, not in this phase.
 RUN npm run build
 
 # --------------------------------------------------------------- socket server

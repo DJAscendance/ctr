@@ -11,14 +11,16 @@
 #   * open a debugger port. `npm run dev` is `node --inspect=0.0.0.0:9229 ...`, which on a
 #     public host is remote code execution by design.
 #
-# Node 14.21.3 and npm 6 are what the project builds against; `npm ci` accepts the
-# lockfileVersion 1 files unchanged, so no lockfile regeneration is needed.
+# Node 24.21.0 and npm 11 are what the project builds against, pinned by immutable digest
+# so the runtime is deterministic. npm 11 still accepts the lockfileVersion 1 files
+# unchanged, so no lockfile regeneration is needed. The base OS moved with Node: Debian 10
+# (buster, glibc 2.28) under node:14 became Debian 12 (bookworm, glibc 2.36) here.
 #
 # Build context is the repository root:
 #   docker build -f docker/beta/api.Dockerfile .
 
 # ---------------------------------------------------------------- dependencies
-FROM node:14 AS deps
+FROM node:24.21.0-bookworm@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0 AS deps
 WORKDIR /usr/src/app
 COPY api/package.json api/package-lock.json ./
 RUN npm ci
@@ -49,7 +51,7 @@ RUN chmod +x /usr/local/bin/bootstrap-db /usr/local/bin/migrate-db
 CMD ["bootstrap-db"]
 
 # --------------------------------------------------------------------- runtime
-FROM node:14 AS runtime
+FROM node:24.21.0-bookworm@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0 AS runtime
 ENV NODE_ENV=production
 WORKDIR /usr/src/app
 COPY api/package.json api/package-lock.json ./
