@@ -45,11 +45,11 @@ cell *up*.
 
 ## Running
 
-Both tools need a live stack and a real GPU. Playwright itself needs Node 20+;
-the SPA build and the SPA unit suite stay on the repo-pinned Node 14.18.1.
+Both tools need a live stack and a real GPU. Playwright, the SPA build and the
+SPA unit suite all run on the repo-pinned Node 24.21.0.
 
 ```shell
-export PATH="$HOME/.nvm/versions/node/v20.20.2/bin:$PATH"
+export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"
 
 # 43 runtime checks, exits non-zero on any failure
 DISPLAY=:0 CTR_QA_URL=http://localhost:8001 \

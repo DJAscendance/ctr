@@ -4,7 +4,7 @@
  * Minimal test runner.
  *
  * The placement toolkit is deliberately standalone CommonJS so it can run on
- * the pinned Node 14 with no install step; the api workspace jest config only
+ * the pinned Node with no install step; the api workspace jest config only
  * picks up `*.spec.ts` under `api/` and boots a DB-backed setup file, so it is
  * not a fit for these pure-logic assertions.
  */

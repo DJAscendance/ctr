@@ -25,7 +25,7 @@
  * store, so the page cannot tell this gate what it wants to hear.
  *
  * Usage:
- *   export PATH="$HOME/.nvm/versions/node/v20.20.2/bin:$PATH"
+ *   export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"
  *   export NODE_PATH="$HOME/.npm-global/lib/node_modules/@playwright/cli/node_modules"
  *   export CTR_QA_USER=testqa CTR_QA_PASS=testqa
  *   DISPLAY=:1 node qa/outlands/tools/check-system-avatars.js [outDir]

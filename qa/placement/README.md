@@ -267,9 +267,9 @@ off a real drop, sub-tolerance offsets, animated and static geometry, and both
 back-dated and current `created_at` values.
 
 The contract, comparator, tests, captures and comparison all run on the pinned
-Node 14.21.3. `capture-rendered.js` is the exception: Playwright needs a modern
-Node, so run that one tool with whatever Node the local Playwright install
-supports. It renders on the GPU via ANGLE (`DISPLAY=:1`); software rasterisation
+Node 24.21.0, which is also new enough for Playwright, so `capture-rendered.js`
+no longer needs a second runtime. It renders on the GPU via ANGLE (`DISPLAY=:1`);
+software rasterisation
 produces identical transforms because they are scene-graph values, but the
 screenshots are then not representative.
 

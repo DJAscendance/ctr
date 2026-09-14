@@ -17,7 +17,7 @@
  * `battle` Script.
  *
  * Usage:
- *   export PATH="$HOME/.nvm/versions/node/v20.20.2/bin:$PATH"
+ *   export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"
  *   export NODE_PATH="$HOME/.npm-global/lib/node_modules/@playwright/cli/node_modules"
  *   export CTR_QA_USER=testqa CTR_QA_PASS=testqa
  *   export CTR_QA_USER_2D=testqa2d CTR_QA_PASS_2D=testqa   # chatdefault = 0

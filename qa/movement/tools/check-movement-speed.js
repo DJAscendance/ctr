@@ -17,7 +17,7 @@
  * walked into a wall or off a ledge from an earlier, slower measurement.
  *
  * Usage:
- *   export PATH="$HOME/.nvm/versions/node/v20.20.2/bin:$PATH"
+ *   export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"
  *   export NODE_PATH="/home/ryan/cybertownrevival/node_modules"
  *   CTR_QA_URL=http://127.0.0.1:8001 DISPLAY=:1 node qa/movement/tools/check-movement-speed.js [outDir]
  */

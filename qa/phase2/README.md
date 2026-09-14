@@ -11,15 +11,14 @@ numbers about a CPU.
 
 ## Running
 
-Playwright will not run on Node 14, and the SPA will not build on anything
-else, so the two live side by side:
+The SPA build and the gates now share one runtime, Node 24.21.0:
 
 ```shell
-# build the candidate (Node 14.21.3)
+# build the candidate
 cd spa && npm run build
 
-# run a gate (Node 20 + the globally installed playwright)
-export PATH="$HOME/.nvm/versions/node/v20.20.2/bin:$PATH"
+# run a gate (the globally installed playwright)
+export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"
 export NODE_PATH="$HOME/.npm-global/lib/node_modules/@playwright/cli/node_modules"
 export CTR_QA_URL=http://127.0.0.1:8128 CTR_QA_USER=testqa CTR_QA_PASS=testqa
 DISPLAY=:1 node qa/phase2/tools/check-two-client.js

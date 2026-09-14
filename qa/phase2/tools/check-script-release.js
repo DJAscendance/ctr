@@ -23,7 +23,7 @@
  * and then asks the collector whether the old world actually went.
  *
  * Usage:
- *   export PATH="$HOME/.nvm/versions/node/v20.20.2/bin:$PATH"
+ *   export PATH="$HOME/.nvm/versions/node/v24.21.0/bin:$PATH"
  *   export NODE_PATH="$HOME/.npm-global/lib/node_modules/@playwright/cli/node_modules"
  *   CTR_QA_URL=http://127.0.0.1:8428 DISPLAY=:1 \
  *     node qa/phase2/tools/check-script-release.js [outDir]
