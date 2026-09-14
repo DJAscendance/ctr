@@ -104,3 +104,20 @@ export function effectiveMovementSpeed(
   }
   return clampMovementSpeed(userMultiplier);
 }
+
+/**
+ * Canonical text for a speed control's number box.
+ *
+ * `String()` rather than `toFixed()` on purpose: the box is something a
+ * citizen types into, so `1` must read back as `"1"`, not `"1.0"`. The
+ * adjacent read-only label keeps its one-decimal form - that one is a
+ * display, not an input.
+ *
+ * Also used as the write-back value when a commit leaves the multiplier
+ * unchanged (typing "abc" into a box already holding the default clamps
+ * straight back to that default, so nothing re-renders on its own) - without
+ * the write-back the box would sit empty while the real speed was fine.
+ */
+export function formatSpeedInput(value: number): string {
+  return String(clampMovementSpeed(value));
+}

@@ -83,7 +83,14 @@ export interface AppStore {
         setPlace: (value: Place) => void;
         setUser: (userData: object) => void;
         setBid: (bid: number) => void;
-        setMovementSpeedMultiplier: (value: number) => void;
+        /*
+         * `unknown`, not `number`: the raw DOM string off a slider or a number
+         * box arrives here untouched, and `clampMovementSpeed` below is the one
+         * place that decides what a value means. Parsing at each call site is
+         * how two controls drift apart.
+         */
+        // eslint-disable-next-line no-unused-vars
+        setMovementSpeedMultiplier: (value: unknown) => void;
         /* Base no-unused-vars cannot see TS type params; same as the five above. */
         // eslint-disable-next-line no-unused-vars
         setOutlandsAvatar: (avatar: OutlandsAvatar | null) => void;
@@ -142,7 +149,7 @@ const appStore = Vue.observable<AppStore>({
          * out-of-range value (including one edited directly into localStorage)
          * can never propagate to the viewer.
          */
-        setMovementSpeedMultiplier(value: number): void {
+        setMovementSpeedMultiplier(value: unknown): void {
             const clamped = clampMovementSpeed(value);
             appStore.data.movementSpeedMultiplier = clamped;
             localStorage.setItem(MOVEMENT_SPEED_STORAGE_KEY, clamped.toString());
