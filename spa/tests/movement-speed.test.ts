@@ -25,6 +25,12 @@ const path = require("path");
 const TOOLS_COMPONENT = path.resolve(
   __dirname, "../../../src/pages/world-browser/WorldBrowserTools.vue",
 );
+const PANEL_COMPONENT = path.resolve(
+  __dirname, "../../../src/components/WalkSpeedPanel.vue",
+);
+const WORLD_PAGE = path.resolve(
+  __dirname, "../../../src/pages/world-browser/WorldBrowserPage.vue",
+);
 
 let passed = 0;
 let failed = 0;
@@ -410,43 +416,144 @@ console.log("\n14. UI WIRING");
 
 /*
  * The SPA test harness has no DOM and no @vue/test-utils, so behaviour is
- * proven above against the real helper. These four checks guard only the
- * wiring that a pure-logic suite cannot see: that the control actually
- * carries all three parts, and that neither input parses on its own.
+ * proven above against the real helper, and the rendered placement is proven
+ * against a live world by qa/movement-ui/tools/check-walk-speed-ui.js. These
+ * checks guard only the wiring a pure-logic suite can see.
+ *
+ * They used to read WorldBrowserTools.vue, because the control lived
+ * permanently in the legacy right-hand rail. That placement was the defect,
+ * and these assertions were what made it look correct - so the contract they
+ * encode is now the opposite one: the rail must NOT carry the control, and the
+ * panel that does must be reachable only from the world context menu.
  */
 const toolsSource: string = fs.readFileSync(TOOLS_COMPONENT, "utf8");
+const panelSource: string = fs.readFileSync(PANEL_COMPONENT, "utf8");
+const worldPageSource: string = fs.readFileSync(WORLD_PAGE, "utf8");
+
+test("the legacy sidebar carries no walk-speed control at all", () => {
+  assert.ok(!/movement-speed/.test(toolsSource), "no speed input in the rail");
+  assert.ok(!/Walk Speed/i.test(toolsSource), "no Walk Speed label in the rail");
+  assert.ok(!/movementSpeed|setMovementSpeedMultiplier/.test(toolsSource),
+    "the rail does not touch the speed store value");
+});
 
 test("the control carries a slider, a number box and Reset", () => {
-  assert.ok(/id="movement-speed"[\s\S]{0,200}type="range"/.test(toolsSource), "slider");
-  assert.ok(/id="movement-speed-number"[\s\S]{0,200}type="number"/.test(toolsSource), "number box");
-  assert.ok(/@click="resetSpeed"/.test(toolsSource), "Reset");
+  assert.ok(/id="movement-speed"[\s\S]{0,240}type="range"/.test(panelSource), "slider");
+  assert.ok(/id="movement-speed-number"[\s\S]{0,240}type="number"/.test(panelSource), "number box");
+  assert.ok(/@click="resetSpeed"/.test(panelSource), "Reset");
 });
 
 test("both inputs render the one store value", () => {
-  const bindings = toolsSource.match(/:value="movementSpeed"/g) || [];
+  const bindings = panelSource.match(/:value="movementSpeed"/g) || [];
   assert.strictEqual(bindings.length, 2, "slider and number box both bind movementSpeed");
   assert.ok(/movementSpeed\(\): number \{[\s\S]{0,120}\$store\.data\.movementSpeedMultiplier/
-    .test(toolsSource));
+    .test(panelSource));
 });
 
 test("both inputs commit through the one store setter", () => {
-  const commits = toolsSource.match(/setMovementSpeedMultiplier\(/g) || [];
+  const commits = panelSource.match(/setMovementSpeedMultiplier\(/g) || [];
   assert.strictEqual(commits.length, 3, "slider, number box and Reset");
   assert.ok(!/parseFloat|parseInt|Number\(/.test(
-    toolsSource.slice(toolsSource.indexOf("onSpeedInput"), toolsSource.indexOf("getMallId")),
+    panelSource.slice(panelSource.indexOf("onSpeedInput"),
+      panelSource.indexOf("onDocumentMouseDown")),
   ), "no input parses on its own - the store clamps");
 });
 
 test("the number box holds its range and commits on change, not on every keystroke", () => {
-  const box = toolsSource.slice(
-    toolsSource.indexOf('id="movement-speed-number"'),
-    toolsSource.indexOf("</div>", toolsSource.indexOf('id="movement-speed-number"')),
+  const box = panelSource.slice(
+    panelSource.indexOf('id="movement-speed-number"'),
+    panelSource.indexOf("/>", panelSource.indexOf('id="movement-speed-number"')),
   );
   assert.ok(/:min="speedMin"/.test(box) && /:max="speedMax"/.test(box), "range bound");
   assert.ok(/@change="onSpeedCommit"/.test(box), "commits on change");
   assert.ok(!/@input=/.test(box), "does not clamp mid-keystroke");
-  assert.ok(/speedMin: MIN_MOVEMENT_SPEED_MULTIPLIER/.test(toolsSource));
-  assert.ok(/speedMax: MAX_MOVEMENT_SPEED_MULTIPLIER/.test(toolsSource));
+  assert.ok(/speedMin: MIN_MOVEMENT_SPEED_MULTIPLIER/.test(panelSource));
+  assert.ok(/speedMax: MAX_MOVEMENT_SPEED_MULTIPLIER/.test(panelSource));
+});
+
+/* --------------------------------- 15. WORLD CONTEXT MENU WIRING ---- */
+console.log("\n15. WORLD CONTEXT MENU WIRING");
+
+test("the panel starts closed and is only opened from the menu callback", () => {
+  assert.ok(/walkSpeedOpen: false/.test(worldPageSource), "closed on boot");
+  const opens = worldPageSource.match(/this\.walkSpeedOpen = true/g) || [];
+  assert.strictEqual(opens.length, 1, "exactly one thing opens it");
+  assert.ok(/openWalkSpeedPanel\(\): void \{[\s\S]{0,1400}this\.walkSpeedOpen = true/
+    .test(worldPageSource), "and that is openWalkSpeedPanel");
+});
+
+test("Walk Speed is spliced into X_ITE's own menu, not into a menu of our own", () => {
+  assert.ok(/getContextMenu\(\)/.test(worldPageSource), "asks X_ITE for its context menu");
+  assert.ok(/setUserMenu\(/.test(worldPageSource), "uses the supported extension point");
+  assert.ok(/"walk-speed":\s*\{[\s\S]{0,200}name: "Walk Speed"/.test(worldPageSource));
+  assert.ok(/callback: \(\) => this\.openWalkSpeedPanel\(\)/.test(worldPageSource));
+});
+
+test("the menu entry is installed once per browser, not once per world load", () => {
+  assert.ok(/if \(this\.walkSpeedMenuBrowser === browser\) return;/.test(worldPageSource),
+    "guarded against re-registering");
+  assert.ok(/this\.walkSpeedMenuBrowser = browser;/.test(worldPageSource));
+});
+
+test("the right-click listener is scoped to the 3D window", () => {
+  const worldDiv = worldPageSource.slice(
+    worldPageSource.indexOf('id="world"'),
+    worldPageSource.indexOf("></div>", worldPageSource.indexOf('id="world"')),
+  );
+  assert.ok(/@contextmenu="recordWalkSpeedPointer"/.test(worldDiv),
+    "bound on #world itself");
+  const listeners = worldPageSource.match(/@contextmenu=/g) || [];
+  assert.strictEqual(listeners.length, 1, "and nowhere else on this page");
+});
+
+test("the native browser menu is not suppressed by this application", () => {
+  const handler = worldPageSource.slice(
+    worldPageSource.indexOf("recordWalkSpeedPointer(event: MouseEvent)"),
+    worldPageSource.indexOf("installWalkSpeedMenu"),
+  );
+  assert.ok(!/preventDefault/.test(handler),
+    "X_ITE already prevents it on the canvas; doing it again would widen the suppression");
+});
+
+test("the panel closes on a world change and on a route change", () => {
+  assert.ok(/\$route\(to, from\) \{\s*this\.closeWalkSpeedPanel\(\);/.test(worldPageSource),
+    "route change");
+  assert.ok(/installWalkSpeedMenu\(browser\);[\s\S]{0,240}this\.closeWalkSpeedPanel\(\);/
+    .test(worldPageSource), "world change");
+});
+
+test("the panel dismisses itself on a click outside and on Escape", () => {
+  assert.ok(/onDocumentMouseDown/.test(panelSource), "click-outside handler");
+  assert.ok(/event\.key === "Escape"/.test(panelSource), "Escape handler");
+  assert.ok(/panel\.contains\(event\.target\)\) return;/.test(panelSource),
+    "a click inside the panel does not close it");
+});
+
+test("the dismissal listeners are bound only while the panel is open", () => {
+  assert.ok(/visible\(open: boolean\): void \{\s*if \(open\) this\.bindDismissal\(\);\s*else this\.unbindDismissal\(\);/
+    .test(panelSource), "bound on open, released on close");
+  assert.ok(/beforeDestroy\(\): void \{\s*this\.unbindDismissal\(\);/.test(panelSource),
+    "and released when the page goes away");
+});
+
+test("the panel is kept inside the 3D window", () => {
+  const open = worldPageSource.slice(
+    worldPageSource.indexOf("openWalkSpeedPanel(): void {"),
+    worldPageSource.indexOf("closeWalkSpeedPanel(): void {"),
+  );
+  assert.ok(/worldBox\.right[\s\S]{0,200}worldBox\.bottom/.test(open), "clamped to the world box");
+  assert.ok(/Math\.max\(minLeft, Math\.min\(this\.walkSpeedLeft, maxLeft\)\)/.test(open));
+  assert.ok(/Math\.max\(minTop, Math\.min\(this\.walkSpeedTop, maxTop\)\)/.test(open));
+  assert.ok(/panel\.offsetWidth/.test(open) && /panel\.offsetHeight/.test(open),
+    "clamped against the panel's real size, not a guess");
+});
+
+test("the movement contract itself is untouched by the move", () => {
+  assert.strictEqual(DEFAULT_MOVEMENT_SPEED_MULTIPLIER, 2.5);
+  assert.strictEqual(MIN_MOVEMENT_SPEED_MULTIPLIER, 0.5);
+  assert.strictEqual(MAX_MOVEMENT_SPEED_MULTIPLIER, 6);
+  assert.strictEqual(WORLD_SPEED_OVERRIDES["jail.wrl"], 1);
+  assert.strictEqual(MOVEMENT_SPEED_STORAGE_KEY, "movementSpeedMultiplier");
 });
 
 /* ------------------------------------------------------------------ */

@@ -9,7 +9,26 @@
         </a>
       </strong>
     </div>
-    <div id="world" class="world w-full flex-1" style="" v-show="this.$store.data.view3d && !force2d"></div>
+    <div
+      id="world"
+      class="world w-full flex-1"
+      style=""
+      v-show="this.$store.data.view3d && !force2d"
+      @contextmenu="recordWalkSpeedPointer"
+    ></div>
+    <!--
+      Opened only from the "Walk Speed" entry this page adds to X_ITE's own
+      world context menu. It positions itself `fixed`, in viewport coordinates,
+      so this page's root needs no positioning of its own - see the note in
+      WalkSpeedPanel.vue for why that matters to Chat's menu.
+    -->
+    <walk-speed-panel
+      :visible="walkSpeedOpen"
+      :left="walkSpeedLeft"
+      :top="walkSpeedTop"
+      ref="walkSpeedPanel"
+      @close="closeWalkSpeedPanel"
+    />
     <div v-show="!this.$store.data.view3d || force2d" class="w-full flex-1">
       <component :is="mainComponent"></component>
     </div>
@@ -48,6 +67,7 @@ import Vue from "vue";
 import * as avatarsDataJson from "../../libs/data/avatars.json";
 import * as worldDataJson from "../../libs/data/worlds.json";
 import Chat from "../../components/Chat.vue";
+import WalkSpeedPanel from "../../components/WalkSpeedPanel.vue";
 import {
   debugMsg,
   environment,
@@ -68,7 +88,7 @@ import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
   name: "WorldBrowserPage",
-  components: { Chat },
+  components: { Chat, WalkSpeedPanel },
   data: (): WorldBrowserData => {
     return {
       loaded: false,
@@ -104,6 +124,11 @@ export default Vue.extend({
       outlandsTeamNeeded: false,
       pet: null,
       clickId: null,
+      walkSpeedOpen: false,
+      walkSpeedLeft: 0,
+      walkSpeedTop: 0,
+      walkSpeedPointer: null,
+      walkSpeedMenuBrowser: null,
     };
   },
   methods: {
@@ -1378,6 +1403,10 @@ export default Vue.extend({
       this.releaseWorldScriptState(browser);
       this.applyAvatarIdentity();
       this.applyMovementSpeed();
+      this.installWalkSpeedMenu(browser);
+      /* A panel left open over the outgoing world must not survive into the
+       * incoming one: it was positioned against a world that is being replaced. */
+      this.closeWalkSpeedPanel();
       /*
        * This run owns the promise loadURL hands back. Dropping it was the
        * defect: the browser callback below is keyed by the component, so a
@@ -1609,6 +1638,84 @@ export default Vue.extend({
      * every read, including every frame of an in-progress walk, so a place
      * change can never leak the previous world's speed forward.
      */
+    /*
+     * Remembers where the citizen right-clicked inside the 3D window.
+     *
+     * Deliberately does NOT call preventDefault(): X_ITE's own ContextMenu
+     * already does that on the canvas, which is what suppresses the native
+     * browser menu, and it does so ONLY inside the world. Suppressing it a
+     * second time here would extend the suppression to the non-canvas edges of
+     * #world for no gain, and doing it anywhere higher up would take the
+     * native menu away from chat, the sidebar and every text field.
+     *
+     * The listener is bound on #world in the template, so chat, the sidebar
+     * buttons, the admin controls, the text fields and the select boxes all
+     * keep their ordinary right-click - none of them is inside #world.
+     */
+    recordWalkSpeedPointer(event: MouseEvent): void {
+      this.walkSpeedPointer = { x: event.clientX, y: event.clientY };
+    },
+    /*
+     * Adds one "Walk Speed" line to the context menu X_ITE already opens on
+     * right-click inside the world, using X_ITE 16's supported extension point
+     * (ContextMenu.setUserMenu). Nothing here builds a menu of its own: the
+     * entry is spliced into the existing menu at X_ITE's own `user-` slot,
+     * between Texture Quality and Fullscreen.
+     *
+     * Installed once per X_ITE browser rather than once per world load. The
+     * browser outlives every replaceWorld(), so re-registering on each load
+     * would only overwrite the same slot, and the guard keeps that obvious.
+     */
+    installWalkSpeedMenu(browser: any): void {
+      try {
+        if (this.walkSpeedMenuBrowser === browser) return;
+        if (typeof browser.getContextMenu !== "function") return;
+        const contextMenu = browser.getContextMenu();
+        if (!contextMenu || typeof contextMenu.setUserMenu !== "function") return;
+        contextMenu.setUserMenu(() => ({
+          "walk-speed": {
+            name: "Walk Speed",
+            callback: () => this.openWalkSpeedPanel(),
+          },
+        }));
+        this.walkSpeedMenuBrowser = browser;
+      } catch (error) {
+        console.warn("could not add the walk speed entry to the world menu", error);
+      }
+    },
+    /*
+     * Opens the panel at the point that was right-clicked, then nudges it back
+     * inside the world area once its real size is known. Measuring after the
+     * render is what keeps it on screen: the panel's width depends on the
+     * fonts and on the number box's spinner, so a guessed size would let a
+     * right-click near the right or bottom edge push it out of view.
+     */
+    openWalkSpeedPanel(): void {
+      const world = document.querySelector("#world") as HTMLElement;
+      if (!world) return;
+      const worldBox = world.getBoundingClientRect();
+      const pointer = this.walkSpeedPointer
+        || { x: worldBox.left + worldBox.width / 2, y: worldBox.top + worldBox.height / 2 };
+      this.walkSpeedLeft = pointer.x;
+      this.walkSpeedTop = pointer.y;
+      this.walkSpeedOpen = true;
+      this.$nextTick(() => {
+        const panelComponent = this.$refs.walkSpeedPanel as any;
+        const panel = panelComponent && (panelComponent.$el as HTMLElement);
+        if (!panel) return;
+        const width = panel.offsetWidth;
+        const height = panel.offsetHeight;
+        const maxLeft = worldBox.right - width;
+        const maxTop = worldBox.bottom - height;
+        const minLeft = worldBox.left;
+        const minTop = worldBox.top;
+        this.walkSpeedLeft = Math.round(Math.max(minLeft, Math.min(this.walkSpeedLeft, maxLeft)));
+        this.walkSpeedTop = Math.round(Math.max(minTop, Math.min(this.walkSpeedTop, maxTop)));
+      });
+    },
+    closeWalkSpeedPanel(): void {
+      this.walkSpeedOpen = false;
+    },
     applyMovementSpeed(): void {
       try {
         if (!X3D.bxx || typeof X3D.bxx.setSpeedMultiplierProvider !== "function") return;
@@ -1701,6 +1808,7 @@ export default Vue.extend({
     },
 
     $route(to, from) {
+      this.closeWalkSpeedPanel();
       if (
         (to.name === "world-browser" || to.name === "user-home" || to.name === "club-page")
         && this.$store.data.x3dReady

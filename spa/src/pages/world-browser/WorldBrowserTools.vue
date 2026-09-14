@@ -27,32 +27,6 @@
             v-on:click="opener('#/messageboard/' + $store.data.place.id)">Messages</button>
     </span>
     <br />
-    <div class="flex items-center" style="gap: 0.25rem;">
-      <label for="movement-speed" style="white-space: nowrap;">Walk Speed</label>
-      <input
-        id="movement-speed"
-        type="range"
-        :min="speedMin"
-        :max="speedMax"
-        step="0.1"
-        :value="movementSpeed"
-        @input="onSpeedInput"
-      />
-      <input
-        id="movement-speed-number"
-        type="number"
-        aria-label="Walk speed multiplier"
-        :min="speedMin"
-        :max="speedMax"
-        step="0.1"
-        style="width: 4em;"
-        :value="movementSpeed"
-        @change="onSpeedCommit"
-      />
-      <span style="min-width: 2.5em; display: inline-block;">{{ movementSpeed.toFixed(1) }}x</span>
-      <button type="button" class="btn-ui" @click="resetSpeed">Reset</button>
-    </div>
-    <br />
     <div v-if="$store.data.place.slug === 'mall'">
       <button class="btn-ui" v-on:click="opener('#/mall/catalog')">Mall Catalog</button>
       <br />
@@ -86,12 +60,6 @@
 
 <script lang="ts">
 import Vue from "vue";
-import {
-  DEFAULT_MOVEMENT_SPEED_MULTIPLIER,
-  formatSpeedInput,
-  MAX_MOVEMENT_SPEED_MULTIPLIER,
-  MIN_MOVEMENT_SPEED_MULTIPLIER,
-} from "@/helpers/movement-speed.helper";
 
 export default Vue.extend({
   name: "WorldBrowserTools",
@@ -103,41 +71,9 @@ export default Vue.extend({
       isMallStaff: false,
       data: null,
       mallId: null,
-      speedMin: MIN_MOVEMENT_SPEED_MULTIPLIER,
-      speedMax: MAX_MOVEMENT_SPEED_MULTIPLIER,
     };
   },
-  computed: {
-    movementSpeed(): number {
-      return this.$store.data.movementSpeedMultiplier;
-    },
-  },
   methods: {
-    /*
-     * The slider and the number box are two views of ONE value: both hand the
-     * raw DOM string to the same store setter, which clamps it (see
-     * `clampMovementSpeed`) before it reaches state, storage or the viewer.
-     * Neither control keeps a speed of its own, so they cannot disagree.
-     */
-    onSpeedInput(event: Event): void {
-      const target = event.target as HTMLInputElement;
-      this.$store.methods.setMovementSpeedMultiplier(target.value);
-    },
-    /*
-     * The number box commits on `change` (Enter, blur, spinner) rather than on
-     * `input`, so a half-typed "0." is not clamped up to the minimum under the
-     * citizen's fingers. The write-back matters when the clamp lands back on
-     * the value already held - "abc" in a box showing 2.5 leaves the store
-     * untouched, so Vue has nothing to re-render and the box would stay empty.
-     */
-    onSpeedCommit(event: Event): void {
-      const target = event.target as HTMLInputElement;
-      this.$store.methods.setMovementSpeedMultiplier(target.value);
-      target.value = formatSpeedInput(this.movementSpeed);
-    },
-    resetSpeed(): void {
-      this.$store.methods.setMovementSpeedMultiplier(DEFAULT_MOVEMENT_SPEED_MULTIPLIER);
-    },
     async getMallId(){
       this.mallId = await this.$http.get("/place/mall");
     },

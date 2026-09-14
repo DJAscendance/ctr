@@ -34,4 +34,12 @@ export interface WorldBrowserData {
     outlandsTeamNeeded: boolean;
     pet: any;
     clickId: string;
+    /** Walk-speed panel: open state and its position inside the world area. */
+    walkSpeedOpen: boolean;
+    walkSpeedLeft: number;
+    walkSpeedTop: number;
+    /** Last right-click point inside #world, in viewport coordinates. */
+    walkSpeedPointer: { x: number; y: number } | null;
+    /** The X_ITE browser the walk-speed menu entry is already installed on. */
+    walkSpeedMenuBrowser: any;
 }
