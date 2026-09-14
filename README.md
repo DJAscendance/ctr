@@ -73,19 +73,39 @@ pin and is unchanged.
 a different deploy path (`.github/workflows/main.yml`) and it was not part of this cutover.
 Do not assume a change that lands on beta reaches it.
 
-##### webpack 4 and OpenSSL 3
+##### Vue CLI 5 and webpack 5
 
-webpack 4 hashes module ids with MD4, and the OpenSSL 3 inside Node 17+ removed it, so a
-plain `vue-cli-service` compile on Node 24 fails with `ERR_OSSL_EVP_UNSUPPORTED`. The
-`serve`, `build` and `dev` scripts in `spa/package.json` therefore run through
-`spa/scripts/vue-cli-service.js`, which adds `--openssl-legacy-provider` to the child
-process only, and only when the running Node is 17 or newer. Node 14 gets nothing, because
-it rejects the flag outright. Now that the beta SPA image builds on Node 24, that build does
-take the flag, so the bridge is load-bearing in Docker and not only on a developer machine.
+The SPA builds with `@vue/cli-service` 5.0.9 on webpack 5. Vue stays on 2.6.14 and Vue Router
+on 3.5.2; this was a build-tool change only.
 
-Do not set `NODE_OPTIONS=--openssl-legacy-provider` anywhere else - not in a shell profile,
-a Dockerfile or a compose file. It is a build-time bridge for webpack 4 alone. The Vue CLI 5
-/ webpack 5 upgrade removes both the bridge and this wrapper.
+webpack 4 used to hash module ids with MD4, which the OpenSSL 3 inside Node 17+ removed, so
+every compile on Node 24 died with `ERR_OSSL_EVP_UNSUPPORTED`. `spa/scripts/vue-cli-service.js`
+existed to add `--openssl-legacy-provider` to the build's child process. webpack 5 hashes with
+an algorithm OpenSSL 3 still provides, so that wrapper is deleted and the `serve`, `build` and
+`dev` scripts call `vue-cli-service` directly.
+
+Do not set `NODE_OPTIONS=--openssl-legacy-provider` anywhere - not in a shell profile, a
+Dockerfile, a compose file or an npm script. Nothing in this repository needs it now, and
+setting it only re-enables a broken hash family.
+
+Three things in `spa/vue.config.js` hold webpack 5 to the asset policy webpack 4 had, and the
+file explains each one at the top:
+
+- a css-loader `url.filter` that leaves root-relative `url(/assets/...)` alone, because nginx
+  serves those files off disk and webpack must not pull them into the bundle,
+- a 4096-byte inline limit on the `images`, `media` and `fonts` rules, which is what url-loader
+  used under Vue CLI 4 (webpack 5 asset modules default to 8096),
+- no eslint hook, because Vue CLI 5 moved linting from a webpack rule to a plugin.
+
+`@vue/cli-plugin-eslint` is **not** installed. Its 5.x line requires ESLint >= 7.5.0, and this
+SPA is pinned to ESLint 6.8 with `eslint-plugin-vue` 6; moving the linter is a separate lane.
+`npm run lint` therefore calls `eslint` directly with the same `eslintConfig` from
+`spa/package.json`, over the same directories `vue-cli-service lint` used. It still passes
+`--fix`, so it rewrites files - use `npx eslint --quiet <path>` to check one file without that.
+
+`@types/node` is pinned to `^16.11.2` as a direct devDependency. It used to arrive
+transitively; the Vue CLI 5 tree floats it to a release whose `.d.ts` files use syntax
+TypeScript 4.1 cannot parse, which fails the build. Raising TypeScript is a separate lane.
 
 ### Initial Setup
 
