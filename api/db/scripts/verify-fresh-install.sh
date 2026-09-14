@@ -10,7 +10,7 @@
 #
 #   CTR_FRESH_DB_TEST=1 api/db/scripts/verify-fresh-install.sh
 #
-# Requires docker. It brings up its own throwaway mysql:5.7 and node:14 containers and
+# Requires docker. It brings up its own throwaway mysql:5.7 and Node 24 containers and
 # removes them again; it never reads DB_HOST/DB_DATABASE, so it cannot be pointed at a
 # database you care about.
 
@@ -41,7 +41,9 @@ mysql_exec() {
   docker exec -i "$CONTAINER" mysql -uroot -p"$MYSQL_PASS" --batch --skip-column-names "$@" 2>/dev/null
 }
 
-# Runs a command in a throwaway node:14 container wired to the disposable database.
+# Runs a command in a throwaway Node container wired to the disposable database. It is the
+# same digest-pinned image the beta runtime uses, so a fresh install is verified on the
+# runtime that actually ships, not on a floating tag.
 # The env vars are set on the process, and dotenv never overwrites an existing value, so a
 # developer's own api/.env cannot redirect this at another server.
 in_node() {
@@ -52,7 +54,7 @@ in_node() {
     -e DB_USER=root -e DB_PASS="$MYSQL_PASS" -e DB_DATABASE="$DB_NAME" \
     -e JWT_SECRET=fresh-db-test \
     -v "$REPO_ROOT":/usr/src/app -w /usr/src/app/api \
-    node:14 bash -c "$1"
+    node:24.21.0-bookworm@sha256:6dac556d980b7f0e5498d08f08cee0ca67798b4ad6c23964a9214920e67758d0 bash -c "$1"
 }
 
 echo "==> starting disposable mysql:5.7 ($CONTAINER)"
