@@ -830,4 +830,9 @@ test("no avatar code is involved in this lane", () => {
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+// Not `process.exit()`. On Node 24.21.0 that call deadlocks in this suite about half
+// the time when stdout is a file - the assertions have all run and the summary has
+// printed, then the process never leaves teardown. Setting the code and letting the
+// loop drain exits every time; there is nothing left to drain, as this suite ends with
+// no active handles and no active requests.
+process.exitCode = failed ? 1 : 0;
