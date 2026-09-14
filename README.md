@@ -60,6 +60,19 @@ runtime images are cut over. The legacy `master` deploy host also still requires
 The npm 6 inside `node:14` does not enforce a package's own `engines` field, so `npm ci`
 there is silent and all four beta image targets still build.
 
+##### webpack 4 and OpenSSL 3
+
+webpack 4 hashes module ids with MD4, and the OpenSSL 3 inside Node 17+ removed it, so a
+plain `vue-cli-service` compile on Node 24 fails with `ERR_OSSL_EVP_UNSUPPORTED`. The
+`serve`, `build` and `dev` scripts in `spa/package.json` therefore run through
+`spa/scripts/vue-cli-service.js`, which adds `--openssl-legacy-provider` to the child
+process only, and only when the running Node is 17 or newer. Node 14 gets nothing, because
+it rejects the flag outright.
+
+Do not set `NODE_OPTIONS=--openssl-legacy-provider` anywhere else - not in a shell profile,
+a Dockerfile or a compose file. It is a build-time bridge for webpack 4 alone. The Vue CLI 5
+/ webpack 5 upgrade removes both the bridge and this wrapper.
+
 ### Initial Setup
 
 1. Clone this repository to your machine.

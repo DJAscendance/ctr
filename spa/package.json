@@ -6,10 +6,10 @@
     "node": ">=24.21.0 <25"
   },
   "scripts": {
-    "serve": "vue-cli-service serve --mode development --watch",
-    "build": "vue-cli-service build",
+    "serve": "node scripts/vue-cli-service.js serve --mode development --watch",
+    "build": "node scripts/vue-cli-service.js build",
     "lint": "vue-cli-service lint",
-    "dev": "vue-cli-service build --mode development --watch",
+    "dev": "node scripts/vue-cli-service.js build --mode development --watch",
     "dev-server": "nodemon --inspect=0.0.0.0:9230 -r dotenv/config server.js",
     "start": "node -r dotenv/config server.js",
     "test": "tsc --project tests/tsconfig.json && node tests/run-all.js"

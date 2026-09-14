@@ -20,8 +20,10 @@ RUN npm ci
 # ------------------------------------------------------------------ spa build
 FROM deps AS build
 COPY spa/ ./
-# No --openssl-legacy-provider here: that flag is Node 17+, and node:14 rejects it. The
-# build works on node:14 precisely because this is the OpenSSL generation webpack expects.
+# Nothing is set here. `npm run build` goes through spa/scripts/vue-cli-service.js, which
+# adds --openssl-legacy-provider only when the running Node is 17 or newer. On this node:14
+# base it adds nothing -- the flag does not exist before Node 17 and node:14 refuses to
+# start with it -- and the build works because OpenSSL 1.1 still offers webpack 4 its MD4.
 RUN npm run build
 
 # --------------------------------------------------------------- socket server
