@@ -69,7 +69,7 @@ echo "    mysql $(mysql_exec -e 'SELECT VERSION()') is up, database $DB_NAME doe
 
 if [ ! -d "$REPO_ROOT/api/node_modules" ]; then
   echo "==> installing api dependencies"
-  in_node "npm install --no-audit --no-fund" >/dev/null
+  in_node "npm ci --no-audit --no-fund" >/dev/null
 fi
 
 echo "==> npm run db:init against the empty database"
