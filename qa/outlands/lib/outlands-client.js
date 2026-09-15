@@ -54,11 +54,11 @@ async function wearOrdinaryAvatar(page, avatarId = 1) {
   /* The store's user arrives over HTTP after login, so wait for it rather than
    * racing it: a page that is still booting has no `user.avatar` to write to. */
   await page.waitForFunction(() => {
-    const app = document.querySelector('#app') && document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__ && document.querySelector('#app').__vue_app__._container._vnode && document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
     return !!(app && app.$store.data.isUser && app.$store.data.user.avatar);
   }, undefined, { timeout: 60000 });
   await page.evaluate(async id => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
     const res = await app.$http.post('/member/update_avatar', { avatarId: id });
     app.$store.methods.setToken(res.data.token);
     const list = await app.$http.get('/avatar');
@@ -70,7 +70,7 @@ async function wearOrdinaryAvatar(page, avatarId = 1) {
 
 /** The avatar row the SPA believes the citizen is wearing, and their view. */
 const wornAvatar = page => page.evaluate(() => {
-  const app = document.querySelector('#app').__vue__;
+  const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
   const a = app.$store.data.user && app.$store.data.user.avatar;
   return {
     id: a && Number(a.id),
@@ -235,8 +235,9 @@ function state(page) {
 /** This page's own presence key, and every remote citizen it can target. */
 function presenceView(page) {
   return page.evaluate(() => {
-    const app = document.querySelector('#app').__vue__;
-    const find = c => { if (c.remoteMembers !== undefined) return c; for (const k of c.$children) { const r = find(k); if (r) return r; } return null; };
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+    const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
+    const find = c => { if (c.remoteMembers !== undefined) return c; for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; } return null; };
     const view = find(app);
     if (!view) return null;
     const registry = view.remoteMembers;
@@ -332,8 +333,9 @@ async function selectWeapon(page, want) {
  * the shooter, arrived at the target, or was refused by the target's Script. */
 const tapMessages = page => page.evaluate(() => {
   window.__ctrSharedEvents = { sent: [], received: [] };
-  const app = document.querySelector('#app').__vue__;
-  const find = c => { if (c.remoteMembers !== undefined) return c; for (const k of c.$children) { const r = find(k); if (r) return r; } return null; };
+  const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+  const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
+  const find = c => { if (c.remoteMembers !== undefined) return c; for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; } return null; };
   const socket = find(app).$socket;
   const emit = socket.emit.bind(socket);
   socket.emit = function (name, payload) {

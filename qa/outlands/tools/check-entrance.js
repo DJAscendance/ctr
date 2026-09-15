@@ -116,7 +116,7 @@ async function backToOrdinary(page) {
   const refused = await page.evaluate(() => ({
     notice: (document.querySelector('.oe-notice') || {}).textContent || '',
     worn: (() => {
-      const a = document.querySelector('#app').__vue__.$store.data.user.avatar;
+      const a = document.querySelector('#app').__vue_app__.config.globalProperties.$store.data.user.avatar;
       return a && a.filename;
     })(),
   }));
@@ -177,7 +177,7 @@ async function backToOrdinary(page) {
    */
   await page.reload({ waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForFunction(() => {
-    const app = document.querySelector('#app') && document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__.config.globalProperties;
     return !!(app && app.$store.data.isUser && app.$store.data.user.avatar);
   }, undefined, { timeout: 60000 });
   const afterReload = await O.wornAvatar(page);
@@ -274,7 +274,7 @@ async function backToOrdinary(page) {
 async function enterPlace2d(page) {
   await page.evaluate(() => { window.location.hash = '#/place/enter'; });
   await page.waitForFunction(() => {
-    const app = document.querySelector('#app') && document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__.config.globalProperties;
     return !!(app && app.$store.data.isUser && app.$store.data.user.avatar
       && app.$store.data.place && app.$store.data.place.slug === 'enter');
   }, undefined, { timeout: 60000 });

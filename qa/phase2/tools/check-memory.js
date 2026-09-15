@@ -50,9 +50,10 @@ const trackWorld = page => page.evaluate(() => {
   window.__ctrOldWorlds.push(new WeakRef(b.currentScene));
   return b.currentScene.worldURL;
 });
-const FIND = `const app=document.querySelector('#app').__vue__;
+const FIND = `const app=document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+  const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
   const find=c=>{if(c.$options.name==='WorldBrowserPage')return c;
-  for(const k of c.$children){const r=find(k);if(r)return r;}return null;};const p=find(app);`;
+  for(const k of __ctrChildren(c)){const r=find(k);if(r)return r;}return null;};const p=find(app);`;
 
 (async () => {
   const b = await launch();

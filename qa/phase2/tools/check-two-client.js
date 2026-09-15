@@ -22,10 +22,11 @@ function check(ok, name, detail) {
 /* Everything the page knows about the citizens it has rendered. Read out of the
  * live component so the assertions are about real scene nodes. */
 const READ = () => {
-  const app = document.querySelector('#app').__vue__;
+  const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+  const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
   const find = c => {
     if (c.$options.name === 'WorldBrowserPage') return c;
-    for (const k of c.$children) { const r = find(k); if (r) return r; }
+    for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; }
     return null;
   };
   const page = find(app);
@@ -62,10 +63,11 @@ const READ = () => {
 
 const waitCitizens = async (page, n, timeout = 45000) => {
   await page.waitForFunction(want => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+    const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
     const find = c => {
       if (c.$options.name === 'WorldBrowserPage') return c;
-      for (const k of c.$children) { const r = find(k); if (r) return r; }
+      for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; }
       return null;
     };
     const p = find(app);
@@ -123,9 +125,10 @@ const waitCitizens = async (page, n, timeout = 45000) => {
   console.log('\n4. REMOTE UPDATE - MOVEMENT REACHES THE RENDERED NODE');
   const before = (await A.evaluate(READ)).keys[0];
   await B.evaluate(() => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+    const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
     const find = c => { if (c.$options.name === 'WorldBrowserPage') return c;
-      for (const k of c.$children) { const r = find(k); if (r) return r; } return null; };
+      for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; } return null; };
     const p = find(app);
     p.position = [11, 0, 22];
     p.rotation = [0, 1, 0, 1.5];
@@ -133,9 +136,10 @@ const waitCitizens = async (page, n, timeout = 45000) => {
   let moved = false;
   try {
     await A.waitForFunction(() => {
-      const app = document.querySelector('#app').__vue__;
+      const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+      const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
       const find = c => { if (c.$options.name === 'WorldBrowserPage') return c;
-        for (const k of c.$children) { const r = find(k); if (r) return r; } return null; };
+        for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; } return null; };
       const p = find(app);
       const k = Object.keys(p.users)[0];
       const t = k && p.users[k].transform && p.users[k].transform.pos;
@@ -178,9 +182,10 @@ const waitCitizens = async (page, n, timeout = 45000) => {
   console.log('\n7. WORLD CHANGE CLEARS NODES AND BINDINGS');
   await enterPlace(A, '#/place/fleamarket', 'fleamarket.wrl');
   const a4 = await A.evaluate(() => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+    const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
     const find = c => { if (c.$options.name === 'WorldBrowserPage') return c;
-      for (const k of c.$children) { const r = find(k); if (r) return r; } return null; };
+      for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; } return null; };
     const p = find(app);
     const br = X3D.getBrowser(document.querySelector('#world x3d-canvas'));
     return {

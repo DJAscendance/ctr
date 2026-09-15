@@ -62,10 +62,11 @@ const WORLDS = [
  * against. currentViewpoint.getPosition() returns nothing through X_ITE 16's
  * sealed SAI facade, which would make every reading silently vacuous. */
 const position = page => page.evaluate(() => {
-  const app = document.querySelector('#app').__vue__;
+  const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+  const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
   const find = c => {
     if (c.$options.name === 'WorldBrowserPage') return c;
-    for (const k of c.$children) { const r = find(k); if (r) return r; }
+    for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; }
     return null;
   };
   const view = find(app);
@@ -105,7 +106,7 @@ async function freshEnter(page, w) {
 async function walk(page, w) {
   await freshEnter(page, w);
   await page.evaluate(v => {
-    document.querySelector('#app').__vue__.$store.methods.setMovementSpeedMultiplier(v);
+    document.querySelector('#app').__vue_app__.config.globalProperties.$store.methods.setMovementSpeedMultiplier(v);
   }, DIAL);
   await page.evaluate(() => {
     const c = document.querySelector('#world x3d-canvas');
@@ -142,7 +143,7 @@ async function main() {
   const ctx = await browser.newContext();
   const page = await login(ctx, USER, PASS);
   await page.evaluate(() => {
-    document.querySelector('#app').__vue__.$store.methods.setView3d(true);
+    document.querySelector('#app').__vue_app__.config.globalProperties.$store.methods.setView3d(true);
   });
   await enterPlace(page, BOUNCE.hash, BOUNCE.world);
 

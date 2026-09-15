@@ -75,7 +75,7 @@ const READ_SCENE = () => {
   const out = { ready: false, placeId: null, worldURL: null, expectedWorld: null, objects: [] };
   try {
     const app = document.querySelector('#app');
-    const store = app && app.__vue__ && app.__vue__.$store;
+    const store = app && app.__vue_app__ && app.__vue_app__.config.globalProperties.$store;
     const place = store && store.data && store.data.place;
     out.placeId = place && place.id !== undefined ? Number(place.id) : null;
     out.expectedWorld = place && place.assets_dir !== null && place.assets_dir !== undefined

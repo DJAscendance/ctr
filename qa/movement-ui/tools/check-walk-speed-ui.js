@@ -73,7 +73,7 @@ const panelState = () => page.evaluate(() => {
     && el.getBoundingClientRect().height > 0;
   const visible = shown(panel);
   const world = document.querySelector('#world');
-  const store = document.querySelector('#app').__vue__.$store;
+  const store = document.querySelector('#app').__vue_app__.config.globalProperties.$store;
   return {
     exists: !!panel,
     visible,
@@ -176,7 +176,7 @@ async function main() {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   page = await login(ctx, USER, PASS);
   await page.evaluate(() => {
-    document.querySelector('#app').__vue__.$store.methods.setView3d(true);
+    document.querySelector('#app').__vue_app__.config.globalProperties.$store.methods.setView3d(true);
   });
   await enterPlace(page, '#/place/mall', 'shopping.wrl');
   await page.waitForTimeout(2500);
@@ -354,12 +354,12 @@ async function main() {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   const reloaded = await page.evaluate(
-    () => document.querySelector('#app').__vue__.$store.data.movementSpeedMultiplier);
+    () => document.querySelector('#app').__vue_app__.config.globalProperties.$store.data.movementSpeedMultiplier);
   check('the preference survives a reload', near(reloaded, 6), reloaded);
 
   process.stdout.write('\n=== pointer and sensor input ===\n');
   await page.evaluate(() => {
-    document.querySelector('#app').__vue__.$store.methods.setView3d(true);
+    document.querySelector('#app').__vue_app__.config.globalProperties.$store.methods.setView3d(true);
   });
   await enterPlace(page, '#/place/mall', 'shopping.wrl');
   await page.waitForTimeout(2500);
@@ -369,10 +369,11 @@ async function main() {
    * currentViewpoint.getPosition() off the sealed SAI facade returns nothing in
    * X_ITE 16, which would make every movement check silently vacuous. */
   const viewpointOf = () => page.evaluate(() => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+    const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
     const find = c => {
       if (c.$options.name === 'WorldBrowserPage') return c;
-      for (const k of c.$children) { const r = find(k); if (r) return r; }
+      for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; }
       return null;
     };
     const view = find(app);
@@ -421,10 +422,11 @@ async function main() {
    * sensor events would stop that feed. The Mall door gate
    * (qa/movement-ui/tools/check-mall-door.js) covers a real TouchSensor click. */
   const sensorFeed = await page.evaluate(() => new Promise(resolve => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+    const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
     const find = c => {
       if (c.$options.name === 'WorldBrowserPage') return c;
-      for (const k of c.$children) { const r = find(k); if (r) return r; }
+      for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; }
       return null;
     };
     const view = find(app);

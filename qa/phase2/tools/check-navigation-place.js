@@ -74,7 +74,7 @@ function check(ok, label, detail) {
  * evaluate so the four readings describe one moment rather than four.
  */
 const READ = () => {
-  const app = document.querySelector('#app').__vue__;
+  const app = document.querySelector('#app').__vue_app__.config.globalProperties;
   const store = app.$store;
   const place = (store && store.data && store.data.place) || null;
   const canvas = document.querySelector('#world x3d-canvas');

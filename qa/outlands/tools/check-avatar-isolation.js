@@ -74,7 +74,7 @@ const storage = page => page.evaluate(() => {
 
 /** The avatar the SERVER says the citizen owns, read back through the API. */
 const permanentAvatar = page => page.evaluate(async () => {
-  const app = document.querySelector('#app').__vue__;
+  const app = document.querySelector('#app').__vue_app__.config.globalProperties;
   const res = await app.$http.get('/member/session');
   const payload = JSON.parse(atob(res.data.token.split('.')[1]));
   return { id: Number(payload.avatar.id), filename: payload.avatar.filename };
@@ -89,7 +89,7 @@ const permanentAvatar = page => page.evaluate(async () => {
  * cannot hide it here.
  */
 const rendered = page => page.evaluate(() => {
-  const app = document.querySelector('#app').__vue__;
+  const app = document.querySelector('#app').__vue_app__.config.globalProperties;
   const own = app.$store.data.user && app.$store.data.user.avatar;
   let myAvatarURL = null;
   try {
@@ -139,7 +139,7 @@ function noSystemAvatar(view) {
    * 2. Taking a side
    * ------------------------------------------------------------------ */
   const postAnswer = await page.evaluate(async id => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__.config.globalProperties;
     const res = await app.$http.post('/avatar/outlands', { avatarId: id });
     return { keys: Object.keys(res.data).sort(), avatarKeys: Object.keys(res.data.avatar).sort() };
   }, O.SIDES[SIDE].avatarId);
@@ -201,7 +201,7 @@ function noSystemAvatar(view) {
   await O.enterOutlandsThroughEntrance(page, SIDE);
   await page.goBack({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__.config.globalProperties;
     return !!app && app.$store.data.place && app.$store.data.place.slug !== 'outlands';
   }, undefined, { timeout: 60000 });
   const back = await rendered(page);
@@ -230,7 +230,7 @@ function noSystemAvatar(view) {
   const tabB = await context.newPage();
   await tabB.goto(`${URL}/#/place/enter`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await tabB.waitForFunction(() => {
-    const app = document.querySelector('#app') && document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__.config.globalProperties;
     return !!(app && app.$store.data.isUser && app.$store.data.user.avatar);
   }, undefined, { timeout: 60000 });
   const tabBBefore = await rendered(tabB);
@@ -249,7 +249,7 @@ function noSystemAvatar(view) {
   const tabC = await context.newPage();
   await tabC.goto(`${URL}/#/place/enter`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await tabC.waitForFunction(() => {
-    const app = document.querySelector('#app') && document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__.config.globalProperties;
     return !!(app && app.$store.data.isUser && app.$store.data.user.avatar);
   }, undefined, { timeout: 60000 });
   const tabCView = await rendered(tabC);

@@ -48,7 +48,7 @@ async function main() {
    * 2D chat pane. Flip to 3D once - the same switch the b3dchat.gif sidebar
    * control drives - or #world stays display:none and never gets a canvas. */
   await page.evaluate(() => {
-    document.querySelector('#app').__vue__.$store.methods.setView3d(true);
+    document.querySelector('#app').__vue_app__.config.globalProperties.$store.methods.setView3d(true);
   });
 
   await enterPlace(page, `#/place/${placeSlug}`, world);

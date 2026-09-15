@@ -153,7 +153,7 @@ function joinRaw(page, room, override, hasOverride) {
 /** The citizen's own avatar, straight off the SPA store. */
 function ownAvatar(page) {
   return page.evaluate(() => {
-    const app = document.querySelector('#app') && document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__.config.globalProperties;
     return app && app.$store.data.user ? app.$store.data.user.avatar : null;
   });
 }

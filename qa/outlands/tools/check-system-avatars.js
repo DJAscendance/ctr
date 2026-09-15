@@ -58,7 +58,7 @@ function check(name, pass, detail) {
 
 /** The avatar the SERVER says the citizen owns, read back through the API. */
 const permanentAvatar = page => page.evaluate(async () => {
-  const app = document.querySelector('#app').__vue__;
+  const app = document.querySelector('#app').__vue_app__.config.globalProperties;
   const res = await app.$http.get('/member/session');
   const payload = JSON.parse(atob(res.data.token.split('.')[1]));
   return { id: Number(payload.avatar.id), filename: payload.avatar.filename };
@@ -79,7 +79,7 @@ const permanentAvatar = page => page.evaluate(async () => {
    * 1. The ordinary avatar library
    * ------------------------------------------------------------------ */
   const library = await page.evaluate(async () => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__.config.globalProperties;
     const res = await app.$http.get('/avatar');
     return (res.data.avatars || []).map(a => ({ id: Number(a.id), filename: a.filename }));
   });
@@ -130,7 +130,7 @@ const permanentAvatar = page => page.evaluate(async () => {
   const before = await permanentAvatar(page);
   record.permanentBefore = before;
   const attempts = await page.evaluate(async ids => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__.config.globalProperties;
     const out = [];
     for (const id of ids) {
       try {
@@ -152,7 +152,7 @@ const permanentAvatar = page => page.evaluate(async () => {
 
   /* An ordinary public avatar still works through the same path. */
   const ordinaryWrite = await page.evaluate(async id => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__.config.globalProperties;
     try {
       await app.$http.post('/member/update_avatar', { avatarId: id });
       return { accepted: true };

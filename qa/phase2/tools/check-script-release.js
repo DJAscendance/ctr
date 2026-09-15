@@ -99,14 +99,12 @@ const snapshot = page => page.evaluate(() => {
   const canvas = document.querySelector('#world x3d-canvas');
   const b = canvas ? window.X3D.getBrowser(canvas) : null;
   const scene = b && b.currentScene;
+  /* The socket manager is one app-wide service (main.ts puts it on every
+   * component as $socket), so it is read off the app rather than by walking
+   * the component tree to WorldBrowserPage, which Vue 3 no longer exposes. */
   const view = (() => {
-    const find = c => {
-      if (c.$options && c.$options.name === 'WorldBrowserPage') return c;
-      for (const k of c.$children) { const r = find(k); if (r) return r; }
-      return null;
-    };
     const app = document.querySelector('#app');
-    return app && app.__vue__ ? find(app.__vue__) : null;
+    return app && app.__vue_app__ ? app.__vue_app__.config.globalProperties : null;
   })();
   const socket = view && view.$socket && view.$socket.socket;
   const maxDisposals = window.__ctrMaxDisposals || 0;

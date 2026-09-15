@@ -43,8 +43,9 @@ function check(name, pass, detail) {
 
 /* Everything the page is still holding onto, read from the live component. */
 const retention = page => page.evaluate(() => {
-  const app = document.querySelector('#app').__vue__;
-  const find = c => { if (c.$options.name === 'WorldBrowserPage') return c; for (const k of c.$children) { const r = find(k); if (r) return r; } return null; };
+  const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+  const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
+  const find = c => { if (c.$options.name === 'WorldBrowserPage') return c; for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; } return null; };
   const view = find(app);
   const canvas = document.querySelector('#world x3d-canvas');
   const b = canvas ? X3D.getBrowser(canvas) : null;
@@ -116,7 +117,7 @@ const gameplayLive = page => page.evaluate(() => {
   const tabB = await ctx.newPage();
   await tabB.goto(`${BASE}/#/place/outlands`, { waitUntil: 'networkidle', timeout: 60000 });
   await tabB.waitForFunction(() => {
-    const app = document.querySelector('#app') && document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app') && document.querySelector('#app').__vue_app__ && document.querySelector('#app').__vue_app__._container._vnode && document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
     return !!(app && app.$store.data.isUser);
   }, undefined, { timeout: 60000 });
   /*

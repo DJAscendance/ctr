@@ -55,10 +55,11 @@ function record(entry) {
 
 async function position(page) {
   return page.evaluate(() => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
+    const __ctrChildren = p => { const out = []; const walk = v => { if (!v) return; if (v.component) { out.push(v.component.proxy); return; } if (Array.isArray(v.children)) v.children.forEach(walk); }; if (p && p.$) walk(p.$.subTree); return out; };
     const find = c => {
       if (c.$options.name === 'WorldBrowserPage') return c;
-      for (const k of c.$children) { const r = find(k); if (r) return r; }
+      for (const k of __ctrChildren(c)) { const r = find(k); if (r) return r; }
       return null;
     };
     const view = find(app);
@@ -68,7 +69,7 @@ async function position(page) {
 
 async function setSpeed(page, value) {
   await page.evaluate(v => {
-    const app = document.querySelector('#app').__vue__;
+    const app = document.querySelector('#app').__vue_app__._container._vnode.component.proxy;
     app.$store.methods.setMovementSpeedMultiplier(v);
   }, value);
 }
@@ -128,7 +129,7 @@ async function walkAndMeasure(page, w, multiplier) {
   // lands in the 2D chat pane - flip to 3D once, the same switch the
   // b3dchat.gif control in App.vue's sidebar drives.
   await page.evaluate(() => {
-    document.querySelector('#app').__vue__.$store.methods.setView3d(true);
+    document.querySelector('#app').__vue_app__.config.globalProperties.$store.methods.setView3d(true);
   });
   await enterPlace(page, BOUNCE.hash, BOUNCE.world);
 
