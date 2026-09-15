@@ -1,8 +1,8 @@
 /**
  * Vue CLI 5 / webpack 5 build configuration.
  *
- * Three of the hooks below exist only to hold webpack 5 to the asset policy webpack 4
- * already had. They are compatibility pins, not new behaviour:
+ * The hooks below exist only to hold webpack 5 to the asset policy webpack 4 already had.
+ * They are compatibility pins, not new behaviour:
  *
  * 1. `css.loaderOptions.css.url.filter` - css-loader 3 (webpack 4) left a root-relative
  *    `url(/assets/...)` alone. css-loader 4 and later resolve it against the build context,
@@ -19,14 +19,6 @@
  *    keep linting out of the build. Vue CLI 5 moved that to a plugin, and the SPA no longer
  *    installs @vue/cli-plugin-eslint at all (its 5.x needs ESLint 7+), so there is nothing
  *    left to delete. `npm run lint` calls eslint directly with the same rules.
- *
- * 4. The Vue 3 migration build - `vue` resolves to `@vue/compat`, and the SFC compiler runs
- *    in compatibility MODE 2. Vue CLI 5 sees vue@3 and already points `vue$` at
- *    `vue/dist/vue.runtime.esm-bundler.js` and switches to vue-loader 17; the two hooks
- *    below only redirect that same runtime-only entry to the compat build and hand the
- *    compiler its compat flag. MODE 2 means "behave like Vue 2 and warn", so this is a
- *    runtime swap, not an application rewrite. Migration warnings are deliberately NOT
- *    suppressed - they are the work list for the compatibility-cleanup phase.
  */
 const fs = require('fs')
 const packageJson = fs.readFileSync('./package.json')
@@ -35,13 +27,6 @@ const webpack = require('webpack');
 
 const INLINE_ASSET_LIMIT = 4096;
 const ASSET_RULES = ['images', 'media', 'fonts'];
-
-/**
- * Runtime-only, to match what Vue CLI picks for a non-`runtimeCompiler` project. Every
- * template in this app lives in an SFC and is compiled at build time, so the extra runtime
- * compiler would be dead weight.
- */
-const COMPAT_RUNTIME = "@vue/compat/dist/vue.runtime.esm-bundler.js";
 
 module.exports = {
   css: {
@@ -59,19 +44,6 @@ module.exports = {
         dataUrlCondition: { maxSize: INLINE_ASSET_LIMIT },
       });
     });
-
-    config.resolve.alias.set("vue$", COMPAT_RUNTIME);
-
-    config.module
-      .rule("vue")
-      .use("vue-loader")
-      .tap(options => ({
-        ...options,
-        compilerOptions: {
-          ...(options && options.compilerOptions),
-          compatConfig: { MODE: 2 },
-        },
-      }));
   },
   configureWebpack: {
     plugins: [

@@ -15,7 +15,6 @@
     "test": "tsc --project tests/tsconfig.json && node tests/run-all.js"
   },
   "dependencies": {
-    "@vue/compat": "3.5.42",
     "axios": "^0.23.0",
     "badwords-list": "^1.0.0",
     "core-js": "^3.18.3",
