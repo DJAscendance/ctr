@@ -67,6 +67,12 @@ Common commands:
 
 ## Gotchas
 
+- **Admin surfaces have a written baseline.** Before adding or changing anything under
+  `/api/admin/*` or `spa/src/pages/admin/`, read
+  **[`docs/ADMIN_SECURITY_BASELINE.md`](./docs/ADMIN_SECURITY_BASELINE.md)**. It is
+  binding: four hard prohibitions, the fail-closed gate rule, the bounded asset-identifier
+  rule, and the audit event each admin action owes.
+
 - **Duplicate role rows / admin grants.** The DB has duplicate `role` rows from an old bad
   seed: every role name exists twice (ids 1–113 and 114–192). `RoleRepository.roleMap`
   resolves each name to the **last** id, so `roleMap.Admin === 114`, and `canAdmin()`

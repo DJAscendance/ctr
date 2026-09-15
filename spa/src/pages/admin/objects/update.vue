@@ -63,12 +63,34 @@
           <td class="w-96"><input class="text-black w-full" v-model="newName" type="text" /></td>
         </tr>
         <tr>
-          <td>Update Directory: </td>
-          <td><input class="text-black w-full" v-model="newDirectory" type="text" /></td>
+          <td>Update Asset Directory ID: </td>
+          <td>
+            <input
+              class="text-black w-full"
+              v-model="newDirectory"
+              type="text"
+              maxlength="64"
+              placeholder="one asset folder id, e.g. 2"
+            />
+            <div class="text-xs">
+              One asset folder id only &mdash; not a path. No / \ : or ..
+            </div>
+          </td>
         </tr>
         <tr>
-          <td>Update Filename: </td>
-          <td><input class="text-black w-full" v-model="newFilename" type="text" /></td>
+          <td>Update Asset Filename: </td>
+          <td>
+            <input
+              class="text-black w-full"
+              v-model="newFilename"
+              type="text"
+              maxlength="128"
+              placeholder="one file name, e.g. Cryo2000.wrl"
+            />
+            <div class="text-xs">
+              One file name only &mdash; not a path. No / \ : or ..
+            </div>
+          </td>
         </tr>
         <tr>
           <td>Update Thumbnail: </td>
@@ -178,6 +200,22 @@ export default defineComponent({
       this.newQuantity = this.quantity;
       this.newStatus = this.status;
     },
+    /**
+     * Mirrors api/src/libs/asset-identifier.ts so a typo is caught before the
+     * request. Feedback only -- the server rejects an invalid identifier on its
+     * own and is the authoritative boundary.
+     */
+    isAssetIdentifier(value, maxLength) {
+      if(typeof value !== "string") return false;
+      if(value.length === 0 || value.trim().length === 0) return false;
+      if(value.length > maxLength) return false;
+      if(value.includes("/") || value.includes("\\")) return false;
+      if(value.includes(":") || value.includes("..")) return false;
+      if(value.startsWith(".")) return false;
+      // eslint-disable-next-line no-control-regex
+      if(/[\u0000-\u001F\u007F]/.test(value)) return false;
+      return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value);
+    },
     async updateObject() {
       this.error = "";
       this.success = "";
@@ -191,6 +229,12 @@ export default defineComponent({
         this.newName, this.newDirectory, this.newFilename, 
         this.newThumbnail, this.newPrice, this.newLimit, 
         this.newQuantity, this.newStatus];
+      if(!this.isAssetIdentifier(this.newDirectory, 64) ||
+        !this.isAssetIdentifier(this.newFilename, 128)){
+        this.error =
+          "Directory and filename must each be a single asset identifier, not a path.";
+        return;
+      }
       if(JSON.stringify(this.details) !== JSON.stringify(this.newDetails)){
         if((this.directory !== this.newDirectory &&
           this.filename !== this.newFilename &&

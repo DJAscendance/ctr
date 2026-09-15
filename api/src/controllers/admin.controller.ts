@@ -16,6 +16,7 @@ import {
 } from '../services';
 import * as badwordlist from 'badwords-list';
 import { hasAccess } from '../libs/access-level';
+import { isAssetDirectory, isAssetFilename } from '../libs/asset-identifier';
 
 /**
  * Admin-panel endpoints.
@@ -159,7 +160,7 @@ export class AdminController {
     const canManageSecurityRoles =
       await this.memberService.canManageSecurityRoles(session.id);
     const canManageRole =
-      accessLevel.includes('admin') ||
+      hasAccess(accessLevel, 'admin') ||
       (canManageSecurityRoles &&
         await this.memberService.canSecurityManageRole(roleId));
     if (canManageRole) {
@@ -232,7 +233,7 @@ export class AdminController {
     const canManageSecurityRoles =
       await this.memberService.canManageSecurityRoles(session.id);
     const canManageRole =
-      accessLevel.includes('admin') ||
+      hasAccess(accessLevel, 'admin') ||
       (canManageSecurityRoles &&
         await this.memberService.canSecurityManageRole(roleId));
     if (canManageRole) {
@@ -648,6 +649,15 @@ export class AdminController {
       const name = request.body.name;
       const directory = request.body.directory;
       const filename = request.body.filename;
+      // Prohibition 4: these name one asset directory and one basename inside
+      // it, never a filesystem path. Refused here, before the service resolves
+      // a path or writes a row. See `docs/ADMIN_SECURITY_BASELINE.md`.
+      if (!isAssetDirectory(directory) || !isAssetFilename(filename)) {
+        response.status(400).json({
+          error: 'Directory and filename must each be a single asset identifier.',
+        });
+        return;
+      }
       const image = request.body.thumbnail;
       const price = request.body.price;
       let limit;
@@ -718,6 +728,8 @@ export class AdminController {
       } catch {
         response.status(400).json({error: 'Error moving objects.'});
       }
+    } else {
+      response.status(403).json({message: 'Access Denied'});
     }
   }
 }
