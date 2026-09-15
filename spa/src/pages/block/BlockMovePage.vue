@@ -49,8 +49,8 @@
         <h3 class="font-bold mb-3">Choose a free 2D House</h3>
         <div class="grid grid-cols-3 gap-4">
           <template v-if="colonyData[colony.slug].map_theme === 'grass'">
-            <template v-for="index in 33">
-              <div :key="index">
+            <template v-for="index in 33" :key="index">
+              <div>
               <input type="radio" :value="index" v-model="icon2d">
               <img
                 class="ml-2"
@@ -60,8 +60,8 @@
             </template>
           </template>
           <template v-else-if="colonyData[colony.slug].map_theme === 'desert'">
-            <template v-for="index in 7">
-              <div :key="index">
+            <template v-for="index in 7" :key="index">
+              <div>
               <input type="radio" :value="index" v-model="icon2d">
               <img
                 class="ml-2"
@@ -71,8 +71,8 @@
             </template>
           </template>
           <template v-else-if="colonyData[colony.slug].map_theme === 'cyberhood'">
-            <template v-for="index in 5">
-              <div :key="index">
+            <template v-for="index in 5" :key="index">
+              <div>
               <input type="radio" :value="index" v-model="icon2d">
               <img
                 class="ml-2"
@@ -98,8 +98,8 @@
             <input type="radio" v-model="home3d" class="mr-3"/>None
           </div>
           <div></div>
-          <template v-for="(item,key) in homeData" >
-            <div :key="key">
+          <template v-for="(item,key) in homeData" :key="key">
+            <div>
               <input type="radio" :value="key" v-model="home3d" class="mr-3"/>
               <img :src="'/assets/img/homes/Picon3D' + key + '.gif'" /><br/>
               Price: <strong>{{ item.price }}cc</strong>

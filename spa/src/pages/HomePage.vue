@@ -147,7 +147,7 @@
               @mouseover="
                 MM_swapImage('box_blank', '', 'images/box_plaza_on.gif', 1)
               "
-              onMouseDown="MM_showHideLayers('help','','hide','plazas','','show','clubs','','hide')"
+              onmousedown="MM_showHideLayers('help','','hide','plazas','','show','clubs','','hide')"
               ><img
                 src="/assets/img/homepage/visit_plazat128.gif"
                 style="width: 135px; height: 33px"
@@ -159,7 +159,7 @@
               @mouseover="
                 MM_swapImage('box_blank', '', 'images/box_club_on.gif', 1)
               "
-              onMouseDown="MM_showHideLayers('help','','hide','plazas','','hide','clubs','','show')"
+              onmousedown="MM_showHideLayers('help','','hide','plazas','','hide','clubs','','show')"
               ><img
                 src="/assets/img/homepage/visit_clubs128.gif"
                 border="0"
@@ -170,7 +170,7 @@
               @mouseover="
                 MM_swapImage('box_blank', '', 'images/box_help_on.gif', 1)
               "
-              onMouseDown="MM_showHideLayers('help','','show','plazas','','hide','clubs','','hide')"
+              onmousedown="MM_showHideLayers('help','','show','plazas','','hide','clubs','','hide')"
               ><img
                 src="/assets/img/homepage/visit_help128.gif"
                 style="width: 100px; height: 33px"

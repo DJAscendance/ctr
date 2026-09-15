@@ -121,7 +121,7 @@
 
         <div class="w-full flex flex-row">
           <div class="flex-grow border-2 border-black"/>
-          <p>
+          <p></p>
             <div class="flex-grow border-black"
                  style="width:99%; margin-top: 10px"
                  v-html="this.dmessage"/>

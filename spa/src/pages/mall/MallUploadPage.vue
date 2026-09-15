@@ -148,6 +148,7 @@ the lower the percentage, as shown in the table below:
 </div> -->
       For each instance of the object that gets sold, 80% of the selling
       price will be credited to you.
+    </p>
 
     <p>
       If one of your uploaded objects sells well and you want to make more

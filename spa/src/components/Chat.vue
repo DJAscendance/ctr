@@ -331,15 +331,14 @@ interface ChatData {
   unsubscribePresence: (() => void) | null;
 }
 
-interface ChatMethods {
-  [key: string]: (...args: any[]) => any;
-}
-
-interface ChatComputed {
-  connected: boolean;
-}
-
-export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, any>>({
+/*
+ * Vue 2's `Vue.extend` took four type arguments (data, methods, computed, props). Vue 3's
+ * compat build takes none - it infers all four from the options object, which is why
+ * `ChatMethods` (an `any`-returning index signature) and `ChatComputed` are gone: they
+ * described what is now inferred, and less precisely. `ChatData` stays, still applied by
+ * `data(): ChatData` below.
+ */
+export default Vue.extend({
   name: "Chat",
   components: {
     UserMenu,
@@ -433,7 +432,9 @@ export default Vue.extend<ChatData, ChatMethods, ChatComputed, Record<string, an
   },
   directives: {
     focus: {
-      inserted: function (el) {
+      // Vue 2's `inserted` hook is Vue 3's `mounted`. Same moment for a directive on a
+      // plain element: the element is in the document and can take focus.
+      mounted: function (el) {
         el.focus()
       }
     }
