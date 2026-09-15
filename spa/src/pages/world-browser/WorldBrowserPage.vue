@@ -9,11 +9,37 @@
         </a>
       </strong>
     </div>
-    <div id="world" class="world w-full flex-1" style="" v-show="this.$store.data.view3d && !force2d"></div>
-    <div v-show="!this.$store.data.view3d || force2d" class="w-full flex-1">
+    <div
+      id="world"
+      class="world w-full flex-1"
+      style=""
+      v-show="effective3d && !force2d && !showOutlandsEntrance"
+    ></div>
+    <!--
+      OUTLANDS-2A. The historical `place?plc=ne_game` returned an entrance page,
+      not the game, and the 3D world was a second step. This is that step, and it
+      is the only thing between the place row and `startX3D()` for Outlands. It
+      is reached only when `isOutlandsPlace()` is true, so every other place
+      keeps its present load sequence exactly.
+    -->
+    <outlands-entrance
+      v-if="showOutlandsEntrance"
+      class="w-full flex-1"
+      :can-enter="canEnterOutlands"
+      @select="enterOutlands"
+    ></outlands-entrance>
+    <div
+      v-show="!showOutlandsEntrance && (!effective3d || force2d)"
+      class="w-full flex-1"
+    >
       <component :is="mainComponent"></component>
     </div>
-    <div class="flex flex-none h-1/3 bg-chat">
+    <!--
+      OUTLANDS-2A. The historical entrance filled its whole frame and had no
+      chat beside it, so the chat strip is dropped for the entrance only. Every
+      other place, and the Outlands world itself, keeps the strip exactly.
+    -->
+    <div class="flex flex-none h-1/3 bg-chat" v-if="!showOutlandsEntrance">
       <chat
         ref="chat"
         v-if="loaded"
@@ -38,16 +64,19 @@ import Vue from "vue";
 import * as avatarsDataJson from "../../libs/data/avatars.json";
 import * as worldDataJson from "../../libs/data/worlds.json";
 import Chat from "../../components/Chat.vue";
+import OutlandsEntrance from "@/components/place/outlands/OutlandsEntrance.vue";
+import outlandsIdentity from "@/libs/outlands-identity";
 import {
   debugMsg,
   environment,
 } from "@/helpers";
+import { isOutlandsPlace } from "@/helpers/outlands.helper";
 import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
 export default Vue.extend({
   name: "WorldBrowserPage",
-  components: { Chat },
+  components: { Chat, OutlandsEntrance },
   data: (): WorldBrowserData => {
     return {
       loaded: false,
@@ -70,20 +99,23 @@ export default Vue.extend({
       force2d: false,
       pet: null,
       clickId: null,
+      showOutlandsEntrance: false,
+      outlandsAvatarKey: null,
+      force3d: false,
     };
   },
   methods: {
     addPet(data): void {
-      let userPosition = this.position;
-      let userRotation = this.rotation;
-      let distance = 5;
+      const userPosition = this.position;
+      const userRotation = this.rotation;
+      const distance = 5;
       const pos = new X3D.SFVec3f(...userPosition);
       const rot = new X3D.SFRotation(...userRotation);
       const pos_offset = rot.multVec(new X3D.SFVec3f(0-1.5, 0, -distance));
       pos_offset.y = 0;
       const newPosition = pos.add(pos_offset);
       const newOrientation = new X3D.SFRotation(0, 1, 0, Math.atan2(pos_offset.x, pos_offset.z));
-      let petData = {
+      const petData = {
         url: data.url,
         name: data.name,
         id: data.id,
@@ -92,7 +124,7 @@ export default Vue.extend({
       };
       setTimeout(() => {
         this.loadPetData(petData);
-      }, 2000)
+      }, 2000);
     },
     loadPetData(data) {
       const browser = X3D.getBrowser(this.browser);
@@ -118,16 +150,16 @@ export default Vue.extend({
     },
     beamPet(data){
       X3D.getBrowser(this.browser).currentScene.removeRootNode(this.pet);
-      let userPosition = this.position;
-      let userRotation = this.rotation;
-      let distance = 4;
+      const userPosition = this.position;
+      const userRotation = this.rotation;
+      const distance = 4;
       const pos = new X3D.SFVec3f(...userPosition);
       const rot = new X3D.SFRotation(...userRotation);
       const pos_offset = rot.multVec(new X3D.SFVec3f(0, 0, -distance));
       pos_offset.y = 0;
       const newPosition = pos.add(pos_offset);
       const newOrientation = new X3D.SFRotation(0, 1, 0, Math.atan2(pos_offset.x, pos_offset.z));
-      let petData = {
+      const petData = {
         url: data.url,
         name: data.name,
         id: data.id,
@@ -222,6 +254,7 @@ export default Vue.extend({
     async loadAndJoinPlace(): Promise<void> {
       this.loaded = false;
       this.force2d = false;
+      this.force3d = false;
 
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
       await this.getPlace();
@@ -229,6 +262,31 @@ export default Vue.extend({
       if(this.$store.data.place.slug === "clubdir"){
         this.force2d = true;
       }
+
+      // OUTLANDS-2A. Historically `place?plc=ne_game` was an entrance page and
+      // the 3D world only followed the avatar form. `ne_game.wrl` reads its team
+      // from `Browser.myAvatarURL` by exact string match, so mounting it before
+      // a pick means no team, and its own last resort is to navigate away.
+      // Returning here is what keeps `startX3D()` from running.
+      if (!isOutlandsPlace(this.$store.data.place)) {
+        // Leaving Outlands, or never in it. Never let an Outlands avatar stay
+        // in force for an unrelated world.
+        this.releaseOutlands();
+      } else if (this.outlandsAvatarKey === null) {
+        this.showOutlandsEntrance = true;
+        if(this.browser) {
+          X3D.getBrowser(this.browser).replaceWorld(null);
+        }
+        return;
+      }
+      this.showOutlandsEntrance = false;
+
+      // OUTLANDS-2A. Outlands is 3D only. There never was a 2D `ne_game`, so a
+      // member whose stored `view3d` is false has no `outlands/main2d.vue` to
+      // import. This is the local, place-scoped answer to that: it is read
+      // through `effective3d` in place of the stored preference, and it is
+      // reset on every load, so the member's own setting is never written to.
+      this.force3d = isOutlandsPlace(this.$store.data.place);
 
       if(this.$route.params.username){
         if(this.$store.data.place.assets_dir === null) {
@@ -240,7 +298,7 @@ export default Vue.extend({
         const browser = X3D.getBrowser(this.browser);
         browser.replaceWorld(null);
       }
-      if(this.$store.data.view3d && !this.force2d) {
+      if(this.effective3d && !this.force2d) {
         const browser = await this.startX3D();
         this.loaded = true;
         this.startX3DListeners(browser);
@@ -265,13 +323,40 @@ export default Vue.extend({
     },
     async unloadPlace(): Promise<void> {
       if (this.$store.data.place) this.$socket.leaveRoom(this.$store.data.place.id);
+      // OUTLANDS-2A. Leaving the world-browser route drops the selection and
+      // unregisters the identity provider, so `Browser.myAvatarURL` goes back to
+      // the empty pre-OUTLANDS-2 default for every other world.
+      this.releaseOutlands();
       const browser = X3D.getBrowser(this.browser);
       browser.replaceWorld(null);
+    },
+
+    /**
+     * OUTLANDS-2A. Register the picked free-play avatar and only then mount the
+     * world. `select()` registers the provider synchronously, so `ne_game.wrl`
+     * never observes the empty identity on a successful entry.
+     */
+    async enterOutlands(key: string): Promise<void> {
+      if (!this.canEnterOutlands) { return; }
+      const avatar = outlandsIdentity.select(key, this.$store.data.user.username);
+      if (avatar === null) { return; }
+      this.outlandsAvatarKey = avatar.key;
+      this.showOutlandsEntrance = false;
+      await this.loadAndJoinPlace();
+    },
+
+    /** OUTLANDS-2A. Forget the free-play avatar and unregister the provider. */
+    releaseOutlands(): void {
+      this.showOutlandsEntrance = false;
+      this.force3d = false;
+      if (this.outlandsAvatarKey === null) { return; }
+      this.outlandsAvatarKey = null;
+      outlandsIdentity.release();
     },
     async joinPlace(): Promise<void> {
       await this.$socket.joinRoom(this.$store.data.place.id, this.$store.data.user.token);
       this.debugMsg("joined room success", this.$store.data.place.id);
-      if(this.$store.data.view3d){
+      if(this.effective3d){
         const { viewpointPosition, viewpointOrientation } = X3D.getBrowser(this.browser);
         this.$socket.emit("AV", {
           detail: {
@@ -324,7 +409,7 @@ export default Vue.extend({
       await this.$http.post(`/object_instance/${  objectId  }/pickup`);
 
       // remove to the scene 
-      if(this.$store.data.view3d) {
+      if(this.effective3d) {
         const browser = X3D.getBrowser();
         const object = this.sharedObjectsMap.get(objectId);
         browser.currentScene.removeRootNode(object);
@@ -530,7 +615,7 @@ export default Vue.extend({
       }
     },
     async onSharedObjectEvent(event): Promise<void> {
-      if(this.$store.data.view3d){
+      if(this.effective3d){
         const browser = X3D.getBrowser();
         this.sharedObjects.forEach(sharedObject => {
           const object = this.sharedObjectsMap.get(sharedObject.id);
@@ -660,7 +745,7 @@ export default Vue.extend({
         this.sharedObjects = this.sharedObjects.filter(obj => {
           return obj.id !== parseInt(object.obj_id);
         });
-        if(this.$store.data.view3d){
+        if(this.effective3d){
           const browser = X3D.getBrowser();
           const removeObject = this.sharedObjectsMap.get(objectId);
           browser.currentScene.removeRootNode(removeObject);
@@ -750,6 +835,25 @@ export default Vue.extend({
     },
   },
   computed: {
+    /**
+     * OUTLANDS-2A citizen gate. `enter.tmpl` refused `isVisitor`. CTR has no
+     * visitor role at all: `main.ts`'s `beforeEach` demands a live
+     * `/member/session` for every route outside a short public list, and
+     * `/place/:id` is not on that list, so a place page is already members
+     * only. This is the same rule stated where the refusal is shown.
+     */
+    canEnterOutlands(): boolean {
+      return this.$store.data.isUser === true;
+    },
+    /**
+     * OUTLANDS-2A. The rendering path actually used for the place on screen.
+     * It is the member's stored `view3d` preference everywhere, except that
+     * Outlands raises `force3d` for itself alone. Nothing here writes to the
+     * store, so leaving Outlands returns the member to their own setting.
+     */
+    effective3d(): boolean {
+      return this.force3d || this.$store.data.view3d;
+    },
     worldUrl(): string {
       const { assets_dir, world_filename } = this.$store.data.place;
       return `/assets/worlds/${assets_dir}${world_filename}`;

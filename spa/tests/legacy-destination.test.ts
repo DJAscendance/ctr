@@ -164,10 +164,14 @@ ALL_TABLES.forEach(([name, table]) => {
   });
 });
 
-test("the place table holds exactly the 13 approved slugs", () => {
+test("the place table holds exactly the 14 approved slugs", () => {
+  // `ne_game` joined the table in OUTLANDS-2A, which built the team-avatar
+  // picker this entry was waiting for. Every other slug is unchanged, and the
+  // two Outlands destinations that stay blocked are asserted in part 7.
   assert.deepStrictEqual(Object.keys(LEGACY_PLACE_ROUTES).sort(), [
     "blackmarket", "cafe", "cityhall", "cyberhood", "employment", "enter",
-    "fleamarket", "funpark", "pool", "post", "shopping", "stadium", "theatre",
+    "fleamarket", "funpark", "ne_game", "pool", "post", "shopping", "stadium",
+    "theatre",
   ]);
 });
 
@@ -510,9 +514,10 @@ test("the Bank match is exact, so no other production address is caught", () => 
 console.log("\n7. Kept suppressed");
 
 const KEEP_SUPPRESSED: Array<[string, string]> = [
-  ["Outlands team entrance", "http://www.cybertown.com/cgi-bin/cybertown/place?plc=ne_game"],
+  // The Outlands team entrance itself left this list in OUTLANDS-2A - see the
+  // Outlands block below. The game-master beam page did NOT: its DMZ
+  // destination is OUTLANDS-2C and nothing approves it yet.
   ["Outlands GM beam page", "http://www.cybertown.com/places/ne_game/html/gmbeam.html"],
-  ["Outlands GM place link", "/cgi-bin/cybertown/place?plc=ne_game&ac=3D"],
   ["Avatar Boutique", "http://www.cybertown.com/avatars/avlib_1.html"],
   ["Old Town", "/index2.html"],
   [
@@ -540,6 +545,38 @@ test("no suppressed address ever produces a route through a whole call", () => {
   KEEP_SUPPRESSED.forEach(([name, url]) => {
     const decision = classifyLegacyNavigation([url], ["target=_top"]);
     assert.strictEqual(decision.route, null, name);
+  });
+});
+
+/**
+ * OUTLANDS-2A moved one entry out of the list above. These four tests are what
+ * replaced it: the entrance maps, and nothing else Outlands does.
+ */
+test("the Outlands team entrance now maps to the CTR entrance page", () => {
+  ["http://www.cybertown.com/cgi-bin/cybertown/place?plc=ne_game",
+    "/cgi-bin/cybertown/place?plc=ne_game&ac=3D",
+  ].forEach(url => {
+    const decision = classifyLegacyDestination(url, "_top");
+    assert.strictEqual(decision.action, MAP_TO_CTR_ROUTE, url);
+    assert.strictEqual(decision.route, "/place/outlands", url);
+  });
+});
+
+test("the Outlands entrance route is a literal in the allow-list", () => {
+  assert.ok(LEGACY_ROUTES.indexOf("/place/outlands") !== -1);
+  const source = fs.readFileSync(HELPER, "utf8");
+  assert.ok(source.indexOf("\"/place/outlands\"") !== -1, "the route must be a literal");
+});
+
+test("the game master beam page is still blocked - that is OUTLANDS-2C", () => {
+  reachesNoRoute("http://www.cybertown.com/places/ne_game/html/gmbeam.html", "_top");
+  reachesNoRoute("/places/ne_game/html/gmbeam.html", "_top");
+  assert.strictEqual(LEGACY_ROUTES.indexOf("/place/club"), -1);
+});
+
+test("Outlands frame chrome still never maps", () => {
+  ["menu", "action", "actionfs", "print", "sound"].forEach(ac => {
+    reachesNoRoute(`/cgi-bin/cybertown/place?plc=ne_game&ac=${ac}`);
   });
 });
 
@@ -1145,11 +1182,15 @@ test("the Bank exit door still hard-codes the production host", () => {
   assert.ok(source.indexOf("https://www.cybertownrevival.com/#/place/enter") !== -1);
 });
 
-test("the Outlands team entrance is still present and still suppressed", () => {
+test("the Outlands team entrance in the shipped world reaches the entrance page", () => {
+  // `ne_game.wrl:1159` is the world's own "you have no valid team avatar, go
+  // back and pick one" branch. OUTLANDS-2A is what gave it somewhere to go.
   const source = readAsset(WORLDS, "ne_game/vrml/ne_game.wrl");
   const match = /'(http:\/\/www\.cybertown\.com[^']*place\?plc=ne_game)'/.exec(source);
   assert.ok(match, "the Outlands entrance address moved");
-  reachesNoRoute((match as RegExpExecArray)[1], "_top");
+  const decision = classifyLegacyDestination((match as RegExpExecArray)[1], "_top");
+  assert.strictEqual(decision.action, MAP_TO_CTR_ROUTE);
+  assert.strictEqual(decision.route, "/place/outlands");
 });
 
 test("every neighbour Anchor in the shipped worlds reaches no route", () => {
