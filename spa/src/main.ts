@@ -1,11 +1,11 @@
-import { createApp, nextTick } from "vue";
+import { createApp } from "vue";
 import {
   createRouter,
   createWebHashHistory,
   RouteLocationNormalized,
   RouteLocationRaw,
 } from "vue-router";
-import VueGtag, { pageview } from "vue-gtag";
+import { createGtag } from "vue-gtag";
 
 import App from "./App.vue";
 import api from "./api";
@@ -292,34 +292,40 @@ router.afterEach((to, from, failure) => {
 });
 
 /**
- * Analytics: same Google tag, same one page_view per landed navigation, same payload.
+ * Analytics: same Google tag, one page_view per landed navigation, same payload.
  *
- * vue-gtag 2 is still not handed the router here: its own tracker would title every
- * page_view with the route NAME, where this app has always sent the document title the
- * guard above sets. The tracker below restates vue-gtag's route tracking against Router 5's
- * `isReady()` and `currentRoute.value`, keeping its `pageTrackerSkipSamePath` default.
+ * vue-gtag 3 tracks Vue Router 4/5 natively: it waits for `router.isReady()`, sends one
+ * page_view for the route the app opened on, then one per `afterEach` whose path differs
+ * from the one it left - the same rule the Router 3 bridge this replaces had restated by
+ * hand. Its default template would title each page_view with the route NAME; the template
+ * below keeps sending the document title the guard above sets, as this app always has.
  */
-app.use(VueGtag, {
-  config: { id: "G-BCMREM3LDH" },
-});
+/** The routes WorldBrowserPage titles after the place it shows, once it has rendered. */
+const WORLD_ROUTE_NAMES = ["world-browser", "user-home", "club-page"];
 
-/** One page_view for a route, titled with what the `beforeEach` guard already set. */
-function trackPageView(to: RouteLocationNormalized): void {
-  pageview({
-    page_title: document.title,
-    page_path: to.path,
-  });
+/**
+ * The title a page_view carries. It is the document title the guard set, except on a world
+ * route, where WorldBrowserPage sets `"<place> - Cybertown"` one tick later than vue-gtag
+ * tracks the navigation; the same string is built here from the place that navigation
+ * landed, which `afterEach` above has already committed to the store by this point.
+ */
+function pageTitleFor(route: RouteLocationNormalized): string {
+  const { name } = appStore.data.place;
+  if (WORLD_ROUTE_NAMES.includes(route.name as string) && name) {
+    return `${name} - Cybertown`;
+  }
+  return document.title;
 }
 
-router.isReady().then(() => {
-  trackPageView(router.currentRoute.value);
-
-  router.afterEach((to, from, failure) => {
-    // A navigation that did not land is not a page view; neither is one that lands on the
-    // path it started from - vue-gtag skips that too.
-    if (failure || to.path === from.path) return;
-    nextTick(() => trackPageView(to));
-  });
-});
+app.use(createGtag({
+  tagId: "G-BCMREM3LDH",
+  pageTracker: {
+    router,
+    template: route => ({
+      page_title: pageTitleFor(route),
+      page_path: route.path,
+    }),
+  },
+}));
 
 app.mount("#app");
