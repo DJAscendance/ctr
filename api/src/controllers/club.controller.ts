@@ -7,7 +7,7 @@ import {
 } from '../services/';
 import * as badwords from 'badwords-list';
 
-class ClubController {
+export class ClubController {
   constructor(
     private clubService: ClubService,
     private memberService: MemberService,
@@ -83,8 +83,24 @@ class ClubController {
     const clubId = Number.parseInt(request.body.clubId);
     const username = request.body.username;
     const status = request.body.status;
-    const memberId = await this.memberService.getMemberId(username);
+    let isOwner: boolean;
     try {
+      isOwner = await this.clubService.isOwner(clubId, session.id);
+    } catch (error) {
+      console.log(error);
+      response.status(400).json({message: 'Error checking permissions'});
+      return;
+    }
+    if (!isOwner) {
+      response.status(403).json({message: 'You are not the owner of this club'});
+      return;
+    }
+    try {
+      const memberId = await this.memberService.getMemberId(username);
+      if (!memberId || !memberId[0]) {
+        response.status(400).json({message: 'Member not found'});
+        return;
+      }
       await this.clubService.changeMemberStatus(clubId, memberId[0].id, status);
       console.log(`changed member ${memberId[0].id} status ${status} for club ${clubId}`);
       response.status(200).json({success: true});
@@ -216,8 +232,9 @@ class ClubController {
         return;
       }
     } catch (error) {
-        console.log(error);
-        response.status(400).json({message: 'Error checking permissions'});
+      console.log(error);
+      response.status(400).json({message: 'Error checking permissions'});
+      return;
     }
     if (
       !updateInfo || !updateInfo.id || !updateInfo.description) {

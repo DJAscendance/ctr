@@ -73,12 +73,12 @@ Common commands:
   binding: four hard prohibitions, the fail-closed gate rule, the bounded asset-identifier
   rule, and the audit event each admin action owes.
 
-- **Duplicate role rows / admin grants.** The DB has duplicate `role` rows from an old bad
-  seed: every role name exists twice (ids 1–113 and 114–192). `RoleRepository.roleMap`
-  resolves each name to the **last** id, so `roleMap.Admin === 114`, and `canAdmin()`
-  checks that. **To make a member admin, add a `role_assignment` with `role_id = 114`** — a
-  `role_id = 1` ("Admin") assignment alone is NOT recognized. The real fix is cleaning up
-  the duplicate rows.
+- **Admin role id.** CTBL-0026 has landed: the role dedupe migration is applied, the live
+  `role` table has no duplicate names, and `RoleRepository.roleMap` resolves the first name
+  match by ascending id, so `roleMap.Admin === 1`. **To make a member admin, add a
+  `role_assignment` with `role_id = 1`.** Prefer resolving roles by name through
+  `RoleRepository`/`roleMap` rather than hardcoding any id — the map is the authoritative
+  source, not a literal number.
 - **Auth:** JWT in the `apitoken` header, signed with `JWT_SECRET` (no expiry). Session
   payload: `{ id, username, avatar, admin }`. `memberService.decryptSession(req, res)`.
 - **Place hierarchy:** `place` has no `parent_id`. Home→block linkage is in `map_location`
