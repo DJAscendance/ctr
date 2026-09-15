@@ -7,6 +7,7 @@ import api from "./api";
 import appStore, { Place, User } from "./appStore";
 import * as filters from "./helpers/fiters";
 import { NavigationScopedValue } from "./helpers/navigation-place.helper";
+import installRouterLinkCompat from "./libs/router-link-compat";
 import routes from "./routes";
 import siteConfig from "./site-config";
 import socket from "./socket";
@@ -38,6 +39,9 @@ if (window.location.hash === "" && window.location.pathname !== "/") {
 
 const router = new VueRouter({ routes });
 Vue.use(VueRouter);
+
+// Must follow Vue.use(VueRouter): it patches the RouterLink that install() registers.
+installRouterLinkCompat();
 
 /**
  * Routes a visitor may reach with no session at all.
