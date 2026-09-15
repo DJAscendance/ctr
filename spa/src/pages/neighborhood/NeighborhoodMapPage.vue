@@ -242,7 +242,7 @@ export default defineComponent({
   mounted() {
     this.loadRouteHood();
   },
-  async beforeDestroy() {
+  async beforeUnmount() {
     await this.unloadPlace();
   },
 });

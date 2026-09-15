@@ -39,7 +39,7 @@
             </td>
             <td class="text-left">
               <!-- format Saturday, October 9 1999 -->
-              {{ memberInfo.immigrationDate | dateFormatFilter }}
+              {{ dateFormatFilter(memberInfo.immigrationDate) }}
             </td>
           </tr>
           
@@ -49,7 +49,7 @@
             </td>
             <td class="text-left">
               <!-- format Saturday, October 9 1999 -->
-              {{ memberInfo.lastAccess | dateFormatFilter }}
+              {{ dateFormatFilter(memberInfo.lastAccess) }}
             </td>
           </tr>
 
@@ -126,6 +126,7 @@ export default defineComponent({
   },
 
   methods: {
+    dateFormatFilter,
     async getData() {
       this.showStorage = false;
       try {

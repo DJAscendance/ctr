@@ -1131,7 +1131,7 @@ export default defineComponent({
       // Chat remounts fresh on every place load (v-if="chatReady"), so
       // these handlers must be removable on teardown - bound to named
       // instance methods rather than anonymous inline callbacks, and
-      // removed in beforeDestroy(), so repeated place navigation doesn't
+      // removed in beforeUnmount(), so repeated place navigation doesn't
       // accumulate one more set of listeners on the shared socket for
       // every place ever visited this session.
       this.$socket.on("CHAT", this.onChatMessage);
@@ -1353,7 +1353,7 @@ export default defineComponent({
   computed: {
     connected: function() { return this.$socket.connected; },
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.setTimers(false);
     if (this.unsubscribePresence) this.unsubscribePresence();
     this.stopSocketListeners();

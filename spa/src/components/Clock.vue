@@ -16,7 +16,7 @@ export default defineComponent({
       loaded: false,
     };
   },
-  beforeDestroy() {
+  beforeUnmount() {
     // prevent memory leak
     clearInterval(this.interval);
   },

@@ -168,7 +168,7 @@ export default defineComponent({
   mounted() {
     this.start();
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.teardown();
   },
   methods: {

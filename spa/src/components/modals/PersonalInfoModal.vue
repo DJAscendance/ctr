@@ -28,7 +28,7 @@
           </tr>
             <tr>
               <td><b>Immigration</b></td>
-              <td>{{ info.immigrationDate | dateFormatFilter }}</td>
+              <td>{{ dateFormatFilter(info.immigrationDate) }}</td>
             </tr>
             <tr>
               <td><b>Experience</b></td>
@@ -71,6 +71,7 @@
 </template>
 <script lang="ts">
 import { defineComponent } from "vue";
+import { dateFormatFilter } from "@/helpers/fiters";
   
 import Modal from "./Modal.vue";
 import ModalMixin from "./mixins/ModalMixin";
@@ -111,6 +112,7 @@ export default defineComponent({
     };
   },
   methods: {
+    dateFormatFilter,
     backToInfoModal(): void {
       ModalService.open(InfoModal);
     },

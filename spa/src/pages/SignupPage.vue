@@ -222,7 +222,7 @@ export default defineComponent({
         this.showError = true;
       });
   },
-  beforeDestroy(): void {
+  beforeUnmount(): void {
     const turnstile = (window as any).turnstile;
     if (turnstile && this.widgetId !== null) {
       turnstile.remove(this.widgetId);

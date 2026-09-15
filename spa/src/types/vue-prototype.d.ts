@@ -1,6 +1,5 @@
 import api from "../api";
 import { AppStore } from "../appStore";
-import { VueWithCustomFilters } from "../helpers/fiters";
 import { SocketManager } from "../socket";
 
 /**
@@ -17,7 +16,7 @@ import { SocketManager } from "../socket";
  * applied. It now points at the file that actually exports the interface.
  */
 declare module "vue" {
-  interface ComponentCustomProperties extends VueWithCustomFilters {
+  interface ComponentCustomProperties {
     $http: api,
     $socket: SocketManager,
     $store: AppStore,

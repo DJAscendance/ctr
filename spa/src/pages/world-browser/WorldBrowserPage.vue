@@ -62,7 +62,7 @@
 // CDN in spa/public/index.html, not imported, so declare it for the linter.
 /* global X3D */
 
-import { defineComponent } from "vue";
+import { defineAsyncComponent, defineComponent, markRaw } from "vue";
 import { appEvents } from "@/libs/event-bus";
 
 import * as avatarsDataJson from "../../libs/data/avatars.json";
@@ -472,21 +472,21 @@ export default defineComponent({
         }
 
         if(this.outlandsTeamNeeded){
-          this.mainComponent = () => import(
+          this.mainComponent = markRaw(defineAsyncComponent(() => import(
             "@/components/place/outlands/entrance.vue"
-          );
+          )));
         } else if(this.$store.data.place.type === "shop"){
-          this.mainComponent = () => import(
+          this.mainComponent = markRaw(defineAsyncComponent(() => import(
             "@/components/place/mall/main2d.vue"
-          );
+          )));
         } else if(this.$store.data.place.type === "club"){
-          this.mainComponent = () => import(
+          this.mainComponent = markRaw(defineAsyncComponent(() => import(
             "@/components/place/club/main2d.vue"
-          );
+          )));
         } else {
-          this.mainComponent = () => import(
+          this.mainComponent = markRaw(defineAsyncComponent(() => import(
             `@/components/place/${this.$store.data.place.slug}/main2d.vue`
-          );
+          )));
         }
         this.loaded = true;
       }
@@ -1864,7 +1864,7 @@ export default defineComponent({
       if (event === "resynced") this.sendInitialViewpoint();
     });
   },
-  beforeDestroy() {
+  beforeUnmount() {
     appEvents.off("outlands-team-selected", this.wearOutlandsAvatarAndJoin);
   },
   async beforeCreate() {

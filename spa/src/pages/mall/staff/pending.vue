@@ -162,7 +162,7 @@ export default defineComponent({
     this.isMallStaff();
     this.getResults();
   },
-  destroyed(): void {
+  unmounted(): void {
     // Leaving the list makes its count meaningless; clearing it stops the
     // export control from briefly reappearing on a later visit with the
     // previous visit's number.

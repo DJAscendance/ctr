@@ -148,7 +148,7 @@ export default defineComponent({
     if (this.visible) this.bindDismissal();
   },
   /* A route change unmounts the page, so the listeners must go with it. */
-  beforeDestroy(): void {
+  beforeUnmount(): void {
     this.unbindDismissal();
   },
 });

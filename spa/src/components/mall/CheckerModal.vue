@@ -33,7 +33,7 @@ export default defineComponent({
   mounted(): void {
     document.addEventListener("keydown", this.onKeydown);
   },
-  destroyed(): void {
+  unmounted(): void {
     document.removeEventListener("keydown", this.onKeydown);
   },
   methods: {

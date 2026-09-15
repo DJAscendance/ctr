@@ -151,7 +151,7 @@ export default defineComponent({
   mounted() {
     this.fetchQueue();
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.revokePreviews();
   },
 });

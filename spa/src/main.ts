@@ -10,7 +10,6 @@ import { createGtag } from "vue-gtag";
 import App from "./App.vue";
 import api from "./api";
 import appStore, { Place, User } from "./appStore";
-import * as filters from "./helpers/fiters";
 import { NavigationScopedValue } from "./helpers/navigation-place.helper";
 import routes from "./routes";
 import siteConfig from "./site-config";
@@ -24,10 +23,6 @@ import "./assets/index.scss";
  */
 const app = createApp(App);
 
-// register global utilities/filters
-Object.keys(filters).forEach(key => {
-  app.filter(key, filters[key]);
-});
 app.config.globalProperties.$http = api;
 app.config.globalProperties.$store = appStore;
 app.config.globalProperties.$socket = socket;

@@ -23,7 +23,7 @@
           <tr v-for="member in members" :key="member.id" align="center">
             <td align="left">{{ member.username }}</td>
             <td align="left">{{ member.email }}</td>
-            <td align="left">{{ member.created_at | dateFormatFilter }}</td>
+            <td align="left">{{ dateFormatFilter(member.created_at) }}</td>
             <td>
               <button
                 type="button"
@@ -44,6 +44,7 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
+import { dateFormatFilter } from "@/helpers/fiters";
 
 /** One immigration waiting on a city administrator. */
 interface PendingMember {
@@ -76,6 +77,7 @@ export default defineComponent({
     await this.load();
   },
   methods: {
+    dateFormatFilter,
     async load(): Promise<void> {
       this.loading = true;
       try {

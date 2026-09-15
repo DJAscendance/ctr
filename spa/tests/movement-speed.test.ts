@@ -535,7 +535,7 @@ test("the panel dismisses itself on a click outside and on Escape", () => {
 test("the dismissal listeners are bound only while the panel is open", () => {
   assert.ok(/visible\(open: boolean\): void \{\s*if \(open\) this\.bindDismissal\(\);\s*else this\.unbindDismissal\(\);/
     .test(panelSource), "bound on open, released on close");
-  assert.ok(/beforeDestroy\(\): void \{\s*this\.unbindDismissal\(\);/.test(panelSource),
+  assert.ok(/beforeUnmount\(\): void \{\s*this\.unbindDismissal\(\);/.test(panelSource),
     "and released when the page goes away");
 });
 

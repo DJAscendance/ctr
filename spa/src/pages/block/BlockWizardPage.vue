@@ -152,6 +152,6 @@
 				this.getData();
 			}
 		},
-		async beforeDestroy() {}
+		async beforeUnmount() {}
 	});
 </script>

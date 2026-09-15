@@ -58,7 +58,7 @@ export default defineComponent({
 .modal-leave-active {
   transition: all 0.25s ease-out;
 }
-.modal-enter,
+.modal-enter-from,
 .modal-leave-to {
   transform: translateY(25px);
   opacity: 0;

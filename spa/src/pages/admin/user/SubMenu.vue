@@ -88,10 +88,7 @@
     />
 
     <div class="flex w-full min-w-min items-center justify-center">
-      <router-view
-        :accessLevel="accessLevel"
-        :canManageSecurityRoles="canManageSecurityRoles"
-      />
+      <router-view :accessLevel="accessLevel" />
     </div>
   </div>
 </template>
