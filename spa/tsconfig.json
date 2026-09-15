@@ -22,6 +22,9 @@
     "paths": {
       "@/*": [
         "src/*"
+      ],
+      "vue": [
+        "src/types/vue-compat"
       ]
     },
     "lib": [

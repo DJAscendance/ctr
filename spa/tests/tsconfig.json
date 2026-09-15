@@ -6,7 +6,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "./.compiled",
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "vue": ["../src/types/vue-compat"],
+      "@vue/compat": ["../src/types/vue-compat"]
+    }
   },
   "include": [
     "*.ts",
