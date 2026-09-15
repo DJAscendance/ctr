@@ -75,8 +75,8 @@ Do not assume a change that lands on beta reaches it.
 
 ##### Vue CLI 5 and webpack 5
 
-The SPA builds with `@vue/cli-service` 5.0.9 on webpack 5. Vue stays on 2.6.14 and Vue Router
-on 3.5.2; this was a build-tool change only.
+The SPA builds with `@vue/cli-service` 5.0.9 on webpack 5. Vue Router stays on 3.5.2. Vue
+itself is now 3.5.42, run through the official migration build - see below.
 
 webpack 4 used to hash module ids with MD4, which the OpenSSL 3 inside Node 17+ removed, so
 every compile on Node 24 died with `ERR_OSSL_EVP_UNSUPPORTED`. `spa/scripts/vue-cli-service.js`
@@ -104,8 +104,58 @@ SPA is pinned to ESLint 6.8 with `eslint-plugin-vue` 6; moving the linter is a s
 `--fix`, so it rewrites files - use `npx eslint --quiet <path>` to check one file without that.
 
 `@types/node` is pinned to `^16.11.2` as a direct devDependency. It used to arrive
-transitively; the Vue CLI 5 tree floats it to a release whose `.d.ts` files use syntax
-TypeScript 4.1 cannot parse, which fails the build. Raising TypeScript is a separate lane.
+transitively; the Vue CLI 5 tree floats it to a release whose `.d.ts` files use syntax old
+TypeScript cannot parse, which fails the build. TypeScript has since moved to 4.3.5, which is
+not obviously far enough to lift the pin, and nothing needs a newer Node type.
+
+##### Vue 3 migration build (@vue/compat)
+
+Vue is 3.5.42, but the application is still written as a Vue 2 application. `vue` resolves to
+`@vue/compat` and the SFC compiler runs in compatibility **MODE 2**, which means "behave like
+Vue 2, and warn about everything you had to bend to do it". Options API, `Vue.extend`,
+`Vue.prototype`, `new Vue(...).$mount()`, template filters and `$on`/`$emit` event buses all
+still work. `vue`, `@vue/compat` and `@vue/compiler-sfc` must stay on the **same exact
+version** - the migration build refuses a mismatched runtime.
+
+Two hooks in `spa/vue.config.js` set this up, and the file explains both:
+
+- `resolve.alias` sends `vue$` to `@vue/compat/dist/vue.runtime.esm-bundler.js`,
+- the vue-loader rule gets `compilerOptions.compatConfig = { MODE: 2 }`.
+
+**Do not add a global migration-warning suppression.** A development build reports around 40
+deprecation warnings across 15 ids. They are not failures - they are the work list for the
+next phase, which turns MODE 2 off one feature at a time.
+
+TypeScript cannot follow a webpack alias, so both tsconfigs map `vue` through `paths` to
+`spa/src/types/vue-compat`. Vue's migration guide says to point that at `@vue/compat`
+directly; that does not work as published, because `@vue/compat@3.5.42` declares
+`"types": "./dist/vue.d.ts"` and ships only `dist/vue-compat.d.ts`. The local file is that
+missing entry point and nothing more.
+
+Three dependency decisions a future reader will otherwise undo:
+
+- **`vue-gtag` is 2.1.2 and is NOT given the router.** vue-gtag 2 tracks routes through Vue
+  Router 4 only (`router.isReady()`, `router.currentRoute.value`); handing it Router 3 throws
+  during bootstrap and the app never mounts. `spa/src/main.ts` runs the same page tracking
+  against Router 3's own `onReady`/`afterEach` instead. Do not "fix" this by passing `router`
+  back in, and do not move to vue-gtag 3.x - it requires `vue-router@^4.5.0`.
+- **`vue-template-compiler` is gone.** It is the Vue 2 SFC compiler, replaced by
+  `@vue/compiler-sfc`. It is an optional peer of the Vue CLI packages, so nothing wants it
+  back. Vue CLI 5 also switches itself from vue-loader 15 to vue-loader 17 once Vue is 3.x -
+  do not add a direct `vue-loader` dependency to force that.
+- **TypeScript is 4.3.5, not 4.1.** 4.1 cannot *parse* Vue 3's declaration files:
+  `@vue/reactivity` uses `get value(): T` inside an interface, which is 4.3 syntax, so it
+  fails with TS1131 before type checking and `skipLibCheck` cannot hide it. 4.3.5 is the
+  lowest version that works and it keeps the existing @typescript-eslint 4.x / ESLint 6.8
+  stack. A clean run with `skipLibCheck: false` would need 5.4; both tsconfigs set
+  `skipLibCheck: true`.
+
+`eslint-plugin-vue` is 7.x and the config extends `plugin:vue/vue3-essential`, not
+`plugin:vue/essential`. Same rule tier, correct Vue major: the Vue 2 ruleset's
+`vue/no-template-key` told you to do the opposite of what the Vue 3 compiler requires. The
+Vue 3 ruleset flags around 18 genuine leftovers (`beforeDestroy`/`destroyed` hook names,
+template filters). Those are real debt for the cleanup phase - do not switch the ruleset back
+to hide them. ESLint itself stays on 6.8; eslint-plugin-vue 7 still accepts it.
 
 ### Initial Setup
 
