@@ -41,7 +41,10 @@
  * is generic and so is this suite: nothing in it knows about any particular world.
  */
 import assert from "assert";
-import Vue from "vue";
+// The app's webpack build resolves "vue" to the Vue 3 migration build (see vue.config.js).
+// This suite runs in plain Node, where no webpack alias applies, so it names @vue/compat
+// outright - otherwise it would exercise a different Vue from the one the SPA ships.
+import Vue from "@vue/compat";
 import VueRouter, { Route } from "vue-router";
 
 import { NavigationScopedValue } from "../src/helpers/navigation-place.helper";

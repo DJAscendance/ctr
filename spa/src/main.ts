@@ -1,6 +1,6 @@
 import Vue from "vue";
-import VueRouter from "vue-router";
-import VueGtag from "vue-gtag";
+import VueRouter, { Route } from "vue-router";
+import VueGtag, { pageview } from "vue-gtag";
 
 import App from "./App.vue";
 import api from "./api";
@@ -243,15 +243,40 @@ router.afterEach(to => {
   navigationPlace.confirm(to);
 });
 
+/**
+ * Analytics: same Google tag, same one page_view per landed navigation, same payload.
+ *
+ * The router is deliberately NOT handed to vue-gtag. vue-gtag 2 - the first release that
+ * accepts Vue 3 - tracks routes through Vue Router 4 only: it calls `router.isReady()` and
+ * reads `router.currentRoute.value`, and this app runs Router 3, which has neither. Passing
+ * the router threw "isReady is not a function" during `Vue.use` and the app never mounted.
+ *
+ * Its route tracker is small, so it is restated below against Router 3's own `onReady` and
+ * `afterEach`, keeping vue-gtag's `pageTrackerSkipSamePath` default. That is the whole of
+ * what `pageTrackerTemplate` and the third argument used to do, and it costs a Router major
+ * upgrade instead of avoiding one.
+ */
 Vue.use(VueGtag, {
-  pageTrackerTemplate(to) {
-    return {
-      page_title: document.title,
-      page_path: to.path,
-    };
-  },
   config: { id: "G-BCMREM3LDH" },
-}, router);
+});
+
+/** One page_view for a route, titled with what the `beforeEach` guard already set. */
+function trackPageView(to: Route): void {
+  pageview({
+    page_title: document.title,
+    page_path: to.path,
+  });
+}
+
+router.onReady(() => {
+  trackPageView(router.currentRoute);
+
+  router.afterEach((to, from) => {
+    // vue-gtag skips a navigation that lands on the path it started from; so does this.
+    if (to.path === from.path) return;
+    Vue.nextTick(() => trackPageView(to));
+  });
+});
 
 new Vue({
   router,
