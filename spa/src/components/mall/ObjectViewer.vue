@@ -15,7 +15,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { ComponentPublicInstance, defineComponent } from "vue";
 
 import {
   PreviewFailure,
@@ -99,9 +99,9 @@ interface ViewerInternals {
  * `data()` is made deeply reactive, and Vue walking the live X_ITE browser and
  * its scene graph would be both expensive and unsafe.
  */
-const internals = new WeakMap<Vue, ViewerInternals>();
+const internals = new WeakMap<ComponentPublicInstance, ViewerInternals>();
 
-function internalsFor(component: Vue): ViewerInternals {
+function internalsFor(component: ComponentPublicInstance): ViewerInternals {
   let existing = internals.get(component);
   if (!existing) {
     existing = {
@@ -120,7 +120,7 @@ function internalsFor(component: Vue): ViewerInternals {
 
 let callbackSequence = 0;
 
-export default Vue.extend({
+export default defineComponent({
   name: "MallObjectViewer",
   props: {
     objectUrl: {

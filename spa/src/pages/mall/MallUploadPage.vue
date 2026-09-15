@@ -220,9 +220,9 @@ If you sell all 10 chairs, you earn 250 CCs and double your investment.
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
-export default Vue.extend({
+export default defineComponent({
   name: "MallUploadPage",
   data: () => {
     return {

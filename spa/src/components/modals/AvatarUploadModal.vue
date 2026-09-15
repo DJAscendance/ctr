@@ -92,13 +92,13 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 import Modal from './Modal.vue';
 import ModalMixin from './mixins/ModalMixin';
 import AvatarModal from "./AvatarModal.vue";
 import ModalService from "./services/ModalService.vue";
 
-export default Vue.extend({
+export default defineComponent({
   name: "AvatarUploadModal",
   components: { Modal },
   data: () => {
@@ -135,7 +135,7 @@ export default Vue.extend({
     },
     setFile(e) {
       let files = e.target.files || e.dataTransfer.files;
-      this[e.target.dataset.id] = files[0];
+      (this as any)[e.target.dataset.id] = files[0];
     },
     async upload(): Promise<void> {
       this.showError = false;

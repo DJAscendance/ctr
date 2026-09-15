@@ -18,7 +18,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import PlaceMapBackgroundSelector from "@/components/PlaceMapBackgroundSelector.vue";
 
@@ -51,7 +51,7 @@ const WIZARD_TITLE = "Multimedia Wizard";
  * lifetime to the id so no option list, pending radio or message can cross into
  * a different neighborhood.
  */
-export default Vue.extend({
+export default defineComponent({
   name: "NeighborhoodMapBackgroundPage",
   components: { PlaceMapBackgroundSelector },
   data() {
@@ -63,7 +63,7 @@ export default Vue.extend({
   },
   computed: {
     hoodId(): string {
-      return this.$route.params.id;
+      return this.$route.params.id as string;
     },
     /**
      * The name is omitted rather than guessed. A wrong name is worse than no

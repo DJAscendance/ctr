@@ -12,13 +12,13 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import Modal from "./Modal.vue";
 import ModalMixin from "./mixins/ModalMixin";
 import Directory from "../../pages/directory/Directory.vue";
 
-export default Vue.extend({
+export default defineComponent({
   name: "DirectoryModal",
   components: { Modal, Directory },
   mixins: [ModalMixin],

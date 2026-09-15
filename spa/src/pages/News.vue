@@ -55,7 +55,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 interface NewsRecord {
   id: number;
@@ -66,7 +66,7 @@ interface NewsRecord {
   updated_at: string;
 }
 
-export default Vue.extend({
+export default defineComponent({
   name: "News",
 
   data() {

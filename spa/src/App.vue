@@ -196,7 +196,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import WorldBrowserPage from "./pages/world-browser/WorldBrowserPage.vue";
 import ModalRoot from "./components/modals/ModalRoot.vue";
@@ -213,7 +213,7 @@ import { outlandsEntranceActive } from "@/libs/outlands";
 
 declare const X3D: any;
 
-export default Vue.extend({
+export default defineComponent({
   name: "App",
   components: {
     ClockPage,

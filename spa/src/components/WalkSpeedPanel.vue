@@ -69,7 +69,7 @@
  * so it would have jumped by the page root's own offset. `fixed` adds no
  * containing block anywhere and leaves that menu exactly where it was.
  */
-import Vue from "vue";
+import { defineComponent } from "vue";
 import {
   DEFAULT_MOVEMENT_SPEED_MULTIPLIER,
   formatSpeedInput,
@@ -77,7 +77,7 @@ import {
   MIN_MOVEMENT_SPEED_MULTIPLIER,
 } from "@/helpers/movement-speed.helper";
 
-export default Vue.extend({
+export default defineComponent({
   name: "WalkSpeedPanel",
   props: {
     visible: { type: Boolean, default: false },

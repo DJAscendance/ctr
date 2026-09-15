@@ -62,7 +62,8 @@
 // CDN in spa/public/index.html, not imported, so declare it for the linter.
 /* global X3D */
 
-import Vue from "vue";
+import { defineComponent } from "vue";
+import { appEvents } from "@/libs/event-bus";
 
 import * as avatarsDataJson from "../../libs/data/avatars.json";
 import * as worldDataJson from "../../libs/data/worlds.json";
@@ -86,7 +87,7 @@ import {
 } from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
 
-export default Vue.extend({
+export default defineComponent({
   name: "WorldBrowserPage",
   components: { Chat, WalkSpeedPanel },
   data: (): WorldBrowserData => {
@@ -1273,7 +1274,7 @@ export default Vue.extend({
           presenceId: this.$socket.presenceId,
         }));
       }
-      this.remoteMembers.attach(this.presenceStore);
+      this.remoteMembers.attach(this.presenceStore as PresenceStore);
     },
     /**
      * Drains whatever presence state already accumulated in presenceStore
@@ -1853,7 +1854,7 @@ export default Vue.extend({
   mounted() {
     this.startSocketListeners();
     /* The entrance screen wears the side and then asks for the world. */
-    this.$root.$on("outlands-team-selected", this.wearOutlandsAvatarAndJoin);
+    appEvents.on("outlands-team-selected", this.wearOutlandsAvatarAndJoin);
     // WorldBrowserPage is a v-show singleton (mounted once for the app's
     // lifetime), so this single subscription can't accumulate. On a
     // reconnect-driven resync, re-announce our current viewpoint so a
@@ -1864,7 +1865,7 @@ export default Vue.extend({
     });
   },
   beforeDestroy() {
-    this.$root.$off("outlands-team-selected", this.wearOutlandsAvatarAndJoin);
+    appEvents.off("outlands-team-selected", this.wearOutlandsAvatarAndJoin);
   },
   async beforeCreate() {
     await this.$socket.start();

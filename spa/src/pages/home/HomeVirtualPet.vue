@@ -155,11 +155,11 @@
 
 <script lang="ts">
   import VirtualPetSelect from '@/components/modals/VirtualPetSelect.vue';
-import Vue from "vue";
+import { defineComponent } from "vue";
 import Modal from '../../components/modals/Modal.vue';
 import ModalService from '@/components/modals/services/ModalService.vue';
 
-export default Vue.extend({
+export default defineComponent({
   name: "HomeVirtualPet",
   components: {Modal},
   data: () => {

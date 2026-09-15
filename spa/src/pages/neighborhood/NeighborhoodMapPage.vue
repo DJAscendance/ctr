@@ -45,13 +45,13 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 import Chat from "../../components/Chat.vue";
 import { NeighborhoodData } from "./neighborhood-data.interface";
 import { colonyDataHelper } from "@/helpers";
 import { mapBackgroundOptionsPath } from "@/helpers/map-background.helper";
 
-export default Vue.extend({
+export default defineComponent({
   name: "NeighborhoodMapPage",
   components: { Chat },
   data: (): NeighborhoodData & { routeLoadId: number } => {
@@ -153,7 +153,7 @@ export default Vue.extend({
      * which one neighborhood's background sits beside another's blocks.
      */
     async loadRouteHood(): Promise<void> {
-      const hoodId = this.$route.params.id;
+      const hoodId = this.$route.params.id as string;
       // Minted before anything is awaited, so every read this load starts is
       // stamped with it and every earlier load is stale from this point on.
       const loadId = this.routeLoadId + 1;

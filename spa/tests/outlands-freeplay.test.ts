@@ -468,9 +468,9 @@ test("leaving 3D altogether also releases it, before the world is replaced", () 
 });
 
 test("the entrance listener is taken off again when the page goes away", () => {
-  assert.ok(/\$root\.\$on\("outlands-team-selected", this\.wearOutlandsAvatarAndJoin\)/.test(PAGE));
+  assert.ok(/appEvents\.on\("outlands-team-selected", this\.wearOutlandsAvatarAndJoin\)/.test(PAGE));
   assert.ok(
-    /\$root\.\$off\("outlands-team-selected", this\.wearOutlandsAvatarAndJoin\)/.test(PAGE),
+    /appEvents\.off\("outlands-team-selected", this\.wearOutlandsAvatarAndJoin\)/.test(PAGE),
   );
 });
 
@@ -498,7 +498,7 @@ test("wearing a side never replaces the citizen's authentication token", () => {
     "the entrance is writing the authentication token again");
   assert.strictEqual(/response\.data\.token/.test(ENTRANCE), false,
     "the entrance is reading a token back out of the Outlands response");
-  assert.ok(/\$root\.\$emit\("outlands-team-selected", response\.data\.avatar\)/.test(ENTRANCE),
+  assert.ok(/appEvents\.emit\("outlands-team-selected", response\.data\.avatar\)/.test(ENTRANCE),
     "the entrance no longer hands the validated gameplay row to the page");
 });
 

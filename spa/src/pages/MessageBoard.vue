@@ -126,14 +126,14 @@
   </div>
 </template>
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import {
   debugMsg,
 } from "@/helpers";
 import {response} from "express";
 
-export default Vue.extend({
+export default defineComponent({
   name: "MessageBoard",
   data: () => {
     return {

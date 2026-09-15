@@ -1,4 +1,4 @@
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 /**
  * The three staff actions that are byte-identical across every Mall staff list
@@ -51,7 +51,7 @@ export function objectDisplayName(object: any): string {
   return id ? `Object #${id}` : "The object";
 }
 
-export default Vue.extend({
+export default defineComponent({
   data() {
     return {
       canAdmin: false,

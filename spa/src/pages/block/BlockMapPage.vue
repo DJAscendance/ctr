@@ -43,12 +43,12 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import { colonyDataHelper } from '@/helpers';
 import { mapBackgroundOptionsPath } from "@/helpers/map-background.helper";
 
-export default Vue.extend({
+export default defineComponent({
   name: "BlockMapPage",
   props: [
     "block",
@@ -82,7 +82,7 @@ export default Vue.extend({
     // paint over the block now in the URL, and a slow FAILURE for that block
     // must not wipe a background the new block already loaded.
     getMapBackground(): void {
-      const blockId = this.$route.params.id;
+      const blockId = this.$route.params.id as string;
       this.$http
         .get(mapBackgroundOptionsPath("block", blockId))
         .then((response) => {

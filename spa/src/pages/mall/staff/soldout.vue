@@ -65,6 +65,7 @@
 </template>
 
 <script lang="ts">
+import { defineComponent } from "vue";
 import MallObjectRow from "@/components/mall/MallObjectRow.vue";
 import mallActions from "./mall-actions.mixin";
 import { canonicalListQuery, listDefaults, readListState } from "./list-query";
@@ -80,7 +81,8 @@ import { canonicalListQuery, listDefaults, readListState } from "./list-query";
  * `/mall/soldout` returns every stocked object in one unpaginated response, so
  * sorting and paging happen here rather than in the query.
  */
-export default mallActions.extend({
+export default defineComponent({
+  mixins: [mallActions],
   name: "MallSoldOut",
   components: { MallObjectRow },
   data() {

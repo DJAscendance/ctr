@@ -68,12 +68,12 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 // The shared axios instance carries the request interceptor that attaches the apiToken
 // header, so authenticated binary fetches (the private image previews) go through it.
 import axios from "axios";
 
-export default Vue.extend({
+export default defineComponent({
   name: "HomeImageCheckPage",
   data: () => {
     return {
@@ -97,7 +97,7 @@ export default Vue.extend({
         // apiToken header) and shown via a temporary object URL.
         await Promise.all(queue.map(async (item) => {
           try {
-            const image = await axios.get(`/api${item.imageUrl}`, {
+            const image = await axios.get<Blob>(`/api${item.imageUrl}`, {
               responseType: "blob",
             });
             item.previewUrl = URL.createObjectURL(image.data);

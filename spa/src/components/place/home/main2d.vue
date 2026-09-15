@@ -108,10 +108,10 @@
 
 <script lang="ts">
 import { dateFormatFilter } from '@/helpers/fiters';
-import Vue from 'vue';
+import { defineComponent } from "vue";
 import Storage from "../../storage/Storage.vue";
 
-export default Vue.extend({
+export default defineComponent({
   name: "HomeMain2d",
   components: { Storage },
   data: () => {

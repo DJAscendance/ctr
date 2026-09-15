@@ -16,7 +16,7 @@ import { SocketManager } from "../socket";
  * helpers were moved; it silently resolved to nothing and the filter types were never
  * applied. It now points at the file that actually exports the interface.
  */
-declare module "@vue/runtime-core" {
+declare module "vue" {
   interface ComponentCustomProperties extends VueWithCustomFilters {
     $http: api,
     $socket: SocketManager,

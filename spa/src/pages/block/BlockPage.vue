@@ -5,10 +5,10 @@
 </template>
 
 <script lang="ts">
-	import Vue from "vue";
+	import { defineComponent } from "vue";
 	import { BlockData } from "./block-data.interface";
 
-	export default Vue.extend({
+	export default defineComponent({
 		name: "BlockPage",
 		data: (): BlockData => {
 			return {

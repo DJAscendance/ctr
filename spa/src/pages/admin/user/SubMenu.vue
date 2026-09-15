@@ -97,9 +97,9 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
-export default Vue.extend({
+export default defineComponent({
   name: "UserSubMenu",
 
   props: ["accessLevel"],
@@ -122,7 +122,7 @@ export default Vue.extend({
         "UserMallUploads",
       ];
 
-      return memberView.includes(this.$route.name);
+      return memberView.includes(this.$route.name as string);
     },
 
     isUserBanRoute(): boolean {

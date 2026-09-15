@@ -85,11 +85,13 @@
 </template>
 
 <script lang="ts">
+import { defineComponent } from "vue";
 import MallObjectRow from "@/components/mall/MallObjectRow.vue";
 import mallActions from "./mall-actions.mixin";
 import { canonicalListQuery, listDefaults, readListState } from "./list-query";
 
-export default mallActions.extend({
+export default defineComponent({
+  mixins: [mallActions],
   name: "MallWarehouse",
   components: { MallObjectRow },
   data() {

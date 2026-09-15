@@ -256,7 +256,7 @@
 
 <script lang="ts">
 
-import Vue from 'vue';
+import { defineComponent } from "vue";
 import { debugMsg } from '@/helpers';
 import { Presence, presenceKey, isSelfPresence } from '@/presence';
 import UserMenu from './UserMenu.vue';
@@ -338,7 +338,7 @@ interface ChatData {
  * described what is now inferred, and less precisely. `ChatData` stays, still applied by
  * `data(): ChatData` below.
  */
-export default Vue.extend({
+export default defineComponent({
   name: "Chat",
   components: {
     UserMenu,

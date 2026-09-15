@@ -54,7 +54,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import Modal from './Modal.vue';
 import ModalMixin from './mixins/ModalMixin';
@@ -63,7 +63,7 @@ import AccountModal from "./AccountModal.vue";
 import ModalService from "./services/ModalService.vue";
 import PersonalInfoModalVue from './PersonalInfoModal.vue';
 
-export default Vue.extend({
+export default defineComponent({
   name: "InfoModal",
   components: {Modal},
   methods: {

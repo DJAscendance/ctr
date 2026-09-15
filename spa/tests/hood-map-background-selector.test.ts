@@ -432,7 +432,7 @@ test("the hood page passes the hood place type and route id to the selector", ()
 test("the hood page checks authority against the route id", () => {
   const source = read(HOOD_BACKGROUND_PAGE);
   assert.ok(
-    source.includes("return this.$route.params.id;"),
+    source.includes("return this.$route.params.id as string;"),
     "the id comes from the URL",
   );
   assert.ok(
@@ -716,7 +716,7 @@ function componentSource(file: string): string {
   );
   const stripped = body
     .replace(/^\s*import .*$/gm, "")
-    .replace("export default Vue.extend(", "const __options = (");
+    .replace("export default defineComponent(", "const __options = (");
   const js = ts.transpileModule(stripped, {
     compilerOptions: { target: ts.ScriptTarget.ES2019, module: ts.ModuleKind.CommonJS },
   }).outputText;

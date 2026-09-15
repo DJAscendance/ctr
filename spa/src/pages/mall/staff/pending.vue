@@ -108,6 +108,7 @@
 </template>
 
 <script lang="ts">
+import { defineComponent } from "vue";
 import MallObjectRow from "@/components/mall/MallObjectRow.vue";
 import Modal from "@/components/modals/Modal.vue";
 import mallActions, {
@@ -118,7 +119,8 @@ import mallActions, {
 import mallStaffState from "./mall-staff-state";
 import { canonicalListQuery, listDefaults, readListState } from "./list-query";
 
-export default mallActions.extend({
+export default defineComponent({
+  mixins: [mallActions],
   name: "MallPending",
   components: { MallObjectRow, Modal },
   data() {

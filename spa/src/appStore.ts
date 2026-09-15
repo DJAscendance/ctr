@@ -1,4 +1,4 @@
-import Vue from "vue";
+import { reactive } from "vue";
 import {
     clampMovementSpeed,
     MOVEMENT_SPEED_STORAGE_KEY,
@@ -97,7 +97,7 @@ export interface AppStore {
     };
 }
 
-const appStore = Vue.observable<AppStore>({
+const appStore = reactive<AppStore>({
     data: {
         bid: 0,
         loading: false,

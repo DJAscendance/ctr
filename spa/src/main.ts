@@ -1,5 +1,10 @@
-import Vue from "vue";
-import VueRouter, { Route } from "vue-router";
+import { createApp, nextTick } from "vue";
+import {
+  createRouter,
+  createWebHashHistory,
+  RouteLocationNormalized,
+  RouteLocationRaw,
+} from "vue-router";
 import VueGtag, { pageview } from "vue-gtag";
 
 import App from "./App.vue";
@@ -7,41 +12,48 @@ import api from "./api";
 import appStore, { Place, User } from "./appStore";
 import * as filters from "./helpers/fiters";
 import { NavigationScopedValue } from "./helpers/navigation-place.helper";
-import installRouterLinkCompat from "./libs/router-link-compat";
 import routes from "./routes";
 import siteConfig from "./site-config";
 import socket from "./socket";
 import "./assets/index.scss";
 
-Vue.config.productionTip = false;
+/**
+ * Vue Router 4 and 5 install onto an application instance - they provide the router to the
+ * tree and register RouterLink/RouterView on the app - so the app is created here, first,
+ * and everything that used to hang off the global `Vue` is installed on it instead.
+ */
+const app = createApp(App);
 
 // register global utilities/filters
 Object.keys(filters).forEach(key => {
-  Vue.filter(key, filters[key]);
+  app.filter(key, filters[key]);
 });
-Vue.prototype.$http = api;
-Vue.prototype.$store = appStore;
-Vue.prototype.$socket = socket;
+app.config.globalProperties.$http = api;
+app.config.globalProperties.$store = appStore;
+app.config.globalProperties.$socket = socket;
 
 document.querySelector("html").classList.add("dark");
 
 // The app uses hash-based routing, so a direct link like /beta-register only ever
 // serves the app shell - the real route lives in the hash. This has to run before
-// `new VueRouter(...)`: its hash-mode history normalizes an empty hash to "#/"
-// synchronously in its own constructor, so checking window.location.hash after
-// construction always sees "/", never the true empty-hash cold-load state. Doing
-// it here also resets the pathname to "/", so the URL ends up "/#/beta-register"
-// like every other route on the site, not the duplicated-looking
-// "/beta-register#/beta-register".
+// `createWebHashHistory()`: with no explicit base it derives one from the pathname it
+// finds, so a cold load of "/beta-register" would otherwise become the base of every
+// route and the true empty-hash state could never be told apart from "#/". Doing it
+// here also resets the pathname to "/", so the URL ends up "/#/beta-register" like every
+// other route on the site, not the duplicated-looking "/beta-register#/beta-register".
 if (window.location.hash === "" && window.location.pathname !== "/") {
   history.replaceState(null, "", `/#${  window.location.pathname}`);
 }
 
-const router = new VueRouter({ routes });
-Vue.use(VueRouter);
-
-// Must follow Vue.use(VueRouter): it patches the RouterLink that install() registers.
-installRouterLinkCompat();
+/**
+ * Hash history keeps the public URL contract this app has always had: every route lives
+ * behind "/#/", so bookmarks, legacy links and the login `redirect` query all keep working.
+ */
+const router = createRouter({
+  history: createWebHashHistory(),
+  routes,
+});
+app.use(router);
 
 /**
  * Routes a visitor may reach with no session at all.
@@ -75,7 +87,25 @@ const navigationPlace = new NavigationScopedValue<Place>(place => {
   appStore.methods.setPlace(place);
 });
 
-router.beforeEach(async (to, from, next) => {
+/**
+ * Vue Router 3's guard `next()` could be called any number of times; only the first call
+ * counted. Router 4 and 5 take the guard's return value instead, so the session check
+ * below collects its first decision through this helper and returns it once, keeping
+ * "first decision wins" exactly as it was.
+ */
+type GuardDecision = RouteLocationRaw | boolean;
+
+/**
+ * Vue Router 3 turned a `next(location)` that arrived AFTER its guard had already
+ * resolved into a plain `router.push(location)`. The club and message-board membership
+ * checks below rely on that: they answer from a request the guard does not await. This
+ * is that same late redirect, stated as what it always was.
+ */
+function redirectLate(location: RouteLocationRaw): void {
+  router.push(location);
+}
+
+router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> => {
   if (to.meta.title) {
     document.title = `${to.meta.title} - Cybertown${TITLE_SUFFIX}`;
   } else {
@@ -89,8 +119,7 @@ router.beforeEach(async (to, from, next) => {
   // is never bounced back out to the front door.
   if (siteConfig.isBeta && to.name === "home" && !appStore.data.isUser
     && !appStore.data.user.token) {
-    next({ name: "beta_landing" });
-    return;
+    return { name: "beta_landing" };
   }
   if (to.fullPath.includes("/place/")) {
     await api.get<any>(`/place/${to.params.id}`)
@@ -108,7 +137,7 @@ router.beforeEach(async (to, from, next) => {
           .then(response => {
             const member = response.data.isMember;
             if (!member) {
-              next(`/clubdoor/${Data.place.id}`);
+              redirectLate(`/clubdoor/${Data.place.id}`);
             }
           });
         const place = {
@@ -132,7 +161,7 @@ router.beforeEach(async (to, from, next) => {
                   type: Data.place.type,
                 }).then(response => {
                   if (!response.data.admin) {
-                    next(`/clubdoor/${Data.place.id}`);
+                    redirectLate(`/clubdoor/${Data.place.id}`);
                   }
                 });
               }
@@ -142,7 +171,7 @@ router.beforeEach(async (to, from, next) => {
                   type: Data.place.type,
                 }).then(response => {
                   if (!response.data.admin) {
-                    next("/clubdoor/${Data.place.id}");
+                    redirectLate("/clubdoor/${Data.place.id}");
                   }
                 });
               }
@@ -171,70 +200,80 @@ router.beforeEach(async (to, from, next) => {
       });
   }
 
-  if (!PUBLIC_ROUTE_NAMES.includes(to.name)) {
-    await api.get<{
-      user: User,
-      status: number,
-      roleName: string,
-      banned: boolean,
-      banInfo: any,
-    }>("/member/session")
-      .then(response => {
-        const { user } = response.data;
-        const { banInfo, banned } = response.data;
-        if (banned) {
-          if (
-            banInfo.type === "jail" &&
-            to.fullPath.includes("/messageboard/") ||
-            to.fullPath.includes("/inbox/") ||
-            to.fullPath.includes("/information/")
-          ) {
-            next("/restricted");
-          } else if (to.fullPath === "/restricted") {
-            next();
-          } else if (to.fullPath !== "/place/jail" && banInfo.type === "jail") {
-            // The redirect below is a navigation of its own, and it matches "/place/",
-            // so the guard runs again for it and fetches the jail through the ordinary
-            // path above. Staging it against THIS navigation - the one being redirected
-            // away from, which will never land - is what keeps the rule single: a place
-            // is committed by the navigation that landed, never by one that did not.
-            next("/place/jail");
-            api.get<any>("/place/jail")
-              .then(response => {
-                const Data = response.data;
-                const place = { ...Data.place };
-                navigationPlace.stage(to, place);
-              });
-          } else if (to.fullPath === "/place/jail") {
-            next();
-          } else {
-            appStore.methods.destroySession();
-            next({
-              name: "banned",
-              params: {
-                reason: banInfo.reason,
-                enddate: banInfo.end_date,
-              },
-            });
-          }
-        }
-        appStore.methods.setUser(user);
-        appStore.data.isUser = true;
-        next();
-      }).catch(() => {
-        appStore.methods.destroySession();
-        if (to.name !== "home") {
-          next({
-            name: "login",
-            query: { redirect: to.fullPath },
-          });
-        } else {
-          next();
-        }
-      });
-  } else {
-    next();
+  if (PUBLIC_ROUTE_NAMES.includes(to.name as string)) {
+    return true;
   }
+
+  let decision: GuardDecision | undefined;
+  const decide = (choice: GuardDecision): void => {
+    if (decision === undefined) decision = choice;
+  };
+
+  await api.get<{
+    user: User,
+    status: number,
+    roleName: string,
+    banned: boolean,
+    banInfo: any,
+  }>("/member/session")
+    .then(response => {
+      const { user } = response.data;
+      const { banInfo, banned } = response.data;
+      if (banned) {
+        if (
+          banInfo.type === "jail" &&
+          to.fullPath.includes("/messageboard/") ||
+          to.fullPath.includes("/inbox/") ||
+          to.fullPath.includes("/information/")
+        ) {
+          decide("/restricted");
+        } else if (to.fullPath === "/restricted") {
+          decide(true);
+        } else if (to.fullPath !== "/place/jail" && banInfo.type === "jail") {
+          // The redirect below is a navigation of its own, and it matches "/place/",
+          // so the guard runs again for it and fetches the jail through the ordinary
+          // path above. Staging it against THIS navigation - the one being redirected
+          // away from, which will never land - is what keeps the rule single: a place
+          // is committed by the navigation that landed, never by one that did not.
+          decide("/place/jail");
+          api.get<any>("/place/jail")
+            .then(response => {
+              const Data = response.data;
+              const place = { ...Data.place };
+              navigationPlace.stage(to, place);
+            });
+        } else if (to.fullPath === "/place/jail") {
+          decide(true);
+        } else {
+          appStore.methods.destroySession();
+          // Router 3 carried these two values as route params that were not part of the
+          // path. Router 4 and 5 drop such params, so they travel in the history state -
+          // the same in-memory, lost-on-reload lifetime they always had.
+          decide({
+            name: "banned",
+            state: {
+              reason: banInfo.reason,
+              enddate: banInfo.end_date,
+            },
+          });
+        }
+      }
+      appStore.methods.setUser(user);
+      appStore.data.isUser = true;
+      decide(true);
+    }).catch(() => {
+      appStore.methods.destroySession();
+      if (to.name !== "home") {
+        decide({
+          name: "login",
+          query: { redirect: to.fullPath },
+        });
+      } else {
+        decide(true);
+      }
+    });
+
+  return decision;
 });
 
 /**
@@ -242,47 +281,45 @@ router.beforeEach(async (to, from, next) => {
  * after the route is updated - before Vue re-renders for the new route on the next tick. So
  * the store still holds the right place by the time the new page is created, and a
  * navigation that was cancelled never gets here at all.
+ *
+ * Router 4 and 5 differ from Router 3 in one way here: a navigation that did NOT land - a
+ * duplicate of the current route, or one a guard aborted - also reaches `afterEach`, with
+ * the failure as the third argument. Those are skipped, so the rule above still holds.
  */
-router.afterEach(to => {
+router.afterEach((to, from, failure) => {
+  if (failure) return;
   navigationPlace.confirm(to);
 });
 
 /**
  * Analytics: same Google tag, same one page_view per landed navigation, same payload.
  *
- * The router is deliberately NOT handed to vue-gtag. vue-gtag 2 - the first release that
- * accepts Vue 3 - tracks routes through Vue Router 4 only: it calls `router.isReady()` and
- * reads `router.currentRoute.value`, and this app runs Router 3, which has neither. Passing
- * the router threw "isReady is not a function" during `Vue.use` and the app never mounted.
- *
- * Its route tracker is small, so it is restated below against Router 3's own `onReady` and
- * `afterEach`, keeping vue-gtag's `pageTrackerSkipSamePath` default. That is the whole of
- * what `pageTrackerTemplate` and the third argument used to do, and it costs a Router major
- * upgrade instead of avoiding one.
+ * vue-gtag 2 is still not handed the router here: its own tracker would title every
+ * page_view with the route NAME, where this app has always sent the document title the
+ * guard above sets. The tracker below restates vue-gtag's route tracking against Router 5's
+ * `isReady()` and `currentRoute.value`, keeping its `pageTrackerSkipSamePath` default.
  */
-Vue.use(VueGtag, {
+app.use(VueGtag, {
   config: { id: "G-BCMREM3LDH" },
 });
 
 /** One page_view for a route, titled with what the `beforeEach` guard already set. */
-function trackPageView(to: Route): void {
+function trackPageView(to: RouteLocationNormalized): void {
   pageview({
     page_title: document.title,
     page_path: to.path,
   });
 }
 
-router.onReady(() => {
-  trackPageView(router.currentRoute);
+router.isReady().then(() => {
+  trackPageView(router.currentRoute.value);
 
-  router.afterEach((to, from) => {
-    // vue-gtag skips a navigation that lands on the path it started from; so does this.
-    if (to.path === from.path) return;
-    Vue.nextTick(() => trackPageView(to));
+  router.afterEach((to, from, failure) => {
+    // A navigation that did not land is not a page view; neither is one that lands on the
+    // path it started from - vue-gtag skips that too.
+    if (failure || to.path === from.path) return;
+    nextTick(() => trackPageView(to));
   });
 });
 
-new Vue({
-  router,
-  render: h => h(App),
-}).$mount("#app");
+app.mount("#app");

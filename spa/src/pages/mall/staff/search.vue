@@ -49,10 +49,12 @@
 </template>
 
 <script lang="ts">
+import { defineComponent } from "vue";
 import MallObjectRow from "@/components/mall/MallObjectRow.vue";
 import mallActions from "./mall-actions.mixin";
 
-export default mallActions.extend({
+export default defineComponent({
+  mixins: [mallActions],
   name: "MallObjectSearch",
   components: { MallObjectRow },
   data() {

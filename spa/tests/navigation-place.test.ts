@@ -7,19 +7,24 @@
  * never reached could land on top of the place they are standing in. A navigation is lost
  * two ways, and the second is the nastier one:
  *
- *   * SUPERSEDED. A later navigation starts, so `confirmTransition` sets `pending` to the
- *     new route and the earlier navigation is cancelled when its guard calls `next()`.
+ *   * SUPERSEDED. A later navigation starts, so the router's pending location moves to
+ *     the new route and the earlier navigation is cancelled when its guard resolves.
  *   * DUPLICATE ABORT. The citizen asks again for the route the app is still on. That is
- *     `isSameRoute(route, current)`, so vue-router refuses it as redundant - but it sets
- *     `pending` to it FIRST, so the navigation already in flight is cancelled, and NO
- *     guard runs for the duplicate at all. Nothing re-fetches the place the citizen is
- *     standing in, so nothing corrects the store afterwards. The in-flight answer simply
- *     wins, and the store ends up naming a place the route never reached.
+ *     `isSameRouteLocation(from, to)`, so vue-router refuses it as redundant - but it
+ *     makes it the pending location FIRST, so the navigation already in flight is
+ *     cancelled, and NO guard runs for the duplicate at all. Nothing re-fetches the place
+ *     the citizen is standing in, so nothing corrects the store afterwards. The in-flight
+ *     answer simply wins, and the store ends up naming a place the route never reached.
  *
- * HOW THIS TESTS IT. With the REAL `vue-router` 3.5.2 the SPA ships, in `abstract` mode so
+ * HOW THIS TESTS IT. With the REAL `vue-router` 5 the SPA ships, on a memory history so
  * no DOM is needed, driven by a place fetch this suite resolves BY HAND. Nothing here
  * depends on which callback usually finishes first and nothing here waits on a timer to
  * make a point: every race is ordered explicitly.
+ *
+ * Router 4 and 5 report a navigation that did not land as a resolved failure value, not a
+ * rejection, and they run `afterEach` for it too, with that failure as the third argument.
+ * `main.ts` skips those in `afterEach`; so does the harness here, which is what keeps the
+ * "only the navigation that landed can write the store" rule the same one it always was.
  *
  * Every race is run against BOTH designs, so the suite states the old behaviour as well as
  * the new, and the legacy cases are real negative controls - they assert that the old
@@ -44,14 +49,15 @@ import assert from "assert";
 // The app's webpack build resolves "vue" to the Vue 3 migration build (see vue.config.js).
 // This suite runs in plain Node, where no webpack alias applies, so it names @vue/compat
 // outright - otherwise it would exercise a different Vue from the one the SPA ships.
-import Vue from "@vue/compat";
-import VueRouter, { Route } from "vue-router";
+import {
+  createMemoryHistory,
+  createRouter,
+  NavigationFailure,
+  RouteLocationNormalized,
+  Router,
+} from "vue-router";
 
 import { NavigationScopedValue } from "../src/helpers/navigation-place.helper";
-
-Vue.config.productionTip = false;
-Vue.config.devtools = false;
-Vue.use(VueRouter);
 
 let passed = 0;
 let failed = 0;
@@ -86,7 +92,7 @@ const PLACES: { [slug: string]: Place } = {
   fleamarket: { id: 4, name: "The Flea Market", slug: "fleamarket" },
 };
 
-const BLANK = { render: (h: any) => h("div") };
+const BLANK = { render: (): null => null };
 
 /** One `/api/place/<slug>` call the suite has not answered yet. */
 interface InFlight {
@@ -96,7 +102,7 @@ interface InFlight {
 
 interface Harness {
   store: { place: Place | null };
-  router: VueRouter;
+  router: Router;
   inFlight: InFlight[];
   /** Navigations vue-router refused or cancelled, newest last. */
   failures: string[];
@@ -131,8 +137,8 @@ function buildHarness(design: "legacy" | "staged"): Harness {
   const failures: string[] = [];
   const landed: string[] = [];
 
-  const router = new VueRouter({
-    mode: "abstract",
+  const router = createRouter({
+    history: createMemoryHistory(),
     routes: [
       { path: "/", name: "home", component: BLANK },
       { path: "/place/:id", name: "place", component: BLANK },
@@ -144,12 +150,13 @@ function buildHarness(design: "legacy" | "staged"): Harness {
     store.place = place;
   });
 
-  router.beforeEach(async (to, from, next) => {
+  router.beforeEach(async (to: RouteLocationNormalized): Promise<boolean> => {
     if (to.fullPath.indexOf("/place/") === 0) {
+      const slug = to.params.id as string;
       const place = await new Promise<Place>(resolve => {
         inFlight.push({
-          slug: to.params.id,
-          answer: () => resolve(PLACES[to.params.id]),
+          slug,
+          answer: () => resolve(PLACES[slug]),
         });
       });
       if (design === "legacy") {
@@ -160,10 +167,11 @@ function buildHarness(design: "legacy" | "staged"): Harness {
         navigationPlace.stage(to, place);
       }
     }
-    next();
+    return true;
   });
 
-  router.afterEach((to: Route) => {
+  router.afterEach((to: RouteLocationNormalized, from, failure?: NavigationFailure | void) => {
+    if (failure) return;
     landed.push(to.fullPath);
     if (design === "staged") {
       navigationPlace.confirm(to);
@@ -172,12 +180,11 @@ function buildHarness(design: "legacy" | "staged"): Harness {
 
   function go(slug: string): void {
     const path = slug === "information" ? "/information" : `/place/${slug}`;
-    const result = router.push(path) as unknown as Promise<unknown>;
-    if (result && typeof result.catch === "function") {
-      result.catch((error: Error) => {
-        failures.push(`${slug}: ${error.message.split("\n")[0]}`);
-      });
-    }
+    router.push(path).then((failure: NavigationFailure | void) => {
+      if (failure) {
+        failures.push(`${slug}: ${failure.message.split("\n")[0]}`);
+      }
+    });
   }
 
   async function answer(slug: string): Promise<void> {
@@ -205,7 +212,7 @@ async function stand(harness: Harness, slug: string): Promise<void> {
   harness.go(slug);
   await settle();
   await harness.answer(slug);
-  assert.strictEqual(harness.router.currentRoute.fullPath, `/place/${slug}`);
+  assert.strictEqual(harness.router.currentRoute.value.fullPath, `/place/${slug}`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -295,7 +302,7 @@ async function run(): Promise<void> {
           (harness.store.place as Place).slug, slug,
           `store says ${(harness.store.place as Place).name} at /place/${slug}`,
         );
-        assert.strictEqual(harness.router.currentRoute.params.id, slug);
+        assert.strictEqual(harness.router.currentRoute.value.params.id, slug);
       }
       assert.deepStrictEqual(harness.failures, []);
     });
@@ -306,7 +313,7 @@ async function run(): Promise<void> {
     await stand(harness, "club");
     harness.go("information");
     await settle();
-    assert.strictEqual(harness.router.currentRoute.fullPath, "/information");
+    assert.strictEqual(harness.router.currentRoute.value.fullPath, "/information");
     assert.strictEqual((harness.store.place as Place).slug, "club");
   });
 
@@ -336,24 +343,24 @@ async function run(): Promise<void> {
 
   await test("legacy: the cancelled Plaza fetch DOES corrupt the store", async () => {
     const harness = await runDuplicateAbort("legacy");
-    assert.strictEqual(harness.router.currentRoute.fullPath, "/place/club");
+    assert.strictEqual(harness.router.currentRoute.value.fullPath, "/place/club");
     assert.strictEqual(
       (harness.store.place as Place).name, "The Plaza",
       "the old design was expected to leave The Plaza in the store",
     );
     console.log(
-      `       old code: route=${harness.router.currentRoute.fullPath} ` +
+      `       old code: route=${harness.router.currentRoute.value.fullPath} ` +
       `store=${(harness.store.place as Place).name}`,
     );
   });
 
   await test("staged: the cancelled Plaza fetch cannot write the store", async () => {
     const harness = await runDuplicateAbort("staged");
-    assert.strictEqual(harness.router.currentRoute.fullPath, "/place/club");
+    assert.strictEqual(harness.router.currentRoute.value.fullPath, "/place/club");
     assert.strictEqual((harness.store.place as Place).name, "The Club");
     assert.strictEqual((harness.store.place as Place).slug, "club");
     console.log(
-      `       new code: route=${harness.router.currentRoute.fullPath} ` +
+      `       new code: route=${harness.router.currentRoute.value.fullPath} ` +
       `store=${(harness.store.place as Place).name}`,
     );
   });
@@ -394,16 +401,16 @@ async function run(): Promise<void> {
 
   await test("legacy: the superseded navigation wins by resolving last", async () => {
     const harness = await runSupersede("legacy");
-    assert.strictEqual(harness.router.currentRoute.fullPath, "/place/club");
+    assert.strictEqual(harness.router.currentRoute.value.fullPath, "/place/club");
     assert.strictEqual((harness.store.place as Place).name, "The Mall");
   });
 
   await test("staged: the landed navigation owns the store, whoever answers last", async () => {
     const harness = await runSupersede("staged");
-    assert.strictEqual(harness.router.currentRoute.fullPath, "/place/club");
+    assert.strictEqual(harness.router.currentRoute.value.fullPath, "/place/club");
     assert.strictEqual((harness.store.place as Place).name, "The Club");
     console.log(
-      `       reverse race: route=${harness.router.currentRoute.fullPath} ` +
+      `       reverse race: route=${harness.router.currentRoute.value.fullPath} ` +
       `store=${(harness.store.place as Place).name}`,
     );
   });
@@ -417,7 +424,7 @@ async function run(): Promise<void> {
     await settle();
     await harness.answer("mall");
     await harness.answer("club");
-    assert.strictEqual(harness.router.currentRoute.fullPath, "/place/club");
+    assert.strictEqual(harness.router.currentRoute.value.fullPath, "/place/club");
     assert.strictEqual((harness.store.place as Place).name, "The Club");
   });
 
@@ -433,7 +440,7 @@ async function run(): Promise<void> {
     await harness.answer("mall");
     await harness.answer("fleamarket");
     await harness.answer("club");
-    assert.strictEqual(harness.router.currentRoute.fullPath, "/place/club");
+    assert.strictEqual(harness.router.currentRoute.value.fullPath, "/place/club");
     assert.strictEqual((harness.store.place as Place).name, "The Club");
     assert.deepStrictEqual(harness.landed, ["/place/enter", "/place/club"]);
   });
@@ -448,7 +455,7 @@ async function run(): Promise<void> {
     harness.go("club");
     await settle();
     await harness.answerAll();
-    assert.strictEqual(harness.router.currentRoute.fullPath, "/place/club");
+    assert.strictEqual(harness.router.currentRoute.value.fullPath, "/place/club");
     assert.strictEqual((harness.store.place as Place).name, "The Club");
   });
 
@@ -462,7 +469,7 @@ async function run(): Promise<void> {
     await settle();
     await harness.answerAll();
     await settle();
-    const landedPath = harness.router.currentRoute.fullPath;
+    const landedPath = harness.router.currentRoute.value.fullPath;
     assert.strictEqual(
       `/place/${(harness.store.place as Place).slug}`, landedPath,
       `store=${(harness.store.place as Place).name} route=${landedPath}`,
@@ -486,7 +493,7 @@ async function run(): Promise<void> {
     await settle();
     assert.strictEqual(
       `/place/${(harness.store.place as Place).slug}`,
-      harness.router.currentRoute.fullPath,
+      harness.router.currentRoute.value.fullPath,
     );
   });
 
@@ -503,7 +510,7 @@ async function run(): Promise<void> {
       await settle();
       await harness.answerAll();
       await settle();
-      const path = harness.router.currentRoute.fullPath;
+      const path = harness.router.currentRoute.value.fullPath;
       const place = harness.store.place as Place;
       assert.strictEqual(`/place/${place.slug}`, path, `store=${place.name} route=${path}`);
       assert.strictEqual(

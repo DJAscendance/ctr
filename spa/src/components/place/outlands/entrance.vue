@@ -248,7 +248,8 @@
  * Selecting an avatar is what gives a member a side, because ne_game.wrl reads
  * the side off the avatar that is worn. See @/libs/outlands.
  */
-import Vue from "vue";
+import { defineComponent } from "vue";
+import { appEvents } from "@/libs/event-bus";
 import {
   OUTLANDS_TEAM_AVATARS,
   RED_TEAM,
@@ -310,7 +311,7 @@ const ARMS = [
   },
 ];
 
-export default Vue.extend({
+export default defineComponent({
   name: "OutlandsEntrance",
   data() {
     return {
@@ -398,7 +399,7 @@ export default Vue.extend({
         const response = await this.$http.post("/avatar/outlands", {
           avatarId: avatar.id,
         });
-        this.$root.$emit("outlands-team-selected", response.data.avatar);
+        appEvents.emit("outlands-team-selected", response.data.avatar);
       } catch (errorResponse: any) {
         this.error = "That avatar could not be worn. Please try again.";
       } finally {

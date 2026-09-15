@@ -55,7 +55,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import {
   MAP_BACKGROUND_EMPTY_MESSAGE,
@@ -89,7 +89,7 @@ import {
  * the state and forwards the two MAP-1 requests. It never derives a theme, an
  * index pool, or a filename - the server returns every candidate.
  */
-export default Vue.extend({
+export default defineComponent({
   name: "PlaceMapBackgroundSelector",
   props: {
     placeId: {

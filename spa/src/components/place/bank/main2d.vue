@@ -16,12 +16,12 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import BankTransferModal from "@/components/modals/BankTransferModal.vue";
 import ModalService from "@/components/modals/services/ModalService.vue";
 
-export default Vue.extend({
+export default defineComponent({
   name: "BankMain2d",
   data: () => {
     return {};

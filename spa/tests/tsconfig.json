@@ -7,11 +7,7 @@
     "skipLibCheck": true,
     "outDir": "./.compiled",
     "types": ["node"],
-    "baseUrl": ".",
-    "paths": {
-      "vue": ["../src/types/vue-compat"],
-      "@vue/compat": ["../src/types/vue-compat"]
-    }
+    "baseUrl": "."
   },
   "include": [
     "*.ts",

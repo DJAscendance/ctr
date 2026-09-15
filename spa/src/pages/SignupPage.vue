@@ -180,7 +180,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 import appStore from "@/appStore";
 import siteConfig from "@/site-config";
 
@@ -188,7 +188,7 @@ import siteConfig from "@/site-config";
 const TURNSTILE_SCRIPT_SRC =
   "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
-export default Vue.extend({
+export default defineComponent({
   name: "SignupPage",
   data() {
     return {

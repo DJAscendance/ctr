@@ -211,7 +211,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import Modal from "./Modal.vue";
 import ModalMixin from "./mixins/ModalMixin";
@@ -252,7 +252,7 @@ function newIntentKey(): string {
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 }
 
-export default Vue.extend({
+export default defineComponent({
   name: "BankTransferModal",
   components: { Modal },
   props: {

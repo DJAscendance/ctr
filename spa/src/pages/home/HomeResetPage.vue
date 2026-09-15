@@ -79,11 +79,11 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import { colonyDataHelper } from "@/helpers";
 
-export default Vue.extend({
+export default defineComponent({
   name: "HomeResetPage",
   data: () => {
     return {

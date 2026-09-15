@@ -18,7 +18,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import PlaceMapBackgroundSelector from "@/components/PlaceMapBackgroundSelector.vue";
 
@@ -42,7 +42,7 @@ const WIZARD_TITLE = "Multimedia Wizard";
  * selector's lifetime to the id so no option list, pending radio or message can
  * cross into a different block.
  */
-export default Vue.extend({
+export default defineComponent({
   name: "BlockMapBackgroundPage",
   components: { PlaceMapBackgroundSelector },
   props: ["block", "hood", "colony"],
@@ -55,7 +55,7 @@ export default Vue.extend({
   },
   computed: {
     blockId(): string {
-      return this.$route.params.id;
+      return this.$route.params.id as string;
     },
     /**
      * The name is omitted rather than guessed. A wrong name is worse than no

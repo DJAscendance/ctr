@@ -45,7 +45,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import Modal from './Modal.vue';
 import ModalMixin from './mixins/ModalMixin';
@@ -53,7 +53,7 @@ import InfoModal from "./InfoModal.vue";
 import AvatarUploadModal from "./AvatarUploadModal.vue";
 import ModalService from "./services/ModalService.vue";
 
-export default Vue.extend({
+export default defineComponent({
   name: "AvatarModal",
   components: {Modal},
   data: () => {

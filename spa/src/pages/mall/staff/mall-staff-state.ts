@@ -1,4 +1,4 @@
-import Vue from "vue";
+import { reactive } from "vue";
 
 /**
  * The Pending queue's size, shared between the Pending list and the staff
@@ -14,7 +14,7 @@ import Vue from "vue";
  * control can stay hidden until the real number is known rather than flickering
  * in and out on first paint.
  */
-const mallStaffState = Vue.observable<{ pendingCount: number | null }>({
+const mallStaffState = reactive<{ pendingCount: number | null }>({
   pendingCount: null,
 });
 

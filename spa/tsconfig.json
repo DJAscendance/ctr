@@ -11,6 +11,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
+    "useUnknownInCatchVariables": false,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "sourceMap": true,
@@ -22,9 +23,6 @@
     "paths": {
       "@/*": [
         "src/*"
-      ],
-      "vue": [
-        "src/types/vue-compat"
       ]
     },
     "lib": [

@@ -10,10 +10,10 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue';
+import { defineComponent } from "vue";
 
 import Chat from "../components/Chat.vue";
-export default Vue.extend({
+export default defineComponent({
   name: "ChatTest",
   components: { Chat },
   data: () => {

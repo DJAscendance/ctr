@@ -14,12 +14,12 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import ModalService from './services/ModalService.vue';
 import Modal from './Modal.vue';
 
-export default Vue.extend({
+export default defineComponent({
   components: { Modal },
   data() {
     return {
@@ -27,7 +27,7 @@ export default Vue.extend({
     }
   },
   created() {
-    ModalService.$on('open', ({ component, props, resolve, reject }) => {
+    ModalService.on("open", ({ component, props, resolve, reject }) => {
       this.modal = {
         component,
         props,

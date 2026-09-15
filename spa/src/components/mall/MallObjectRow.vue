@@ -57,7 +57,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 /**
  * One object as it appears in any Mall staff list.
@@ -78,7 +78,7 @@ const STATUS_LABELS: { [status: number]: string } = {
   4: "Destocked",
 };
 
-export default Vue.extend({
+export default defineComponent({
   name: "MallObjectRow",
   props: {
     object: {

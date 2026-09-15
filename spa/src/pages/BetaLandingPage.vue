@@ -93,7 +93,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import siteConfig from "@/site-config";
 
@@ -108,7 +108,7 @@ import siteConfig from "@/site-config";
  * Everything variable comes from the injected site configuration rather than from a
  * hard-coded host name, so the same build serves a beta and a production deployment.
  */
-export default Vue.extend({
+export default defineComponent({
   name: "BetaLandingPage",
   data() {
     return {

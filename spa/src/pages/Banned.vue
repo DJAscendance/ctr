@@ -30,7 +30,7 @@
           Ban End Date
         </div>
         <div class="mb-3">
-          {{ new Date(this.$route.params.enddate)
+          {{ new Date(enddate)
             .toLocaleString("en-US", {
               month: "short",
               day: "numeric",
@@ -42,7 +42,7 @@
           Reason
         </div>
         <div class="mb-3">
-          {{ this.$route.params.reason }}
+          {{ reason }}
         </div>
         Have a great day!
       </div>
@@ -52,10 +52,24 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
-export default Vue.extend({
+/**
+ * The reason and end date arrive in the history state of the navigation that brought the
+ * citizen here (see the session guard in `main.ts`). Router 3 carried them as route params
+ * that were not part of the path; Router 4 and 5 drop such params, and the state entry
+ * has the same lifetime those params had - present for this visit, gone on a reload.
+ */
+export default defineComponent({
   name: "BannedNotice",
+  computed: {
+    reason(): string {
+      return (window.history.state && window.history.state.reason) || "";
+    },
+    enddate(): string {
+      return (window.history.state && window.history.state.enddate) || "";
+    },
+  },
 });
 
 </script>

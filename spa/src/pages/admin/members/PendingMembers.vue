@@ -43,7 +43,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 /** One immigration waiting on a city administrator. */
 interface PendingMember {
@@ -61,7 +61,7 @@ interface PendingMember {
  * a second, parallel notion of "not allowed in" would only be another thing to keep in
  * step with the first.
  */
-export default Vue.extend({
+export default defineComponent({
   name: "PendingMembers",
   data() {
     return {

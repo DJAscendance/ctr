@@ -1,26 +1,38 @@
-<script lang="ts"   >
-import Vue from 'vue';
+<script lang="ts">
+import { EventBus } from "@/libs/event-bus";
 
 /**
- * Vue 2's constructor type folded the `methods` block into the instance type, so
- * `ModalService.open(...)` type-checked straight off `new Vue(...)`. Vue 3's compat build
- * types every `new Vue(...)` as a bare `LegacyPublicInstance` and cannot infer methods.
- * The instance still carries `open` at runtime - unchanged below - so this interface only
- * restores the shape TypeScript used to work out for itself.
+ * What `ModalRoot` is told when a modal is asked for.
  */
-export interface ModalServiceBus extends Vue {
+export interface ModalOpenRequest {
+  component: unknown;
+  props: Record<string, unknown>;
   // eslint-disable-next-line no-unused-vars
-  open(component: unknown, props?: Record<string, unknown>): Promise<unknown>;
+  resolve: (value?: unknown) => void;
+  // eslint-disable-next-line no-unused-vars
+  reject: (reason?: unknown) => void;
 }
 
-export default new Vue({
-  methods: {
-    open(component, props = {}) {
-      return new Promise((resolve, reject) => {
-        this.$emit('open', { component, props, resolve, reject });
-      });
-    }
-  }
-}) as ModalServiceBus;
+interface ModalEvents extends Record<string, unknown> {
+  open: ModalOpenRequest;
+}
 
+/**
+ * The modal service: `open(component, props)` resolves with what the modal closed with,
+ * or rejects with what it was dismissed with. `ModalRoot` listens for "open".
+ *
+ * Was a bare `new Vue({ methods })` used as an event bus; Vue 3 removed the instance
+ * event API, so it is a typed bus of its own now. Same one method, same promise.
+ */
+class ModalService extends EventBus<ModalEvents> {
+  open(component: unknown, props: Record<string, unknown> = {}): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      this.emit("open", { component, props, resolve, reject });
+    });
+  }
+}
+
+export type ModalServiceBus = ModalService;
+
+export default new ModalService();
 </script>

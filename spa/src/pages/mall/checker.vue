@@ -424,7 +424,7 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "vue";
 
 import CheckerModal from "@/components/mall/CheckerModal.vue";
 import ObjectViewer from "@/components/mall/ObjectViewer.vue";
@@ -485,7 +485,7 @@ const REPORTED_NODES = [
   "hAnim",
 ];
 
-export default Vue.extend({
+export default defineComponent({
   name: "MallChecker",
   components: { CheckerModal, ObjectViewer },
   data() {

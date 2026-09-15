@@ -112,8 +112,9 @@ import DirectoryPage from "@/pages/directory/Directory.vue";
 import HowDoIPage from "@/pages/HowDoI.vue";
 
 import MayorElection from "@/pages/MayorElection.vue";
+import { RouteRecordRaw } from "vue-router";
 
-export default [
+const routes: RouteRecordRaw[] = [
   {
     path: "/",
     component: HomePage,
@@ -597,7 +598,6 @@ export default [
       {
         path: "/admin/member/user/:id",
         component: UserMain,
-        default: UserSubMenu,
         name: "UserMain",
         meta: {
           title: "Member Details - Admin Panel",
@@ -606,7 +606,6 @@ export default [
           {
             path: "/admin/member/user/:id",
             component: UserSubMenu,
-            default: InfoView,
             name: "",
             meta: {
               title: "Member Details - Admin Panel",
@@ -944,9 +943,13 @@ export default [
     meta: { wrapper: true },
     children: [
       {
+        // Was a second "world-browser". Router 3 let two records share a name and kept the
+        // first for lookups; Router 4 and 5 drop the earlier record when a later one takes
+        // its name, which would have deleted /place/:id's page. WorldBrowserPage already
+        // treats "club-page" as a world route.
         path: "",
         component: WorldBrowserPage,
-        name: "world-browser",
+        name: "club-page",
         meta: { wrapper: true },
       },
       {
@@ -1028,3 +1031,5 @@ export default [
   },
 
 ];
+
+export default routes;
