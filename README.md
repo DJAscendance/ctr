@@ -75,8 +75,8 @@ Do not assume a change that lands on beta reaches it.
 
 ##### Vue CLI 5 and webpack 5
 
-The SPA builds with `@vue/cli-service` 5.0.9 on webpack 5. Vue Router stays on 3.5.2. Vue
-itself is now 3.5.42, run through the official migration build - see below.
+The SPA builds with `@vue/cli-service` 5.0.9 on webpack 5. Vue is 3.5.42 and Vue Router is
+5.3.1, both native - see below.
 
 webpack 4 used to hash module ids with MD4, which the OpenSSL 3 inside Node 17+ removed, so
 every compile on Node 24 died with `ERR_OSSL_EVP_UNSUPPORTED`. `spa/scripts/vue-cli-service.js`
@@ -97,65 +97,67 @@ file explains each one at the top:
   used under Vue CLI 4 (webpack 5 asset modules default to 8096),
 - no eslint hook, because Vue CLI 5 moved linting from a webpack rule to a plugin.
 
-`@vue/cli-plugin-eslint` is **not** installed. Its 5.x line requires ESLint >= 7.5.0, and this
-SPA is pinned to ESLint 6.8 with `eslint-plugin-vue` 6; moving the linter is a separate lane.
-`npm run lint` therefore calls `eslint` directly with the same `eslintConfig` from
-`spa/package.json`, over the same directories `vue-cli-service lint` used. It still passes
-`--fix`, so it rewrites files - use `npx eslint --quiet <path>` to check one file without that.
+`@vue/cli-plugin-eslint` is **not** installed; `npm run lint` calls `eslint` directly with
+the `eslintConfig` from `spa/package.json`, over the same directories `vue-cli-service lint`
+used. It still passes `--fix`, so it rewrites files - use `npx eslint --no-fix <path>` to check
+one file without that. The lint stack is ESLint 8.57.1, `@typescript-eslint` 8.70,
+`eslint-plugin-vue` 9.33 (`plugin:vue/vue3-essential`) and `@vue/eslint-config-typescript` 13,
+the last eslintrc-format releases of each; ESLint 9's flat config is a separate lane.
 
-`@types/node` is pinned to `^16.11.2` as a direct devDependency. It used to arrive
-transitively; the Vue CLI 5 tree floats it to a release whose `.d.ts` files use syntax old
-TypeScript cannot parse, which fails the build. TypeScript has since moved to 4.3.5, which is
-not obviously far enough to lift the pin, and nothing needs a newer Node type.
+`@types/node` is `24.10.1`, matching the Node the SPA builds and runs on.
 
-##### Vue 3 migration build (@vue/compat)
+##### Native Vue 3 and Vue Router 5
 
-Vue is 3.5.42, but the application is still written as a Vue 2 application. `vue` resolves to
-`@vue/compat` and the SFC compiler runs in compatibility **MODE 2**, which means "behave like
-Vue 2, and warn about everything you had to bend to do it". Options API, `Vue.extend`,
-`Vue.prototype`, `new Vue(...).$mount()`, template filters and `$on`/`$emit` event buses all
-still work. `vue`, `@vue/compat` and `@vue/compiler-sfc` must stay on the **same exact
-version** - the migration build refuses a mismatched runtime.
+Vue is 3.5.42 and the application is a Vue 3 application: `@vue/compat` is not installed,
+there is no `vue$` alias and no `compatConfig` in `spa/vue.config.js`, and `vue`,
+`@vue/compiler-sfc` and `@vue/server-renderer` are on the same exact version. Vue Router is
+5.3.1 on `createWebHashHistory()`, so every route still lives behind `/#/`.
 
-Two hooks in `spa/vue.config.js` set this up, and the file explains both:
+How the app is wired, for anyone who last saw it as Vue 2:
 
-- `resolve.alias` sends `vue$` to `@vue/compat/dist/vue.runtime.esm-bundler.js`,
-- the vue-loader rule gets `compilerOptions.compatConfig = { MODE: 2 }`.
+- `spa/src/main.ts` does `createApp(App)`, installs the router and vue-gtag on it, and puts
+  `$http`, `$store` and `$socket` on `app.config.globalProperties`. Their types are declared
+  in `spa/src/types/vue-prototype.d.ts` by augmenting the `vue` module - the same module Vue
+  Router augments for `$router`/`$route`. Augmenting `@vue/runtime-core` instead silently
+  drops one of the two.
+- Every component is `defineComponent({...})` (Options API, unchanged otherwise). The Mall
+  staff lists share `mall-actions.mixin` through `mixins: [...]`.
+- Shared state is `reactive(...)` (`appStore`, `mall-staff-state`).
+- The two event buses (`ModalService`, the Outlands "team selected" signal) are instances of
+  the small typed emitter in `spa/src/libs/event-bus.ts`. Vue 3 instances have no
+  `$on`/`$off`.
+- Lifecycle hooks are `beforeUnmount`/`unmounted`; the one date filter is called as a method;
+  WorldBrowserPage's async place panels are `markRaw(defineAsyncComponent(...))`; the modal
+  transition uses `.modal-enter-from`.
+- Analytics: vue-gtag 3.7.1 is handed the router (`pageTracker`) and tracks routes itself. Its
+  template keeps `page_title` as the document title (on a world route, the landed place's
+  name), which is what the app has always sent.
 
-**Do not add a global migration-warning suppression.** A development build reports around 40
-deprecation warnings across 15 ids. They are not failures - they are the work list for the
-next phase, which turns MODE 2 off one feature at a time.
+Router 5 rules that differ from Router 3 and are relied on in `main.ts`:
 
-TypeScript cannot follow a webpack alias, so both tsconfigs map `vue` through `paths` to
-`spa/src/types/vue-compat`. Vue's migration guide says to point that at `@vue/compat`
-directly; that does not work as published, because `@vue/compat@3.5.42` declares
-`"types": "./dist/vue.d.ts"` and ships only `dist/vue-compat.d.ts`. The local file is that
-missing entry point and nothing more.
+- a guard returns its decision; the session guard keeps "first decision wins" through a small
+  `decide()` helper, and the two late club-membership redirects are explicit `router.push`
+  calls, which is what Router 3 turned a late `next(location)` into;
+- `afterEach` also runs for a navigation that did NOT land, with a failure as its third
+  argument, so the place-commit hook skips those;
+- a record added under an existing name REPLACES the earlier one, so no two records may
+  share a name (`/club/:id`'s page is "club-page", not a second "world-browser");
+- non-path params are dropped, so the ban notice reads `reason`/`enddate` from the
+  navigation's history state.
 
-Three dependency decisions a future reader will otherwise undo:
+`spa/tests/router-link.test.ts` and `spa/tests/route-contract.test.ts` render the real
+templates through the real route table in plain Node and fail if a `<router-link>` stops
+producing an `<a href="#/...">` or a public URL stops reaching its route. Keep them.
 
-- **`vue-gtag` is 2.1.2 and is NOT given the router.** vue-gtag 2 tracks routes through Vue
-  Router 4 only (`router.isReady()`, `router.currentRoute.value`); handing it Router 3 throws
-  during bootstrap and the app never mounts. `spa/src/main.ts` runs the same page tracking
-  against Router 3's own `onReady`/`afterEach` instead. Do not "fix" this by passing `router`
-  back in, and do not move to vue-gtag 3.x - it requires `vue-router@^4.5.0`.
-- **`vue-template-compiler` is gone.** It is the Vue 2 SFC compiler, replaced by
-  `@vue/compiler-sfc`. It is an optional peer of the Vue CLI packages, so nothing wants it
-  back. Vue CLI 5 also switches itself from vue-loader 15 to vue-loader 17 once Vue is 3.x -
-  do not add a direct `vue-loader` dependency to force that.
-- **TypeScript is 4.3.5, not 4.1.** 4.1 cannot *parse* Vue 3's declaration files:
-  `@vue/reactivity` uses `get value(): T` inside an interface, which is 4.3 syntax, so it
-  fails with TS1131 before type checking and `skipLibCheck` cannot hide it. 4.3.5 is the
-  lowest version that works and it keeps the existing @typescript-eslint 4.x / ESLint 6.8
-  stack. A clean run with `skipLibCheck: false` would need 5.4; both tsconfigs set
-  `skipLibCheck: true`.
+TypeScript is 5.9.3: Router 5's declaration files use `export { type X }` and other 4.5+
+syntax that 4.3 cannot parse. `useUnknownInCatchVariables: false` keeps TypeScript 4's
+`catch (e)` typing rather than annotating thirty catch blocks; lifting it is a small
+dedicated cleanup.
 
-`eslint-plugin-vue` is 7.x and the config extends `plugin:vue/vue3-essential`, not
-`plugin:vue/essential`. Same rule tier, correct Vue major: the Vue 2 ruleset's
-`vue/no-template-key` told you to do the opposite of what the Vue 3 compiler requires. The
-Vue 3 ruleset flags around 18 genuine leftovers (`beforeDestroy`/`destroyed` hook names,
-template filters). Those are real debt for the cleanup phase - do not switch the ruleset back
-to hide them. ESLint itself stays on 6.8; eslint-plugin-vue 7 still accepts it.
+The QA gates under `qa/` reach the running app through `#app.__vue_app__` - the store via
+`.config.globalProperties.$store`, and the WorldBrowserPage instance by walking the vnode tree
+from `._container._vnode.component`. `app._instance` is dev-only and is `null` in a
+production bundle; do not use it.
 
 ### Initial Setup
 
