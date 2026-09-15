@@ -98,7 +98,9 @@ Common commands:
 
 ## Git / remotes
 
-- `origin` → `DJAscendance/ctr` (our fork). `upstream` → `CybertownRevival/ctr`.
+- `fork` → `DJAscendance/ctr` (our fork, the writable remote).
+  `origin` → `CybertownRevival/ctr` (upstream). Check with `git remote -v`; there is no
+  remote named `upstream`.
 - Upstream's default branch is **`master`** (not `main`).
 - `local-testing` is the working integration branch; feature work branches off it.
 - Commit/push only when asked. Branch before committing if on a default branch.
