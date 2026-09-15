@@ -33,6 +33,8 @@ const SUITES = [
   "tests/.compiled/tests/movement-speed.test.js",
   "tests/.compiled/tests/route-contract.test.js",
   "tests/.compiled/tests/router-link.test.js",
+  "tests/.compiled/tests/club-world-mount.test.js",
+  "tests/.compiled/tests/clubdoor-redirect.test.js",
 ];
 
 let failed = false;

@@ -166,7 +166,7 @@ router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> =>
                   type: Data.place.type,
                 }).then(response => {
                   if (!response.data.admin) {
-                    redirectLate("/clubdoor/${Data.place.id}");
+                    redirectLate(`/clubdoor/${Data.place.id}`);
                   }
                 });
               }

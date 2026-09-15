@@ -43,12 +43,23 @@
       >
         <!--Content-->
         <div class="flex flex-1">
+          <!--
+            The world routes stand on the ONE WorldBrowserPage below, which is mounted for
+            the whole session and only shown or hidden here; it owns `#world`, the X_ITE
+            canvas, the chat panel and their socket handlers, and a second copy would fight
+            it for all four. So every world route must be named in BOTH lists: withheld
+            from the router-view, shown on the singleton. "club-page" is the club world -
+            it was called "world-browser" too until Vue Router 5, which drops the earlier
+            of two records sharing a name (see the note in routes.ts).
+          -->
           <router-view
             v-if="this.$route.name !== 'world-browser' &&
-            this.$route.name !== 'user-home'" />
+            this.$route.name !== 'user-home' &&
+            this.$route.name !== 'club-page'" />
           <world-browser-page
             v-show="this.$route.name === 'world-browser' ||
-            this.$route.name === 'user-home'"></world-browser-page>
+            this.$route.name === 'user-home' ||
+            this.$route.name === 'club-page'"></world-browser-page>
         </div>
         <!--Navigation Panel-->
         <div

@@ -112,11 +112,15 @@ export function flattenRoutes(records: any[]): any[] {
   return out;
 }
 
-/** The app's router, on the app's own hash history, over the app's own route table. */
-export function buildAppRouter(): any {
+/**
+ * The app's router, on the app's own hash history, over the app's own route table.
+ * `routes` is for a suite that has to stand real page components in place of the `.vue`
+ * stubs before the router is built; left out, the table is loaded as written.
+ */
+export function buildAppRouter(routes?: any[]): any {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { createRouter, createWebHashHistory } = require("vue-router");
-  return createRouter({ history: createWebHashHistory(), routes: loadRoutes() });
+  return createRouter({ history: createWebHashHistory(), routes: routes || loadRoutes() });
 }
 
 /** The outer `<template>` block of an SFC, as written. */
