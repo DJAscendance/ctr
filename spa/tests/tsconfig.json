@@ -7,7 +7,10 @@
     "skipLibCheck": true,
     "outDir": "./.compiled",
     "types": ["node"],
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../src/*"]
+    }
   },
   "include": [
     "*.ts",
@@ -24,6 +27,8 @@
     "../src/helpers/shared-event.helper.ts",
     "../src/helpers/legacy-url.helper.ts",
     "../src/helpers/navigation-place.helper.ts",
-    "../src/helpers/movement-speed.helper.ts"
+    "../src/helpers/movement-speed.helper.ts",
+    "../src/routes.ts",
+    "../src/types/shims-vue.d.ts"
   ]
 }
