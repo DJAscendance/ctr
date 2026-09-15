@@ -6,7 +6,7 @@
     p-2.5
     left-2.5
     top-2.5
-    z-20" 
+    z-20"
     @click="reload()">BACK</button>
     <div id="objectModel" class="
     flex
@@ -21,10 +21,10 @@
   </div>
   <div v-else
   id="objectProperties" class="
-  w-full 
-  flex-1 
-  h-full 
-  items-center 
+  w-full
+  flex-1
+  h-full
+  items-center
   justify-center
   ">
     <div class="
@@ -32,10 +32,10 @@
     m-auto
     inset-x-0
     w-4/5
-    " 
+    "
     style="
       grid-template-rows: 60px 450px auto;
-      min-width:600px; 
+      min-width:600px;
     ">
       <div class="
       flex
@@ -63,28 +63,28 @@
             {{ this.name }}
           </span>
           <div>
-            Click 
-            <span 
-            class="font-bold cursor-pointer" 
+            Click
+            <span
+            class="font-bold cursor-pointer"
             style="color:lime"
             @click="changeACtive()">
               HERE
-            </span> 
+            </span>
             to view the object in 3D!
           </div>
           <span class="h-1.5"></span>
           <span v-if="
-          this.placeId === 0 && 
+          this.placeId === 0 &&
           this.ownerId === this.sessionId">
             This object is located in your backpack.
           </span>
           <span v-else-if="
-          this.ownerId !== this.sessionId && 
+          this.ownerId !== this.sessionId &&
           this.placeId === 0">
             This object is located in {{ this.memberUsername }}'s backpack.
           </span>
           <span v-else-if="
-          !this.mallObject && 
+          !this.mallObject &&
           this.ownerId !== this.sessionId">
             This object is owned by {{ this.memberUsername }}.
           </span>
@@ -97,15 +97,15 @@
             Qty: {{ this.quantity - this.instances }}
           </span>
           <span v-show="
-          this.mallObject || 
-          this.price !== null && 
+          this.mallObject ||
+          this.price !== null &&
           this.price !== ''">
             Price: {{ this.price }} CC's
           </span>
           <span v-show="
-          this.price !== null && 
-          this.price !== '' && 
-          this.buyer !=='' && 
+          this.price !== null &&
+          this.price !== '' &&
+          this.buyer !=='' &&
           this.buyer !==null">
             Reserved for {{ this.buyer }}
           </span>
@@ -117,94 +117,94 @@
             <div class="flex">
               <div style="min-width: 70px;">Name: </div>
               <input style="
-              color:black;" 
-              type="text" 
-              id="objectName" 
+              color:black;"
+              type="text"
+              id="objectName"
               :value="name" />
             </div>
             <div class="flex" v-show="this.mallObject">
               <div style="min-width: 70px;">Quantity: </div>
               <input style="
-              color:black;" 
-              type="text" 
-              id="objectQty" 
-              maxlength="7" 
+              color:black;"
+              type="text"
+              id="objectQty"
+              maxlength="7"
               :value="quantity" />
             </div>
             <div class="flex">
               <div style="min-width: 70px;">Price: </div>
               <input style="
-              color:black;" 
-              type="text" 
-              id="objectPrice" 
-              maxlength="7" 
+              color:black;"
+              type="text"
+              id="objectPrice"
+              maxlength="7"
               :value="price" />
             </div>
             <div class="flex">
               <div style="min-width: 70px;">Buyer: </div>
               <input style="
-              color:black;" 
-              type="text" 
-              id="objectBuyer" 
+              color:black;"
+              type="text"
+              id="objectBuyer"
               :value="buyer" />
             </div>
           </div>
       </div>
     </div>
     <span class="
-    flex 
-    w-full 
-    justify-center 
-    text-red-600 
-    mt-10" 
+    flex
+    w-full
+    justify-center
+    text-red-600
+    mt-10"
     v-show="error">
       {{ this.error }}
     </span>
     <span class="
-    flex 
-    w-full 
-    justify-center" style="color: lime;" 
+    flex
+    w-full
+    justify-center" style="color: lime;"
     v-show="success">
       {{ success }}
     </span>
     <div class="flex justify-center">
-      <button  
-      type="button" 
-      class="btn mx-1 mt-10" 
-      @click="changeDetails()" 
+      <button
+      type="button"
+      class="btn mx-1 mt-10"
+      @click="changeDetails()"
       v-if="this.canModify">
         Update
       </button>
-      <button  
-      type="button" 
-      class="btn mx-1 mt-10" 
+      <button
+      type="button"
+      class="btn mx-1 mt-10"
         v-if="
-        this.mallObject && 
-        this.instances !== this.quantity && 
+        this.mallObject &&
+        this.instances !== this.quantity &&
         showBuyButton ||
-        this.sessionId !== this.ownerId && 
-        this.price !== '' && 
+        this.sessionId !== this.ownerId &&
+        this.price !== '' &&
         (
-          this.buyer === '' || 
+          this.buyer === '' ||
           this.buyer.toLocaleLowerCase() === this.$store.data.user.username.toLocaleLowerCase()
         ) &&
-         this.walletBalance >= this.price && 
-         showBuyButton" 
+         this.walletBalance >= this.price &&
+         showBuyButton"
          @click="buyButtonClicked(), buy()">
         Buy
       </button>
-      <span 
+      <span
       v-else-if="
       !this.mallObject ||
-      this.mallObject && 
+      this.mallObject &&
       this.instances === this.quantity"></span>
-      <button 
-      type="button" 
-      class="btn mx-1 mt-10" 
+      <button
+      type="button"
+      class="btn mx-1 mt-10"
       v-else>Buy</button>
-      <button 
-      type="button" 
-      class="btn mx-1 mt-10" 
+      <button
+      type="button"
+      class="btn mx-1 mt-10"
       @click="close()">
         Close
       </button>
@@ -252,9 +252,9 @@ methods: {
     this.objectId = this.$route.params.object_id;
     const info = await this.$http.get(`/member/info/${this.$store.data.user.id}`);
     this.walletBalance = info.data.memberInfo.walletBalance;
-    if(this.mallObject){ 
+    if(this.mallObject){
       if(!this.showBuyButton){
-        setTimeout(() => {this.showBuyButton = true;}, 1000);     
+        setTimeout(() => {this.showBuyButton = true;}, 1000);
       }
       await this.$http.get(`/mall/object/${ this.objectId }`)
         .then((response) => {
