@@ -79,8 +79,14 @@ Common commands:
   `role_assignment` with `role_id = 1`.** Prefer resolving roles by name through
   `RoleRepository`/`roleMap` rather than hardcoding any id — the map is the authoritative
   source, not a literal number.
-- **Auth:** JWT in the `apitoken` header, signed with `JWT_SECRET` (no expiry). Session
-  payload: `{ id, username, avatar, admin }`. `memberService.decryptSession(req, res)`.
+- **Auth:** JWT in the `apitoken` header, signed with `JWT_SECRET`, **HS256 only** — pinned
+  on both sign and verify. Session payload: `{ id, username, avatar, admin }`.
+  `memberService.decryptSession(req, res)`. Every token **must** carry an `exp`: a legacy
+  token without one is rejected (`session token has no expiry claim`), which is how the old
+  permanent tokens were retired. Lifetime defaults to **2592000s (30 days)**; override with
+  `SESSION_TOKEN_TTL_SECONDS`. Standing is re-read after issue — a **`full`** ban revokes
+  active API *and* socket sessions, a **`jail`** ban does **not** (the citizen stays logged
+  in, confined to the Jail). See `api/src/libs/session-token.ts` and `session-revocation.ts`.
 - **Place hierarchy:** `place` has no `parent_id`. Home→block linkage is in `map_location`
   (`place_id` = home, `parent_place_id` = block). Use `homeService.getHomeBlock(placeId)`.
 - **Home image moderation concurrency.** Every upload gets an unguessable `home.image_revision`
