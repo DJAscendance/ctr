@@ -2,7 +2,7 @@
  * `<router-link>` must render a real `<a href="#/...">`.
  *
  * WHAT IS BEING GUARDED. The Phase 3B release shipped with every `<router-link>` in the
- * app rendering as bare text: no `<a>`, no `href`, no click. The City Map's eight places,
+ * app rendering as bare text: no `<a>`, no `href`, no click. The City Map's nine places,
  * the sidebar's Upload and Logout, the Login page's Sign Up - all unreachable. It escaped
  * QA because direct URLs still worked; only clicking did not. This suite renders the REAL
  * templates through the REAL router (see router-harness.ts) and counts anchors, so that
@@ -10,7 +10,7 @@
  *
  * Three pages, chosen for what they proved in that incident:
  *
- *   1. CITY MAP  - eight `<router-link>`s to places, no other logic. The fast detector.
+ *   1. CITY MAP  - nine `<router-link>`s to places, no other logic. The fast detector.
  *   2. LOGIN     - links rendered inside an ordinary page with its own state.
  *   3. TOOLS     - the Mall's Upload link, rendered inside the named "tools" router-view
  *                  slot, which is where the bug was first noticed.
@@ -40,6 +40,7 @@ function test(name: string, body: () => void | Promise<void>): Promise<void> {
 
 const CITY_MAP_PLACES = [
   "funpark", "cityhall", "pool", "theatre", "mall", "enter", "postoffice", "stadium",
+  "cafe",
 ];
 
 async function run(): Promise<void> {
@@ -48,11 +49,11 @@ async function run(): Promise<void> {
   const cityMap = await renderPage("pages/CityMapPage.vue", "/citymap");
   const cityAnchors = anchorsIn(cityMap).filter(a => (a.href || "").startsWith("#/place/"));
 
-  await test("the City Map renders 8 real <a> route links", () => {
-    assert.strictEqual(cityAnchors.length, 8, `anchors found: ${JSON.stringify(cityAnchors)}`);
+  await test("the City Map renders 9 real <a> route links", () => {
+    assert.strictEqual(cityAnchors.length, 9, `anchors found: ${JSON.stringify(cityAnchors)}`);
   });
 
-  await test("each of the 8 has a valid hash href to its place", () => {
+  await test("each of the 9 has a valid hash href to its place", () => {
     const hrefs = cityAnchors.map(a => a.href);
     for (const slug of CITY_MAP_PLACES) {
       assert.ok(hrefs.includes(`#/place/${slug}`), `no anchor to #/place/${slug}`);
@@ -62,7 +63,7 @@ async function run(): Promise<void> {
   await test("each link keeps its label inside the anchor", () => {
     for (const [index, label] of [
       "FUN PARK", "CITY HALL", "CITY POOL", "THEATER", "THE MALL", "THE PLAZA",
-      "POST OFFICE", "CITY STADIUM",
+      "POST OFFICE", "CITY STADIUM", "LE CAFE",
     ].entries()) {
       assert.strictEqual(cityAnchors[index].text, label);
     }

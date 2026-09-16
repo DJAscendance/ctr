@@ -31,8 +31,8 @@
       <span style="top: 220px;right: 100px;">BUSINESS<br/>DISTRICT</span>
       <span style="top: 260px;left: 240px;">STARPORT</span>
       <span style="text-align:left; bottom: 20px;left: 20px;">BEYOND<br/>CYBERTOWN</span>
-      <span style="bottom: 0;right: 100px;">LE
-        CAFE</span>
+      <router-link to="/place/cafe" style="bottom: 0;right: 100px;">LE
+        CAFE</router-link>
     </div>
     <br/>
     <p style="color:#00CCFF"><b>THE CYBERTOWN MAP</b></p>

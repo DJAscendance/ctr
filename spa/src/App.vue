@@ -377,6 +377,10 @@ export default defineComponent({
           slug: "theatre",
         },
         {
+          title: "Le Cafe",
+          slug: "cafe",
+        },
+        {
           title: "(more coming soon)",
           slug: "",
         },
@@ -389,10 +393,6 @@ export default defineComponent({
                 {
                     'title': 'Outlands',
                     "slug": "outlands"
-                },
-                {
-                    'title': 'Le Cafe',
-                    "slug": "cafe"
                 },
                 {
                     'title': 'Library (missing wrl)',
