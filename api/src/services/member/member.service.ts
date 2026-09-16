@@ -1,7 +1,6 @@
 import * as _ from 'lodash';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import { Service } from 'typedi';
 
 import {
@@ -30,6 +29,7 @@ import {
 } from '../../libs/economy';
 import { sendMemberApprovedEmail } from '../../libs/mail';
 import { isMemberApprovalRequired } from '../../libs/site-config';
+import { signSessionToken, verifySessionToken } from '../../libs/session-token';
 import { Member, ObjectInstance, Place } from '../../types/models';
 import { MemberInfoView, MemberAdminView } from '../../types/views';
 import { SessionInfo } from 'session-info.interface';
@@ -463,7 +463,7 @@ export class MemberService {
    * @returns decoded session info
    */
   public decodeMemberToken(token: string): SessionInfo {
-    return <SessionInfo>jwt.verify(token, process.env.JWT_SECRET);
+    return <SessionInfo><unknown>verifySessionToken(token, process.env.JWT_SECRET);
   }
 
   /**
@@ -673,6 +673,33 @@ export class MemberService {
   }
 
   /**
+   * Whether this member's sessions are revoked right now.
+   *
+   * The narrow question the session guard asks, kept apart from `isBanned` on purpose.
+   * `isBanned` answers the CITY's question -- "is this citizen under any sanction, and what
+   * does it say" -- and it says yes to a jail sentence, whose whole point is that the
+   * citizen stays logged in and is confined to the Jail. Logging a jailed citizen out is not
+   * that sentence. So revocation is the strictly smaller set:
+   *
+   *  * a live, unexpired FULL ban, which is the refusal of entry, and
+   *  * `member.status = 0`, the account-disabled flag `login` has always refused.
+   *
+   * Both are read, neither is written. `status` is left exactly as it is found: nothing in
+   * the codebase ever sets it on a member, so there is no proven prior value an unban could
+   * restore, and using it as the revocation switch would turn a reversible ban into a
+   * one-way disable. The ban row is the ban, and `deleteBan` reverses it.
+   *
+   * @param memberId member whose standing is being read
+   * @returns true when every session this member holds must stop working
+   */
+  public async isSessionRevoked(memberId: number): Promise<boolean> {
+    const member = await this.memberRepository.findById(memberId);
+    if (!member) return true;
+    if (member.status === 0) return true;
+    return this.banRepository.hasActiveFullBan(memberId);
+  }
+
+  /**
    * Validates the given username and password and logs a user in.
    * @param username username of member to be logged in
    * @param password password of member to be logged in
@@ -683,7 +710,7 @@ export class MemberService {
     if (!member) throw new Error('Account not found.');
     const validPassword = await bcrypt.compare(password, member.password);
     if (!validPassword) throw new Error('Incorrect login details.');
-    if (member.status === 0) throw new Error('banned');
+    if (await this.isSessionRevoked(member.id)) throw new Error('banned');
     // Checked AFTER the password, never before: answering "that account is awaiting
     // approval" to anyone who merely guesses a nickname would turn the pending queue into a
     // username oracle. Checked BEFORE the daily credit, so a member who cannot enter the
@@ -864,7 +891,7 @@ export class MemberService {
    */
   private async encodeMemberToken(member: Member): Promise<string> {
     const avatar = await this.avatarRepository.find({ id: member.avatar_id });
-    return jwt.sign(
+    return signSessionToken(
       {
         id: member.id,
         username: member.username,

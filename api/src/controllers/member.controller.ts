@@ -239,6 +239,24 @@ class MemberController {
     }
   }
 
+  /**
+   * Whether the caller's session is still good -- the leanest possible yes.
+   *
+   * Exists for the socket server, which has no database of its own and must find out that a
+   * citizen was banned while they were already connected. It reaches the controller only
+   * when the session-revocation guard has already let the request through, so arriving here
+   * IS the answer; a revoked session is refused by the guard with the same 403 every other
+   * authenticated route gives, and never reaches this line.
+   *
+   * Says nothing but `active`. No reason, no end date, no member record -- the socket does
+   * not need them and moderation notes do not belong on a path polled every few seconds.
+   */
+  public async sessionStatus(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+    response.status(200).json({ active: true });
+  }
+
   /** Controller method for creating a new user session. */
   public async login(request: Request, response: Response): Promise<void> {
     const { username, password } = request.body;
@@ -338,9 +356,16 @@ class MemberController {
         if (await this.memberService.isPendingApproval(session.id)) {
           throw new Error(MemberService.PENDING_APPROVAL_ERROR);
         }
-        // refresh client token with latest from database
-        const token = await this.memberService.getMemberToken(session.id);
         const { banned, banInfo } = await this.memberService.isBanned(session.id);
+        // Refresh the client's token from the database -- but only for a citizen who is
+        // still entitled to one. This route is reachable with a revoked session on purpose
+        // (it is how the browser renders the ban notice), and a new token now carries a new
+        // expiry, so minting one here would hand a banned citizen a fresh session every
+        // time their browser asked whether they were banned. A revoked caller gets their
+        // OWN token back unchanged: the reply keeps its shape, and nothing is extended.
+        const token = await this.memberService.isSessionRevoked(session.id)
+          ? <string>apitoken
+          : await this.memberService.getMemberToken(session.id);
         if (!banned) {
           await this.memberService.giveDailyCreditsForLogin(session.id);
           // The same reconciliation `login` runs, at the other boundary a citizen can

@@ -10,6 +10,7 @@ import {
 } from 'models';
 import {
   AvatarRepository,
+  BanRepository,
   CreditRepository,
   MemberRepository,
   RoleAssignmentRepository,
@@ -53,6 +54,12 @@ describe('MemberService', () => {
     walletRepository = createSpyObj(WalletRepository);
     Container.reset();
     Container.set(AvatarRepository, avatarRepository);
+    // `login` now reads current standing before it issues a token. Stubbed to "in good
+    // standing" so this file keeps testing what it always did; the ban rules themselves are
+    // proven in session-revocation.spec.ts.
+    const banRepository = createSpyObj(BanRepository);
+    banRepository.hasActiveFullBan.mockResolvedValue(false);
+    Container.set(BanRepository, banRepository);
     Container.set(CreditRepository, creditRepository);
     Container.set(MemberRepository, memberRepository);
     Container.set(RoleAssignmentRepository, roleAssignmentRepository);

@@ -10,6 +10,7 @@ import { MemberService } from './member.service';
 import { Member } from 'models';
 import {
   AvatarRepository,
+  BanRepository,
   CreditRepository,
   MemberRepository,
   RoleAssignmentRepository,
@@ -65,6 +66,12 @@ describe('MemberService immigration approval', () => {
 
     Container.reset();
     Container.set(AvatarRepository, createSpyObj(AvatarRepository));
+    // `login` now reads current standing before it issues a token. Stubbed to "in good
+    // standing" so this file keeps testing only the approval gate; the ban rules themselves
+    // are proven in session-revocation.spec.ts.
+    const banRepository = createSpyObj(BanRepository);
+    banRepository.hasActiveFullBan.mockResolvedValue(false);
+    Container.set(BanRepository, banRepository);
     Container.set(CreditRepository, creditRepository);
     Container.set(MemberRepository, memberRepository);
     const roleAssignmentRepository = createSpyObj(RoleAssignmentRepository);

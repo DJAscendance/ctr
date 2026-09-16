@@ -65,6 +65,39 @@ export class BanRepository {
       .first();
   }
 
+  /**
+   * Whether the member is under a FULL ban right now.
+   *
+   * Deliberately narrower than `getBanMaxDate`, and the difference is the point. A ban row
+   * carries a `type`, and CTR issues two of them: `jail`, which confines a citizen to the
+   * Jail but leaves them in the city with a working session, and `full`, which is the
+   * refusal of entry. Session revocation must answer for `full` only -- revoking a jailed
+   * citizen's session would log them out instead of jailing them, which is not the sentence
+   * that was handed down.
+   *
+   * It also cannot be expressed as "the latest ban", which is what `getBanMaxDate` returns:
+   * a jail that ends later than a full ban would mask the full ban behind its own type.
+   * This asks its own question against its own rows.
+   *
+   * `status = 1` is a live row; `deleteBan` sets it to 0, which is how an unban is recorded
+   * and therefore how this answer reverses.
+   *
+   * @param member_id member whose current standing is being read
+   * @returns true when at least one un-withdrawn, unexpired full ban applies
+   */
+  public async hasActiveFullBan(member_id: number): Promise<boolean> {
+    const row = await this.db.knex
+      .select('id')
+      .from('ban')
+      .where('ban_member_id', member_id)
+      .where('status', 1)
+      .where('type', 'full')
+      .where('end_date', '>', new Date())
+      .limit(1)
+      .first();
+    return !!row;
+  }
+
   public async getBannedTotal(): Promise<any> {
     return this.db.knex
       .countDistinct('ban_member_id as count')

@@ -10,4 +10,6 @@ export * from './vrml';
 export * from './map-background-request';
 export * from './map-theme';
 export * from './route-id';
+export * from './session-revocation';
+export * from './session-token';
 export * from './site-config';

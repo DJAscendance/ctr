@@ -28,6 +28,9 @@ import {
   placeRoutes,
   voteRoutes,
 } from './routes';
+import { Container } from 'typedi';
+import { MemberService } from './services';
+import { sessionRevocationGuard } from './libs/session-revocation';
 
 require('./cron/cron')();
 
@@ -53,6 +56,17 @@ app.use((request, response, next) => {
   }
   next();
 });
+
+/*
+ * Current standing, re-read on every authenticated request.
+ *
+ * Mounted HERE -- after the CORS/OPTIONS handler so a preflight is still answered without a
+ * token, and before every router so no route can be added later that quietly misses it. A
+ * request with no `apitoken` passes straight through, so visitors and the login route are
+ * untouched. See libs/session-revocation.ts for why this is middleware and not a check
+ * inside decryptSession.
+ */
+app.use(sessionRevocationGuard(Container.get(MemberService)));
 
 app.use('/api/beta-signup', betaSignupRoutes);
 app.use('/api/member', memberRoutes);

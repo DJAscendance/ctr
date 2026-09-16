@@ -7,7 +7,6 @@ const io = require("socket.io")(http, {
   pingTimeout: 30000,
 });
 const path = require("path");
-const jwt = require("jsonwebtoken");
 const axios = require("axios");
 const package = require("./package.json");
 const badwords = require("badwords-list");
@@ -19,6 +18,7 @@ const {
   decorateIndexHtml,
 } = require("./site-config");
 const { cityTimeVrml } = require("./city-time");
+const { verifySessionToken } = require("./session-token");
 const USERS = new Map();
 
 // Read once at boot. The environment cannot change under a running process, and the built
@@ -196,12 +196,90 @@ function webhookMessage(from, message) {
   req.end();
 }
 
+/*
+ * The token check, now the same contract the API applies.
+ *
+ * Two things changed and both matter. The algorithm is pinned, so a token can no longer
+ * nominate how it will be examined. And an expiry claim is required, so the permanent
+ * sessions minted before this release stop connecting - jwt.verify on its own reads a
+ * missing `exp` as "valid forever", which is the defect, not a compatibility feature.
+ *
+ * This is still only half the job: it answers "was this token issued to somebody", never
+ * "is that somebody still allowed in". A ban handed down after the token was signed changes
+ * nothing about the signature. isSessionRevoked below asks the other half.
+ */
 function validJwt(token) {
   try {
-    return jwt.verify(token, process.env.JWT_SECRET);
+    return verifySessionToken(token, process.env.JWT_SECRET);
   } catch (err) {
     return false;
   }
+}
+
+/*
+ * How long a citizen's standing is cached before the API is asked again.
+ *
+ * This is the delay between an administrator pressing Ban and a connected citizen losing
+ * their session, and it is a cost-of-lookup trade rather than a security one: without it a
+ * busy room re-asks the API about every member on every sweep. Fifteen seconds is short
+ * enough that a ban is felt immediately by anyone watching, and the test stack turns it down
+ * so a suite does not have to sit through it.
+ */
+const SESSION_STANDING_CACHE_MS = Number(process.env.SESSION_STANDING_CACHE_MS) || 15000;
+/** How often every connected socket is re-checked against current standing. */
+const SESSION_SWEEP_MS = Number(process.env.SESSION_SWEEP_MS) || 30000;
+const SESSION_STANDING = new Map();
+
+/*
+ * Whether this session has been revoked - a ban applied after the token was signed.
+ *
+ * The socket server has no database, so it asks the one process that does, exactly as it
+ * already does for chat access and the Outlands roster. GET /api/member/session/status is
+ * behind the API's own session-revocation guard, so the ANSWER IS THE STATUS CODE: 200 means
+ * the guard let the request through and the session is good, 403 means the guard refused it.
+ * No ban reason crosses this boundary, and none is wanted here.
+ *
+ * Fails OPEN on a network or server error, and says so plainly. That is the weaker of the
+ * two choices and it is deliberate: the alternative disconnects every citizen in the city
+ * the moment the API restarts, turning a routine deploy into a mass logout. The window it
+ * leaves is one sweep wide for a citizen banned during an API outage, and it closes by
+ * itself as soon as the API answers again. A cached verdict is reused rather than guessed
+ * when one is available, so a "revoked" answer already learned is never softened by a later
+ * outage.
+ */
+async function isSessionRevoked(token) {
+  const cached = SESSION_STANDING.get(token);
+  if (cached && Date.now() - cached.fetchedAt < SESSION_STANDING_CACHE_MS) {
+    return cached.revoked;
+  }
+  let revoked;
+  try {
+    await axios.get(`${API_URL}/member/session/status`, { headers: { apitoken: token } });
+    revoked = false;
+  } catch (err) {
+    const status = err.response ? err.response.status : null;
+    if (status === 403) {
+      revoked = true;
+    } else {
+      console.error("Failed to read session standing:", err.message);
+      return cached ? cached.revoked : false;
+    }
+  }
+  SESSION_STANDING.set(token, { revoked, fetchedAt: Date.now() });
+  return revoked;
+}
+
+/*
+ * Ends a socket's authenticated work.
+ *
+ * The client is told WHY before the socket goes, so it can clear its stored session and show
+ * the ban notice instead of silently trying to reconnect with a token that will be refused
+ * every time. `disconnect(true)` closes the underlying connection rather than only the
+ * namespace, so nothing survives to keep emitting.
+ */
+function revokeSocket(socket, reason) {
+  socket.emit("SESSION:revoked", { reason });
+  socket.disconnect(true);
 }
 
 // The HTTP half of the search-engine policy, and the only half a crawler is guaranteed to
@@ -285,6 +363,15 @@ io.on("connection", async function(socket) {
     if (!tokenData) {
       console.error("invalid token!");
       socket.emit("JOIN:error", { room, joinId, reason: "invalid_token" });
+      return;
+    }
+    // A signature proves who was issued this token, never that they are still welcome.
+    // Asked before any presence is recorded, so a banned citizen never enters the room and
+    // is never announced to the people in it - including on a reconnect, which is an
+    // ordinary JOIN and is refused by this same line.
+    if (await isSessionRevoked(data.token)) {
+      console.error("revoked session attempted to JOIN");
+      socket.emit("JOIN:error", { room, joinId, reason: "session_revoked" });
       return;
     }
     const presenceId = data.presenceId;
@@ -398,6 +485,10 @@ io.on("connection", async function(socket) {
     user.room = room;
     user.username = tokenData.username;
     user.presenceKey = key;
+    // Held so the sweep below can re-ask about a session that is ALREADY connected. The
+    // client sends this string on every JOIN anyway; keeping the latest one is what lets a
+    // ban reach a citizen who is standing still and never sends another.
+    user.token = data.token;
 
     PRESENCE.set(key, {
       memberId,
@@ -526,6 +617,16 @@ io.on("connection", async function(socket) {
     if (!chatData || !chatData.msg || typeof chatData.msg !== "string")
       return;
     const user = USERS.get(socket);
+    if (!user) return;
+    // Checked ahead of the word filter and the room's own chat list: a banned citizen must
+    // not be able to speak into a room even once, and this is the loudest authenticated
+    // action the socket offers. The sweep catches them within SESSION_SWEEP_MS regardless;
+    // this closes the gap between the ban and the next sweep for the one action that would
+    // reach every other citizen present.
+    if (user.token && await isSessionRevoked(user.token)) {
+      revokeSocket(socket, "session_revoked");
+      return;
+    }
     const bannedwords = badwords.regex;
     if(chatData.msg.match(bannedwords)){
       console.log(`${user.username} used a banned word in ${user.room}`);
@@ -626,6 +727,44 @@ io.on("connection", async function(socket) {
     console.log(`User '${user?.username}' disconnected`);
   });
 });
+
+/*
+ * The part that actually ends a session already in progress.
+ *
+ * Guarding JOIN and CHAT is not enough on its own, and stopping there would be the quiet
+ * downgrade of this fix to "blocked on reconnect". A citizen who is simply STANDING in a
+ * room sends neither: they emit AV transforms, they receive everyone else's, and they stay
+ * visible and present in the world indefinitely. A ban has to reach them where they are.
+ *
+ * So every connected socket that has completed a JOIN is re-checked on a timer, against the
+ * two things that can change under it - the token's own expiry, and the citizen's standing.
+ * Either failing ends the connection through the ordinary disconnect path, so presence is
+ * torn down and AV:del is announced to the room exactly as it is for someone who left.
+ *
+ * Standing answers are cached for SESSION_STANDING_CACHE_MS and keyed by token, so a room of
+ * fifty citizens is not fifty API calls per sweep - it is one per distinct session, and only
+ * when its cached answer has gone stale.
+ *
+ * `unref` so this timer never holds the process open by itself.
+ */
+const sessionSweep = setInterval(async () => {
+  for (const [socket, user] of USERS) {
+    if (!user || !user.token || !user.room) continue;
+    if (!socket.connected) continue;
+    if (!validJwt(user.token)) {
+      revokeSocket(socket, "session_expired");
+      continue;
+    }
+    try {
+      if (await isSessionRevoked(user.token)) revokeSocket(socket, "session_revoked");
+    } catch (err) {
+      // isSessionRevoked already fails open and logs; this only stops one bad socket from
+      // ending the sweep for everybody else in the city.
+      console.error("Session sweep failed for one socket:", err.message);
+    }
+  }
+}, SESSION_SWEEP_MS);
+sessionSweep.unref();
 
 const port = process.env.WEBSOCKET_PORT || 8000;
 http.listen(port);

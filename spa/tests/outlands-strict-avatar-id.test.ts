@@ -216,7 +216,13 @@ function waitFor(sock: any, event: string, predicate?: (payload: any) => boolean
 }
 
 function signToken(id: number, username: string): string {
-  return jwt.sign({ id, username, avatar: OWN_AVATAR }, SECRET);
+  // Minted the way the API mints one now: pinned algorithm, expiry always present.
+  // A token with no `exp` is a pre-release token and server.js refuses it.
+  return jwt.sign(
+    { id, username, avatar: OWN_AVATAR },
+    SECRET,
+    { algorithm: "HS256", expiresIn: 3600 },
+  );
 }
 
 let seq = 0;
@@ -442,9 +448,7 @@ test("authority: a team avatar is never taken from the token", async () => {
   const sock = await connect();
   const presenceId = nextId("presence");
   const joinId = nextId("join");
-  const token = jwt.sign(
-    { id: 888, username: "citizen888", avatar: OWN_AVATAR }, SECRET,
-  );
+  const token = signToken(888, "citizen888");
   const state = waitFor(sock, "ROOM_STATE", (p: any) => p.joinId === joinId);
   sock.emit("JOIN", { room: PLAZA_ROOM, token, presenceId, joinId, outlandsAvatarId: 13 });
   const answer = await state;

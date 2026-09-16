@@ -34,6 +34,10 @@ memberRoutes.get('/getdonorlevel', (request, response) =>
 );
 memberRoutes.post('/login', (request, response) => memberController.login(request, response));
 memberRoutes.get('/session', (request, response) => memberController.session(request, response));
+// The socket server's liveness probe for a session it is already holding open.
+memberRoutes.get('/session/status', (request, response) =>
+  memberController.sessionStatus(request, response),
+);
 memberRoutes.post('/update_password', (request, response) =>
   memberController.updatePassword(request, response),
 );

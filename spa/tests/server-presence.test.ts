@@ -34,7 +34,13 @@ let serverProc: any = null;
 let serverLog = "";
 
 function signToken(id: number, username: string): string {
-  return jwt.sign({ id, username, avatar: { id: `av-${id}` } }, SECRET);
+  // Minted the way the API mints one now: pinned algorithm, expiry always present.
+  // A token with no `exp` is a pre-release token and server.js refuses it.
+  return jwt.sign(
+    { id, username, avatar: { id: `av-${id}` } },
+    SECRET,
+    { algorithm: "HS256", expiresIn: 3600 },
+  );
 }
 
 function getFreePort(): Promise<number> {
