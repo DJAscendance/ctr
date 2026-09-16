@@ -664,7 +664,9 @@ Transform{rotation 1 0 0 -1.5708  scale 1.5 1.5 1.5 children [
 # Inline{url"musicbox.wrl"} 
 
 # Historical: Anchor url "audio/audio.htm" - blanked the HTML audio frame to mute.
-# The same button now stops every local AudioClip.
+# CTR has no such frame and the jukebox has no audio, so this button is kept as
+# an inert historical control: the geometry and TouchSensor stay, and no ROUTE
+# leaves it.
 Group { children [
 DEF TouchMute TouchSensor { description "Mute Sound" },
 Transform{translation 0 0.85945 -2.34753 rotation 1 0 0 1.67028 scale 4.36686 4.36686 4.36686
@@ -676,8 +678,8 @@ solid FALSE normalPerVertex TRUE ccw FALSE creaseAngle -4.31602e+008
 coordIndex [ 0, 1, 2, 3, -1 ]}}]}]},
 
 # Historical: Anchor url "audio/audio0.htm" parameter "target=audio" - an HTML
-# popup into a frame CTR has no equivalent for. The button now drives a local
-# AudioClip through JukeboxAudio instead.
+# popup into a frame CTR has no equivalent for. The popup is removed; the button
+# now only updates the title sign. See the JUKEBOX AUDIO note below.
 DEF Taste0Button Group { children [
 Transform { translation 1.5 -0.287466 0.657493 rotation -1 0 0 0.886627
 children [
@@ -701,8 +703,8 @@ solid FALSE normalPerVertex TRUE ccw FALSE creaseAngle -4.31602e+008
 coordIndex [ 0, 1, 2, 3, -1, 1, 4, 5,2, -1, 4, 6, 7, 5, -1, 8,0, 3, 9, -1, 8, 9, 10, 11,-1 ]}}]},
 
 # Historical: Anchor url "audio/audio1.htm" parameter "target=audio" - an HTML
-# popup into a frame CTR has no equivalent for. The button now drives a local
-# AudioClip through JukeboxAudio instead.
+# popup into a frame CTR has no equivalent for. The popup is removed; the button
+# now only updates the title sign. See the JUKEBOX AUDIO note below.
 DEF Taste1Button Group { children [
 Transform { translation 1.3421 -0.287466 0.657493 rotation -1 0 0 0.886627
 children [
@@ -711,8 +713,8 @@ Shape { appearance Appearance { material USE Shader_0 }
 geometry USE Taste }]}]},
 
 # Historical: Anchor url "audio/audio2.htm" parameter "target=audio" - an HTML
-# popup into a frame CTR has no equivalent for. The button now drives a local
-# AudioClip through JukeboxAudio instead.
+# popup into a frame CTR has no equivalent for. The popup is removed; the button
+# now only updates the title sign. See the JUKEBOX AUDIO note below.
 DEF Taste2Button Group { children [
 Transform { translation 1.1821 -0.287466 0.657493 rotation -1 0 0 0.886627
 children [
@@ -721,8 +723,8 @@ Shape { appearance Appearance { material USE Shader_0 }
 geometry USE Taste }]}]},
 
 # Historical: Anchor url "audio/audio3.htm" parameter "target=audio" - an HTML
-# popup into a frame CTR has no equivalent for. The button now drives a local
-# AudioClip through JukeboxAudio instead.
+# popup into a frame CTR has no equivalent for. The popup is removed; the button
+# now only updates the title sign. See the JUKEBOX AUDIO note below.
 DEF Taste3Button Group { children [
 Transform { translation 1.0279 -0.287466 0.657493 rotation -1 0 0 0.886627
 children [
@@ -979,107 +981,28 @@ Collision { collide TRUE proxy Shape { geometry Box { size 0.4 10 3.6 } } childr
 ]}
 
 # ---------------------------------------------------------------------------
-# JUKEBOX AUDIO (CTR reconstruction).
+# JUKEBOX AUDIO (deferred).
 #
 # The four buttons historically loaded audio/audioN.htm, which embedded sN.mid
 # in an HTML frame named "audio". CTR has no such frame and browsers no longer
-# play MIDI, so the songs were silent. The four historical MIDI files are kept
-# beside these OGG files in audio/ and remain the authoritative source; each
-# OGG is a General MIDI render of the matching sN.mid, same composition, same
-# button, same displayed title.
+# play MIDI, so that path stays disabled: no popup, no HTML frame, no MIDI
+# request.
 #
-#   button 0 -> audio/s0.ogg <- audio/s0.mid (stones_shelter.mid)   "Gimmie Shelter"
-#   button 1 -> audio/s1.ogg <- audio/s1.mid (rafferty_bakerstr.mid) "Baker Street"
-#   button 2 -> audio/s2.ogg <- audio/s2.mid (dixie.mid)             "Dixie"
-#   button 3 -> audio/s3.ogg <- audio/s3.mid (pinkfloyd_crazydiamond.mid)
-#                                            "Shine on you crazy diamond"
+# The four historical MIDI files remain on disk in audio/ as source evidence
+# only. Nothing in this world references them at runtime.
 #
-# spatialize FALSE with a room-sized range reproduces the historical behaviour:
-# the song filled the room from an HTML frame, it was never a point source.
+# A set of converted OGG renders was tried here and removed: the four clips
+# eager-loaded about 14 MB on every world entry, and the replacement audio has
+# not been approved. The jukebox is deliberately silent for now.
+#
+# The buttons keep their historical behaviour otherwise: pressing one still
+# updates the title sign through musicSwitchScript, and the mute button keeps
+# its historical geometry and TouchSensor as an inert control.
+#
+# To restore audio later: add one Sound/AudioClip per track plus a selector
+# script, and route TouchTasteN.touchTime into it. Do not reintroduce the
+# audioN.htm popup path.
 # ---------------------------------------------------------------------------
-Sound {
-location -18 1.5 15.5
-minFront 60 minBack 60 maxFront 120 maxBack 120
-intensity 1
-spatialize FALSE
-source DEF Song0 AudioClip { url "audio/s0.ogg" loop FALSE description "Gimmie Shelter" }
-}
-Sound {
-location -18 1.5 15.5
-minFront 60 minBack 60 maxFront 120 maxBack 120
-intensity 1
-spatialize FALSE
-source DEF Song1 AudioClip { url "audio/s1.ogg" loop FALSE description "Baker Street" }
-}
-Sound {
-location -18 1.5 15.5
-minFront 60 minBack 60 maxFront 120 maxBack 120
-intensity 1
-spatialize FALSE
-source DEF Song2 AudioClip { url "audio/s2.ogg" loop FALSE description "Dixie" }
-}
-Sound {
-location -18 1.5 15.5
-minFront 60 minBack 60 maxFront 120 maxBack 120
-intensity 1
-spatialize FALSE
-source DEF Song3 AudioClip { url "audio/s3.ogg" loop FALSE description "Shine on you crazy diamond" }
-}
-
-DEF JukeboxAudio Script {
-  eventIn SFTime select0
-  eventIn SFTime select1
-  eventIn SFTime select2
-  eventIn SFTime select3
-  eventIn SFTime stopAll
-  eventIn SFBool ended0
-  eventIn SFBool ended1
-  eventIn SFBool ended2
-  eventIn SFBool ended3
-  eventOut SFTime start0
-  eventOut SFTime start1
-  eventOut SFTime start2
-  eventOut SFTime start3
-  eventOut SFTime stop0
-  eventOut SFTime stop1
-  eventOut SFTime stop2
-  eventOut SFTime stop3
-  field SFInt32 playing -1
-  url "vrmlscript:
-    /* One song at a time. Selecting a song stops the other three before it
-       starts, so the four tracks can never overlap. Re-selecting the song
-       that is already playing is ignored, which also absorbs the echo of a
-       press that came back from the shared-event server. */
-    function play(n, time) {
-      if (n == playing)
-        return;
-      if (n != 0) stop0 = time;
-      if (n != 1) stop1 = time;
-      if (n != 2) stop2 = time;
-      if (n != 3) stop3 = time;
-      /* stopTime at the epoch is earlier than startTime, so it is ignored. */
-      if (n == 0) { stop0 = 0; start0 = time; }
-      if (n == 1) { stop1 = 0; start1 = time; }
-      if (n == 2) { stop2 = 0; start2 = time; }
-      if (n == 3) { stop3 = 0; start3 = time; }
-      playing = n;
-    }
-    function select0(value, time) { play(0, time); }
-    function select1(value, time) { play(1, time); }
-    function select2(value, time) { play(2, time); }
-    function select3(value, time) { play(3, time); }
-    function stopAll(value, time) {
-      stop0 = time; stop1 = time; stop2 = time; stop3 = time;
-      playing = -1;
-    }
-    /* A song that runs to its end frees its button to be pressed again. */
-    function ended0(value, time) { if (!value && playing == 0) playing = -1; }
-    function ended1(value, time) { if (!value && playing == 1) playing = -1; }
-    function ended2(value, time) { if (!value && playing == 2) playing = -1; }
-    function ended3(value, time) { if (!value && playing == 3) playing = -1; }
-  "
-}
-
 DEF SloadPlace Script {
     field MFString newurl [ "" ]
     field MFString param [ "" "" ]
@@ -1128,33 +1051,6 @@ ROUTE TSPlaza.hitPoint_changed TO SloadPlace.describe1Plaza
 ROUTE TSPlaza1.hitPoint_changed TO SloadPlace.describe1Plaza
 
 #Begin sound routes
-
-# Jukebox audio routes (CTR reconstruction).
-# The direct TouchSensor route is what makes a button play for the citizen who
-# pressed it. The TasteN SharedEvent route is the historical multi-user path and
-# is kept, so a remote press still selects the song here; JukeboxAudio ignores
-# the duplicate when both arrive.
-ROUTE TouchTaste0.touchTime TO JukeboxAudio.select0
-ROUTE TouchTaste1.touchTime TO JukeboxAudio.select1
-ROUTE TouchTaste2.touchTime TO JukeboxAudio.select2
-ROUTE TouchTaste3.touchTime TO JukeboxAudio.select3
-ROUTE Taste0.time_changed TO JukeboxAudio.select0
-ROUTE Taste1.time_changed TO JukeboxAudio.select1
-ROUTE Taste2.time_changed TO JukeboxAudio.select2
-ROUTE Taste3.time_changed TO JukeboxAudio.select3
-ROUTE JukeboxAudio.start0 TO Song0.set_startTime
-ROUTE JukeboxAudio.start1 TO Song1.set_startTime
-ROUTE JukeboxAudio.start2 TO Song2.set_startTime
-ROUTE JukeboxAudio.start3 TO Song3.set_startTime
-ROUTE JukeboxAudio.stop0 TO Song0.set_stopTime
-ROUTE JukeboxAudio.stop1 TO Song1.set_stopTime
-ROUTE JukeboxAudio.stop2 TO Song2.set_stopTime
-ROUTE JukeboxAudio.stop3 TO Song3.set_stopTime
-ROUTE Song0.isActive TO JukeboxAudio.ended0
-ROUTE Song1.isActive TO JukeboxAudio.ended1
-ROUTE Song2.isActive TO JukeboxAudio.ended2
-ROUTE Song3.isActive TO JukeboxAudio.ended3
-ROUTE TouchMute.touchTime TO JukeboxAudio.stopAll
 
 # The title sign is driven off the same direct press, so the citizen who pressed
 # the button sees the song name without waiting for a shared-event round trip.
