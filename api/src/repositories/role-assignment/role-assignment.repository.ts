@@ -1,6 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 import { RoleAssignment } from '../../types/models';
 import { wherePayingRole } from '../credit/credit.repository';
 
@@ -194,14 +196,14 @@ export class RoleAssignmentRepository {
     return roleResults;
   }
 
-  public async removeRoleAssignment(id: number): Promise<void> {
-    await this.db.knex('role_assignment')
+  public async removeRoleAssignment(id: number, trx?: Knex.Transaction): Promise<void> {
+    await queryOn(this.db.knex, trx)('role_assignment')
       .where('place_id', id)
       .del();
   }
 
-  public async removeAllByUserId(id: number): Promise<void> {
-    await this.db.knex('role_assignment')
+  public async removeAllByUserId(id: number, trx?: Knex.Transaction): Promise<void> {
+    await queryOn(this.db.knex, trx)('role_assignment')
       .where('member_id', id)
       .del();
   }

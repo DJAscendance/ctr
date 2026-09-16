@@ -274,6 +274,12 @@ describe('AdminController authorization', () => {
     memberService.canSecurityManageRole.mockResolvedValue(false as never);
     adminService.searchAvatars.mockResolvedValue([] as never);
     placeService.getOwnedPlaces.mockResolvedValue([] as never);
+    // `removeAccount` runs its whole sequence inside one transaction, so the double has to
+    // actually run the callback - otherwise the protected work could never happen and the
+    // allow case would look identical to a denial.
+    memberService.runInTransaction
+      .mockImplementation(work => (work as (trx: never) => Promise<unknown>)(null as never));
+    memberService.lockForRemoval.mockResolvedValue({ id: 1 } as never);
   });
 
   describe.each(GUARDED)('$name', ({ name, service, method, allow, deny }) => {

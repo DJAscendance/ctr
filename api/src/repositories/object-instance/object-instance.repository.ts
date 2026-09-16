@@ -1,6 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 import {knex} from '../../db';
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 import { CountRow } from '../row.types';
 import { ObjectInstance } from 'models';
 
@@ -97,8 +99,8 @@ export class ObjectInstanceRepository {
     });
   }
 
-  public async moveAllObjects(id: number): Promise<void> {
-    await this.db.objectInstance.where({ member_id: id }).update({
+  public async moveAllObjects(id: number, trx?: Knex.Transaction): Promise<void> {
+    await queryOn(this.db.knex, trx)('object_instance').where({ member_id: id }).update({
       place_id: 0, member_id: null,
     });
   }

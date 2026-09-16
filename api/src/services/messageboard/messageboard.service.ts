@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import {
@@ -33,8 +34,8 @@ export class MessageboardService {
       .deleteMessageboardMessage(messageId);
   }
 
-  public async removeAllMessages(userId: number): Promise<any> {
-    await this.messageboardRepository.removeAllMessages(userId);
+  public async removeAllMessages(userId: number, trx?: Knex.Transaction): Promise<any> {
+    await this.messageboardRepository.removeAllMessages(userId, trx);
   }
   
   public async getAdminInfo(

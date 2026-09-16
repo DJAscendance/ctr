@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { 
@@ -78,8 +79,8 @@ export class ObjectInstanceService {
     return await this.objectInstanceRepository.getObjectInstanceWithObject(objectInstanceId);
   }
 
-  public async moveAllObjects(id): Promise<any> {
-    await this.objectInstanceRepository.moveAllObjects(id);
+  public async moveAllObjects(id, trx?: Knex.Transaction): Promise<any> {
+    await this.objectInstanceRepository.moveAllObjects(id, trx);
   }
 
   public async updateObjectOwner(objectId, userId): Promise<any> {

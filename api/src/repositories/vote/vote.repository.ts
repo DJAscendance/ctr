@@ -1,7 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db';
-import { knex } from '../../db';
+import { knex, queryOn } from '../../db';
 
 @Service()
 export class VoteRepository {
@@ -52,20 +53,20 @@ export class VoteRepository {
     }
   }
 
-  public async removePlace(id: number): Promise<any> {
-    await knex('vote_list')
+  public async removePlace(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('vote_list')
       .where('place_id', id)
       .del();
   }
 
-  public async removeListByUserId(id: number): Promise<any> {
-    await knex('vote_list')
+  public async removeListByUserId(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('vote_list')
       .where('creator_member_id', id)
       .del();
   }
 
-  public async removeResponseByUserId(id: number): Promise<any> {
-    await knex('vote_response')
+  public async removeResponseByUserId(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('vote_response')
       .where('member_id', id)
       .del();
   }

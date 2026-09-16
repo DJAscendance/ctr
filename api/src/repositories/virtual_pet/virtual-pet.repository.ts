@@ -1,6 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 
 /** Repository for fetching/interacting with virtual pet data in the database. */
 @Service()
@@ -26,8 +28,8 @@ export class VirtualPetRepository {
     return pet;
   }
 
-  public async removeVirtualPet(id: number): Promise<any> {
-    await this.db.knex('virtual_pet')
+  public async removeVirtualPet(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('virtual_pet')
       .where('place_id', id)
       .del();
   }

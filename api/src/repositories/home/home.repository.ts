@@ -2,6 +2,7 @@ import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 import {Home, Member} from '../../types/models';
 
 /** Repository for fetching/interacting with home data in the database. */
@@ -36,8 +37,8 @@ export class HomeRepository {
       : undefined;
   }
 
-  public async removePlace(id: number): Promise<any> {
-    await this.db.home
+  public async removePlace(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('home')
       .where('place_id', id)
       .del();
   }

@@ -1,6 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 import { Avatar } from 'models';
 
 /** Repository for fetching/interacting with avatar data in the database. */
@@ -28,8 +30,8 @@ export class AvatarRepository {
     return this.db.avatar.where({ status: 1 });
   }
 
-  public async removeAllAvatars(userId: number): Promise<any> {
-    await this.db.avatar
+  public async removeAllAvatars(userId: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('avatar')
       .where('member_id', userId)
       .del();
   }

@@ -1,6 +1,7 @@
 import * as _ from 'lodash';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import {
@@ -1137,14 +1138,56 @@ export class MemberService {
     return user;
   }
 
-  public async removeAccount(id: number): Promise<void> {
-    const user = await this.memberRepository.findById(id);
-    await this.roleAssignmentRepository.removeAllByUserId(id);
-    await this.banRepository.removeAllByUserId(id);
-    await this.transactionRepository.removeAllByWalletId(user.wallet_id);
-    await this.voteRepository.removeListByUserId(id);
-    await this.voteRepository.removeResponseByUserId(id);
-    await this.memberRepository.removeAccount(id);
-    await this.walletRepository.removeAccount((user.wallet_id));
+  /**
+   * Runs the given work inside a single database transaction.
+   *
+   * Account removal is a long sequence of destructive writes spread over a dozen tables.
+   * The caller owns the boundary because it, not this service, knows the whole sequence;
+   * this method exists so the caller does not have to reach past the service layer for a
+   * connection.
+   * @param work callback receiving the transaction handle
+   */
+  public async runInTransaction<T>(work: (trx: Knex.Transaction) => Promise<T>): Promise<T> {
+    return this.memberRepository.runInTransaction(work);
+  }
+
+  /**
+   * Reads the member row and holds an exclusive lock on it for the rest of the
+   * transaction, so a second removal of the same member waits rather than interleaving.
+   * Resolves undefined when there is no such member, which callers must treat as a refusal
+   * rather than as an empty account to delete.
+   * @param id id of the member to lock
+   * @param trx transaction the lock belongs to
+   */
+  public async lockForRemoval(id: number, trx: Knex.Transaction): Promise<Member | undefined> {
+    return this.memberRepository.lockMember(trx, id);
+  }
+
+  /**
+   * Removes the member record itself and the rows keyed to the member or the member's
+   * wallet: role assignments, bans, the transaction ledger, votes, and the wallet.
+   *
+   * Financial history is deleted here rather than preserved. That is the behaviour this
+   * path has always had and is not changed by making it atomic - but it is the reason the
+   * whole sequence has to be one transaction: a half-run leaves a wallet with no member, or
+   * a member with no wallet.
+   * @param id id of the member to remove
+   * @param trx optional transaction to run inside; one is opened when none is supplied
+   */
+  public async removeAccount(id: number, trx?: Knex.Transaction): Promise<void> {
+    if (!trx) {
+      return this.memberRepository.runInTransaction(ownTrx => this.removeAccount(id, ownTrx));
+    }
+    const user = await this.memberRepository.findById(id, trx);
+    if (!user) {
+      throw new Error(`No member ${id} to remove.`);
+    }
+    await this.roleAssignmentRepository.removeAllByUserId(id, trx);
+    await this.banRepository.removeAllByUserId(id, trx);
+    await this.transactionRepository.removeAllByWalletId(user.wallet_id, trx);
+    await this.voteRepository.removeListByUserId(id, trx);
+    await this.voteRepository.removeResponseByUserId(id, trx);
+    await this.memberRepository.removeAccount(id, trx);
+    await this.walletRepository.removeAccount(user.wallet_id, trx);
   }
 }

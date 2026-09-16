@@ -1,6 +1,8 @@
+import { Knex } from 'knex';
 import {Service} from 'typedi';
 
 import {Db} from '../../db/db.class';
+import {queryOn} from '../../db/query-on';
 import {knex} from '../../db';
 import {Member} from 'models';
 
@@ -31,8 +33,8 @@ export class BanRepository {
       });
   }
 
-  public async removeAllByUserId(id: number): Promise<any> {
-    await this.db.knex('ban')
+  public async removeAllByUserId(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('ban')
       .where('ban_member_id', id)
       .del();
   }

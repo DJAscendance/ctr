@@ -1,7 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
-import { knex } from '../../db';
+import { knex, queryOn } from '../../db';
 
 @Service()
 export class ClubMemberRepository {
@@ -26,8 +27,8 @@ export class ClubMemberRepository {
     return;
   }
   
-  public async removeAllMembers(clubId: number): Promise<void> {
-    await knex('club_member')
+  public async removeAllMembers(clubId: number, trx?: Knex.Transaction): Promise<void> {
+    await queryOn(this.db.knex, trx)('club_member')
       .where({club_id: clubId})
       .del();
     return;
@@ -59,8 +60,8 @@ export class ClubMemberRepository {
     return status[0].status;
   }
 
-  public async removeAccount(userId: number): Promise<any> {
-    await knex('club_member')
+  public async removeAccount(userId: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('club_member')
       .where('member_id', userId)
       .del();
   }

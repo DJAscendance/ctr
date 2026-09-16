@@ -698,6 +698,22 @@ export class AdminController {
     }
   }
 
+  /**
+   * Permanently removes an account and everything filed against it.
+   *
+   * The whole sequence runs inside ONE database transaction: either every write below
+   * commits, or none of them does. Before the transaction it was a run of independent
+   * statements, so a failure part way through left an account half deleted - and the last
+   * step failing left the member row gone while the caller was told the removal had failed.
+   *
+   * The target member row is locked first, so two removals of the same member serialize
+   * instead of interleaving, and so a removal aimed at an id that is not a member refuses
+   * before any destructive write rather than after several.
+   *
+   * What is removed is unchanged: objects are preserved and disowned, places the member
+   * owns are deleted with their contents, and the member's wallet and ledger go with the
+   * member, exactly as before.
+   */
   public async removeAccount(request: Request, response: Response):  Promise<void>{
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
@@ -705,28 +721,39 @@ export class AdminController {
     if (admin) {
       const id = request.body.id;
       try {
-        await this.objectInstanceService.moveAllObjects(id);
-        await this.objectService.removeAccount(id);
-        await this.messageService.removeAllMessages(id);
-        await this.inboxService.removeAllMessages(id);
-        await this.messageboardService.removeAllMessages(id);
-        await this.avatarService.removeAllAvatars(id);
-        await this.clubService.removeAccount(id);
-        const places = await this.placeService.getOwnedPlaces(id);
-        if(places.length >= 1) {
-          const home = places.find(place => place.type === 'home');
-          if(home){
-            await this.placeService.removeVirtualPet(home.id);
+        await this.memberService.runInTransaction(async trx => {
+          const member = await this.memberService.lockForRemoval(id, trx);
+          if (!member) {
+            throw new Error(`No member ${id} to remove.`);
           }
-        
-          places.forEach(place => {
-            this.placeService.removePlace(place.id);
-          });
-        }
-        await this.memberService.removeAccount(id);
+          await this.objectInstanceService.moveAllObjects(id, trx);
+          await this.objectService.removeAccount(id, trx);
+          await this.messageService.removeAllMessages(id, trx);
+          await this.inboxService.removeAllMessages(id, trx);
+          await this.messageboardService.removeAllMessages(id, trx);
+          await this.avatarService.removeAllAvatars(id, trx);
+          await this.clubService.removeAccount(id, trx);
+          const places = await this.placeService.getOwnedPlaces(id, trx);
+          if(places.length >= 1) {
+            const home = places.find(place => place.type === 'home');
+            if(home){
+              await this.placeService.removeVirtualPet(home.id, trx);
+            }
+            // Awaited in order: a rejected removal has to abort the sequence, and the
+            // floating promises this replaced could not.
+            for (const place of places) {
+              await this.placeService.removePlace(place.id, trx);
+            }
+          }
+          await this.memberService.removeAccount(id, trx);
+        });
         response.status(200).json({ status: 'success' });
-      } catch {
-        response.status(400).json({error: 'Error moving objects.'});
+      } catch (error) {
+        // The transaction has already rolled back. The original failure is kept in the
+        // server log, where an operator can read it; the client gets one flat refusal with
+        // no database detail in it.
+        console.error(`Account removal for member ${id} failed:`, error);
+        response.status(400).json({error: 'Account removal failed.'});
       }
     } else {
       response.status(403).json({message: 'Access Denied'});

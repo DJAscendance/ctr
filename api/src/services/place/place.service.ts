@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import {
@@ -174,28 +175,40 @@ export class PlaceService {
     return await this.objectInstanceRepository.findByPlaceId(placeId);
   }
 
-  public async getOwnedPlaces(userId: number): Promise<any> {
-    return await this.placeRepository.findByUserId(userId);
+  public async getOwnedPlaces(userId: number, trx?: Knex.Transaction): Promise<any> {
+    return await this.placeRepository.findByUserId(userId, trx);
   }
 
   public async getLiveEventDestinations(): Promise<any[]> {
     return this.placeRepository.findLiveEventDestinations();
 }
 
-  public async removeVirtualPet(id: number): Promise<any> {
-    await this.virtualPetRepository.removeVirtualPet(id);
+  public async removeVirtualPet(id: number, trx?: Knex.Transaction): Promise<any> {
+    await this.virtualPetRepository.removeVirtualPet(id, trx);
   }
 
-  public async removePlace(id: number): Promise<any> {
-    await this.clubMemberRepository.removeAllMembers(id);
-    await this.roleAssignmentRepository.removeRoleAssignment(id);
-    await this.messageRepository.removeAllPlaceMessages(id);
-    await this.inboxRepository.removeAllPlaceMessages(id);
-    await this.messageboardRepository.removeAllPlaceMessages(id);
-    await this.voteRepository.removePlace(id);
-    await this.placeRepository.removePlace(id);
-    await this.homeRepository.removePlace(id);
-    await this.mapLocationRepository.removePlace(id);
+  /**
+   * Deletes a place and everything filed against it.
+   *
+   * Nine deletes that have to happen together - a place whose members or message board
+   * outlive it is not a state any screen can render - so they join the caller's transaction
+   * when one is supplied, and open their own when it is not.
+   * @param id id of the place to remove
+   * @param trx optional transaction to run inside
+   */
+  public async removePlace(id: number, trx?: Knex.Transaction): Promise<any> {
+    if (!trx) {
+      return this.placeRepository.runInTransaction(ownTrx => this.removePlace(id, ownTrx));
+    }
+    await this.clubMemberRepository.removeAllMembers(id, trx);
+    await this.roleAssignmentRepository.removeRoleAssignment(id, trx);
+    await this.messageRepository.removeAllPlaceMessages(id, trx);
+    await this.inboxRepository.removeAllPlaceMessages(id, trx);
+    await this.messageboardRepository.removeAllPlaceMessages(id, trx);
+    await this.voteRepository.removePlace(id, trx);
+    await this.placeRepository.removePlace(id, trx);
+    await this.homeRepository.removePlace(id, trx);
+    await this.mapLocationRepository.removePlace(id, trx);
   }
 
   public async getAccessInfoByUsername(slug: string, placeId: number): Promise<object> {

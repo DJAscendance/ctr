@@ -1,6 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 import { Wallet } from '../../types/models';
 
 /** Repository for fetching/interacting with wallet data in the database. */
@@ -39,8 +41,8 @@ export class WalletRepository {
       .join('member', 'member.wallet_id', 'wallet.id');
   }
 
-  public async removeAccount(id: number): Promise<any> {
-    await this.db.wallet
+  public async removeAccount(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('wallet')
       .where('id', id)
       .del();
   }

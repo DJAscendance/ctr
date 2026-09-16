@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import crypto from 'crypto';
 const fs = require('fs');
 import { Service } from 'typedi';
@@ -78,8 +79,8 @@ export class AvatarService {
       .filter(row => row !== null);
   }
 
-  public async removeAllAvatars(userId : number): Promise<any> {
-    await this.avatarRepository.removeAllAvatars(userId);
+  public async removeAllAvatars(userId : number, trx?: Knex.Transaction): Promise<any> {
+    await this.avatarRepository.removeAllAvatars(userId, trx);
   }
 
   /**

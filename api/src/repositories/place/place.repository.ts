@@ -1,6 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 import { knex } from '../../db';
 import { Place, Store } from '../../types/models';
 
@@ -40,8 +42,8 @@ export class PlaceRepository {
     return this.db.place.where({ slug: slug }).first();
   }
 
-  public async findByUserId(userId: number): Promise<any> {
-    return await this.db.place
+  public async findByUserId(userId: number, trx?: Knex.Transaction): Promise<any> {
+    return await queryOn(this.db.knex, trx)('place')
       .select('place.id', 'place.type')
       .where({ member_id: userId })
   }
@@ -67,8 +69,17 @@ export class PlaceRepository {
       .orderBy('place.name', 'asc');
   }
 
-  public async removePlace(id: number): Promise<any> {
-    await this.db.place
+  /**
+   * Runs the given work inside a single database transaction, so a place and everything
+   * filed against it are removed as one unit.
+   * @param work callback receiving the transaction handle
+   */
+  public async runInTransaction<T>(work: (trx: Knex.Transaction) => Promise<T>): Promise<T> {
+    return this.db.knex.transaction(work);
+  }
+
+  public async removePlace(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('place')
       .where('id', id)
       .del();
   }

@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { InboxRepository } from '../../repositories';
@@ -21,9 +22,9 @@ export class InboxService {
     return this.inboxRepository.deleteInboxMessages(messageIds, placeId);
   }
 
- public async removeAllMessages(userId: number): Promise<any> {
-   return this.inboxRepository.removeAllMessages(userId);
- }
+  public async removeAllMessages(userId: number, trx?: Knex.Transaction): Promise<any> {
+    return this.inboxRepository.removeAllMessages(userId, trx);
+  }
 
   public async getAdminInfo(placeId, memberId): Promise<any> {
     return await this.inboxRepository.getAdminInfo(placeId, memberId);

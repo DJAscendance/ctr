@@ -2,6 +2,7 @@ import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 import { CountRow } from '../row.types';
 import { Member, Transaction, TransactionReason, Wallet } from '../../types/models';
 
@@ -430,8 +431,8 @@ export class TransactionRepository {
     return <TransactionCount[]><unknown>rows;
   }
 
-  public async removeAllByWalletId(id: number): Promise<void> {
-    await this.db.knex('transaction')
+  public async removeAllByWalletId(id: number, trx?: Knex.Transaction): Promise<void> {
+    await queryOn(this.db.knex, trx)('transaction')
       .where('recipient_wallet_id', id)
       .orWhere('sender_wallet_id', id)
       .del();

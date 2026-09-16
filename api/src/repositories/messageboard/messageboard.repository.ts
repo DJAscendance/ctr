@@ -1,7 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db';
-import {knex} from '../../db';
+import {knex, queryOn} from '../../db';
 import {Member, MessageBoard, Place} from 'models';
 import {response} from 'express';
 
@@ -26,14 +27,14 @@ export class MessageboardRepository {
       .update({status: 0});
   }
 
-  public async removeAllMessages(userId: number): Promise<any> {
-    await knex('messageboard')
+  public async removeAllMessages(userId: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('messageboard')
       .where('member_id', userId)
       .del();
   }
 
-  public async removeAllPlaceMessages(id: number): Promise<any> {
-    await knex('messageboard')
+  public async removeAllPlaceMessages(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('messageboard')
       .where('place_id', id)
       .del();
   }

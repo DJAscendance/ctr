@@ -9,7 +9,7 @@ import { IMMIGRATION_GRANT_CC } from '../../libs/economy';
 // 'models', which is a tsconfig `paths` alias with no matching moduleNameMapper. Files that
 // import only types get away with it; this one would not.
 import { Member, Transaction, TransactionReason, Wallet } from '../../types/models';
-import { knex } from '../../db';
+import { knex, queryOn } from '../../db';
 
 /**
  * A place id from the member table, plus the fields `MemberService` attaches to
@@ -366,10 +366,36 @@ export class MemberRepository {
     await this.db.member.where({ id: memberId }).update(props);
   }
 
-  public async removeAccount(id: number): Promise<void> {
-    await this.db.member
+  public async removeAccount(id: number, trx?: Knex.Transaction): Promise<void> {
+    await queryOn(this.db.knex, trx)('member')
       .where('id', id)
       .del();
+  }
+
+  /**
+   * Runs the given work inside a single database transaction, so a whole account removal
+   * commits or rolls back as one unit.
+   * @param work callback receiving the transaction handle
+   */
+  public async runInTransaction<T>(work: (trx: Knex.Transaction) => Promise<T>): Promise<T> {
+    return this.db.knex.transaction(work);
+  }
+
+  /**
+   * Reads a member row while taking an exclusive row-level lock on it
+   * (`SELECT ... FOR UPDATE`), returning undefined when no such member exists.
+   *
+   * Account removal reads the member's wallet id and then deletes rows across a dozen
+   * tables. Two removals aimed at the same member would otherwise interleave, each acting
+   * on state the other is deleting. Taking this lock first serializes them in the database,
+   * so the second one waits and then finds no row to remove. Must be called inside a
+   * transaction; the lock is held until that transaction commits or rolls back.
+   * @param trx transaction handle from runInTransaction
+   * @param id id of the member to lock
+   */
+  public async lockMember(trx: Knex.Transaction, id: number): Promise<Member | undefined> {
+    const [member] = await trx<Member>('member').where({ id }).forUpdate();
+    return member;
   }
 
   /**

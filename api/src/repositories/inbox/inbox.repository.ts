@@ -1,7 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db';
-import {knex} from '../../db';
+import {knex, queryOn} from '../../db';
 import {Member, Inbox, Place} from 'models';
 import {response} from 'express';
 
@@ -18,14 +19,14 @@ export class InboxRepository {
   }
   constructor(private db: Db) {}
 
-  public async removeAllMessages(userId: number): Promise<any> {
-    await knex('inbox')
+  public async removeAllMessages(userId: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('inbox')
       .where('member_id', userId)
       .del();
   }
 
-  public async removeAllPlaceMessages(id: number): Promise<any> {
-    await knex('inbox')
+  public async removeAllPlaceMessages(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('inbox')
       .where('place_id', id)
       .del();
   }

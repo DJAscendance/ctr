@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -109,8 +110,8 @@ export class ObjectService {
     return this.objectRepository.findById(objectId);
   }
 
-  public async removeAccount(userId: number): Promise<void> {
-    return this.objectRepository.removeAccount(userId);
+  public async removeAccount(userId: number, trx?: Knex.Transaction): Promise<void> {
+    return this.objectRepository.removeAccount(userId, trx);
   }
 
   public async findByObjectId(objectId: number): Promise<ObjectWithUsername[]> {

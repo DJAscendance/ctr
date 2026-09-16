@@ -53,34 +53,49 @@ export class ObjectRepository {
     return this.find({ id: objectId });
   }
 
-  public async removeAccount(userId: number): Promise<void> {
-    const objectInstanceIds = this.db.objectInstance
+  /**
+   * Retires every object the member owns and then disowns the rows. Objects are preserved,
+   * never deleted: a live one is parked at status 4, one that was never live goes back to
+   * status 0, and `member_id` is cleared last.
+   *
+   * The five statements only make sense together - stopping half way leaves objects in a
+   * state no screen expects - so they join the caller's transaction when one is supplied,
+   * and open their own when it is not. Callers that pass nothing behave exactly as before,
+   * except that they now get all five writes or none.
+   * @param userId member losing the objects
+   * @param trx optional transaction to run inside
+   */
+  public async removeAccount(userId: number, trx?: Knex.Transaction): Promise<void> {
+    if (!trx) {
+      return this.db.knex.transaction(async ownTrx => this.removeAccount(userId, ownTrx));
+    }
+    const objectInstanceIds = trx('object_instance')
       .distinct('object_id')
       .whereNotNull('object_id');
 
-    await this.db.object
+    await trx('object')
       .where('member_id', userId)
       .where('status', 1)
       .update({status: 4});
 
-    await this.db.object
+    await trx('object')
       .where('member_id', userId)
       .where('status', 2)
       .update({status: 0});
 
-    await this.db.object
+    await trx('object')
       .where('member_id', userId)
       .where('status', 3)
       .whereIn('id', objectInstanceIds.clone())
       .update({status: 4});
 
-    await this.db.object
+    await trx('object')
       .where('member_id', userId)
       .where('status', 3)
       .whereNotIn('id', objectInstanceIds)
       .update({status: 0});
 
-    await this.db.object
+    await trx('object')
       .where('member_id', userId)
       .update({member_id: null});
   }

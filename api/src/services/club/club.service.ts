@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import {
@@ -199,8 +200,8 @@ export class ClubService {
     return await this.clubMemberRepository.getMembersCount(place_id, 'member') + 1;
   }
 
-  public async removeAccount(userId: number): Promise<any> {
-    await this.clubMemberRepository.removeAccount(userId);
+  public async removeAccount(userId: number, trx?: Knex.Transaction): Promise<any> {
+    await this.clubMemberRepository.removeAccount(userId, trx);
   }
   
   public async joinClub(clubId: number, memberId: number): Promise<void> {

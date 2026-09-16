@@ -1,6 +1,8 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { Db } from '../../db/db.class';
+import { queryOn } from '../../db/query-on';
 import {MapLocation, Place} from '../../types/models';
 
 /** Repository for fetching/interacting with place data in the database. */
@@ -76,8 +78,8 @@ export class MapLocationRepository {
       .merge(['available']);
   }
 
-  public async removePlace(id: number): Promise<any> {
-    await this.db.mapLocation
+  public async removePlace(id: number, trx?: Knex.Transaction): Promise<any> {
+    await queryOn(this.db.knex, trx)('map_location')
       .where('place_id', id)
       .del();
   }
