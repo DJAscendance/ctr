@@ -329,6 +329,7 @@ export class PlaceService {
       waterpark: { owner: 'WaterParkChief', deputy: 'WaterParkDeputy' },
       themepark: { owner: 'ThemeParkChief', deputy: 'ThemeParkDeputy' },
       theatre: { owner: 'TheatreChief', deputy: 'TheatreDeputy' },
+      cafe: { owner: 'LeCafeChief', deputy: 'LeCafeDeputy' },
       pool: { owner: 'PoolChief', deputy: 'PoolDeputy' },
       blackmarket: { owner: 'BlackMarketChief', deputy: 'BlackMarketDeputy' },
       jail: { owner: 'SecurityChief' },
