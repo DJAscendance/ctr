@@ -166,5 +166,13 @@
     "assets_dir": "/post/",
     "world_filename": "vrml/post.wrl",
     "type": "public"
+  },
+  {
+    "name": "Flyby's Park",
+    "description": "Welcome to Flyby's Park.",
+    "slug": "flyby",
+    "assets_dir": "/flyby/",
+    "world_filename": "vrml/flyby.wrl",
+    "type": "public"
   }
 ]

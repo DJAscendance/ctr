@@ -83,7 +83,7 @@
             </div>
           </div>
           <div class="flex flex-row justify-center" v-if="$store.data.place.name">
-            <span class="inline" style="color:lime;">{{ $store.data.place.name }}</span> 
+            <span class="inline" style="color:lime;">{{ $store.data.place.name }}</span>
           </div>
             <!--
               Outlands never offered a 2D/3D choice: its entrance led straight
@@ -95,6 +95,9 @@
                   class="cursor-pointer"/>
               <img src="/assets/img/b3dchat.gif" @click="$store.methods.setView3d(true)"
                   class="cursor-pointer"/>
+            </div>
+            <div class="flex flex-col items-center" v-if="$store.data.place.slug === 'flyby'">
+              <img src="/assets/img/place/flyby/flypan.jpg" alt="Steve Kash, Flyby, 1951-2003" />
             </div>
             <div class="flex justify-center">
               <div class="menu">
@@ -348,6 +351,10 @@ export default defineComponent({
         {
           title: "The Post Office",
           slug: "postoffice",
+        },
+        {
+          title: "Flyby's Park",
+          slug: "flyby",
         },
         {
           title: "Game Show",
