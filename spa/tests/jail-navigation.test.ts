@@ -13,6 +13,7 @@
  */
 import assert from "assert";
 
+import { decideBannedNavigation } from "../src/helpers/ban-navigation.helper";
 import {
   JAIL_READABLE_PATHS,
   isJailReadablePath,
@@ -89,47 +90,52 @@ test("a missing or non-string path is not readable", () => {
   assert.strictEqual(isJailReadablePath({} as unknown as string), false);
 });
 
-console.log("\n3. THE GUARD THAT CONSULTS IT");
+console.log("\n3. THE RULE THAT CONSULTS IT");
 
-const MAIN = path.resolve(__dirname, "../../../src/main.ts");
-const mainSource: string = fs.readFileSync(MAIN, "utf8");
+const SRC = path.resolve(__dirname, "../../../src");
+const mainSource: string = fs.readFileSync(path.join(SRC, "main.ts"), "utf8");
+const ruleSource: string = fs.readFileSync(
+  path.join(SRC, "helpers/ban-navigation.helper.ts"), "utf8",
+);
 /** A double quote, so the source snippets below can be written in template literals. */
 const Q = String.fromCharCode(34);
 
-test("the guard imports the rule from the helper", () => {
+test("the readable-path list is consulted by the ban rule, and by nothing else", () => {
   assert.ok(
-    /import \{[^}]*isJailReadablePath[^}]*\} from "\.\/helpers\/jail-navigation\.helper"/
+    /import \{[^}]*isJailReadablePath[^}]*\} from "\.\/jail-navigation\.helper"/
+      .test(ruleSource),
+    "the ban rule does not import the readable-path list",
+  );
+  assert.strictEqual(
+    mainSource.includes("isJailReadablePath"), false,
+    "main.ts reads the list itself again, so the order could differ in two places",
+  );
+});
+
+test("the guard asks the ban rule, once, and only for a banned citizen", () => {
+  assert.ok(
+    /import \{[^}]*decideBannedNavigation[^}]*\} from "\.\/helpers\/ban-navigation\.helper"/
       .test(mainSource),
-    "main.ts does not import the rule",
+    "main.ts does not import the ban rule",
   );
-});
-
-test("the readable-path branch is reached before the redirect-to-jail catch-all", () => {
-  const readable = mainSource.indexOf("isJailReadablePath(to.fullPath)");
-  const catchAll = mainSource.indexOf(
-    `to.fullPath !== ${Q}/place/jail${Q} && banInfo.type === ${Q}jail${Q}`,
-  );
-  assert.ok(readable > -1, "the readable-path branch is gone");
-  assert.ok(catchAll > -1, "the redirect-to-jail catch-all is gone");
-  assert.ok(readable < catchAll, "the catch-all now shadows the readable-path branch");
-});
-
-test("the branch is scoped to a jail sentence, never a full ban", () => {
-  assert.ok(
-    mainSource.includes(`banInfo.type === ${Q}jail${Q} && isJailReadablePath(to.fullPath)`),
-    "a full ban could now keep its session on a readable page",
-  );
-});
-
-test("the rule is consulted only for a banned citizen, so release restores travel", () => {
-  const uses = mainSource.split("isJailReadablePath(to.fullPath)").length - 1;
-  assert.strictEqual(uses, 1, "the rule is consulted in more than one place");
+  const uses = mainSource.split("decideBannedNavigation(").length - 1;
+  assert.strictEqual(uses, 1, "the rule is called in more than one place");
   const banned = mainSource.indexOf("if (banned) {");
   assert.ok(banned > -1, "the banned branch is gone");
   assert.ok(
-    mainSource.indexOf("isJailReadablePath(to.fullPath)") > banned,
-    "the rule is read outside the banned branch, so it could outlive a sentence",
+    mainSource.indexOf("decideBannedNavigation(") > banned,
+    "the rule is asked outside the banned branch, so it could outlive a sentence",
   );
+});
+
+test("the readable page is admitted before the catch-all that confines an inmate", () => {
+  assert.strictEqual(decideBannedNavigation("jail", "/news"), "allow");
+  assert.strictEqual(decideBannedNavigation("jail", "/place/plaza"), "confine");
+});
+
+test("the carve-out is scoped to a jail sentence, never a full ban", () => {
+  assert.strictEqual(decideBannedNavigation("full", "/news"), "end-session");
+  assert.strictEqual(decideBannedNavigation("full", "/place/jail"), "end-session");
 });
 
 test("the catch-all that confines an inmate is still there", () => {

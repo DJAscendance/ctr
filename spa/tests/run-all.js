@@ -36,6 +36,7 @@ const SUITES = [
   "tests/.compiled/tests/site-config.test.js",
   "tests/.compiled/tests/navigation-place.test.js",
   "tests/.compiled/tests/jail-navigation.test.js",
+  "tests/.compiled/tests/full-ban-navigation.test.js",
   "tests/.compiled/tests/movement-speed.test.js",
   "tests/.compiled/tests/route-contract.test.js",
   "tests/.compiled/tests/router-link.test.js",

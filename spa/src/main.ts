@@ -10,7 +10,7 @@ import { createGtag } from "vue-gtag";
 import App from "./App.vue";
 import api from "./api";
 import appStore, { Place, User } from "./appStore";
-import { isJailReadablePath } from "./helpers/jail-navigation.helper";
+import { decideBannedNavigation } from "./helpers/ban-navigation.helper";
 import { NavigationScopedValue } from "./helpers/navigation-place.helper";
 import routes from "./routes";
 import siteConfig from "./site-config";
@@ -101,22 +101,20 @@ function redirectLate(location: RouteLocationRaw): void {
   router.push(location);
 }
 
-router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> => {
-  if (to.meta.title) {
-    document.title = `${to.meta.title} - Cybertown${TITLE_SUFFIX}`;
-  } else {
-    document.title = `Cybertown${TITLE_SUFFIX}`;
-  }
-
-  // On a beta deployment the front page for someone with no session is the beta landing,
-  // not the classic city home page - a stranger must be told what this site is before it
-  // asks anything of them. Gated on `isBeta` so an ordinary production deployment keeps the
-  // home page it has always had, and skipped once a session exists so a returning citizen
-  // is never bounced back out to the front door.
-  if (siteConfig.isBeta && to.name === "home" && !appStore.data.isUser
-    && !appStore.data.user.token) {
-    return { name: "beta_landing" };
-  }
+/**
+ * Fetches the place a navigation is about, and stages it against that navigation.
+ *
+ * This is the guard's opening question restated as a function, so the guard can ask it at
+ * the right MOMENT. It used to run first, above everything, and it is awaited -- so when
+ * the API refused the caller the rejection came out of the guard itself and vue-router
+ * abandoned the navigation on the spot. Nothing below ever ran, and for a FULL-banned
+ * citizen that is the whole story: every world, club, inbox and message board answers 403
+ * for them, so the guard aborted before the session check that would have destroyed their
+ * token, and the client went on holding it. Asking only once the citizen's standing has
+ * been settled leaves the refusal exactly where it was for everyone else -- an unknown
+ * place still abandons the navigation -- while a ban is now answered before it is asked.
+ */
+async function stagePlaceFor(to: RouteLocationNormalized): Promise<void> {
   if (to.fullPath.includes("/place/")) {
     await api.get<any>(`/place/${to.params.id}`)
       .then(response => {
@@ -195,6 +193,24 @@ router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> =>
         navigationPlace.stage(to, place);
       });
   }
+}
+
+router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> => {
+  if (to.meta.title) {
+    document.title = `${to.meta.title} - Cybertown${TITLE_SUFFIX}`;
+  } else {
+    document.title = `Cybertown${TITLE_SUFFIX}`;
+  }
+
+  // On a beta deployment the front page for someone with no session is the beta landing,
+  // not the classic city home page - a stranger must be told what this site is before it
+  // asks anything of them. Gated on `isBeta` so an ordinary production deployment keeps the
+  // home page it has always had, and skipped once a session exists so a returning citizen
+  // is never bounced back out to the front door.
+  if (siteConfig.isBeta && to.name === "home" && !appStore.data.isUser
+    && !appStore.data.user.token) {
+    return { name: "beta_landing" };
+  }
 
   if (PUBLIC_ROUTE_NAMES.includes(to.name as string)) {
     return true;
@@ -216,22 +232,27 @@ router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> =>
       const { user } = response.data;
       const { banInfo, banned } = response.data;
       if (banned) {
-        if (
-          banInfo.type === "jail" &&
-          to.fullPath.includes("/messageboard/") ||
-          to.fullPath.includes("/inbox/") ||
-          to.fullPath.includes("/information/")
-        ) {
+        // The sentence is read before the route is, and the rule that reads it lives in
+        // one file. What used to stand here was a chain of route tests that a full ban
+        // could fall through: "/place/jail" and the place-scoped pages each matched on the
+        // PATH alone, so the citizen the city had thrown out kept their session by asking
+        // for the Jail. See helpers/ban-navigation.helper.ts for the order and why.
+        const banDecision = decideBannedNavigation(banInfo && banInfo.type, to.fullPath);
+        if (banDecision === "end-session") {
+          appStore.methods.destroySession();
+          // Router 3 carried these two values as route params that were not part of the
+          // path. Router 4 and 5 drop such params, so they travel in the history state -
+          // the same in-memory, lost-on-reload lifetime they always had.
+          decide({
+            name: "banned",
+            state: {
+              reason: banInfo && banInfo.reason,
+              enddate: banInfo && banInfo.end_date,
+            },
+          });
+        } else if (banDecision === "restricted") {
           decide("/restricted");
-        } else if (to.fullPath === "/restricted") {
-          decide(true);
-        } else if (banInfo.type === "jail" && isJailReadablePath(to.fullPath)) {
-          // Checked BEFORE the catch-all below, which sends a jailed citizen's every other
-          // navigation to /place/jail. Without this the NEWS button did not just refuse the
-          // news - App.vue opens it with window.open, so it opened a SECOND window showing
-          // the Jail again. See helpers/jail-navigation.helper.ts for what is on the list.
-          decide(true);
-        } else if (to.fullPath !== "/place/jail" && banInfo.type === "jail") {
+        } else if (banDecision === "confine") {
           // The redirect below is a navigation of its own, and it matches "/place/",
           // so the guard runs again for it and fetches the jail through the ordinary
           // path above. Staging it against THIS navigation - the one being redirected
@@ -244,20 +265,8 @@ router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> =>
               const place = { ...Data.place };
               navigationPlace.stage(to, place);
             });
-        } else if (to.fullPath === "/place/jail") {
-          decide(true);
         } else {
-          appStore.methods.destroySession();
-          // Router 3 carried these two values as route params that were not part of the
-          // path. Router 4 and 5 drop such params, so they travel in the history state -
-          // the same in-memory, lost-on-reload lifetime they always had.
-          decide({
-            name: "banned",
-            state: {
-              reason: banInfo.reason,
-              enddate: banInfo.end_date,
-            },
-          });
+          decide(true);
         }
       }
       appStore.methods.setUser(user);
@@ -274,6 +283,13 @@ router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> =>
         decide(true);
       }
     });
+
+  // Only a navigation that is going to LAND asks the API for its place. A refused or
+  // redirected one has already been decided above, and fetching for it could only put a
+  // place the citizen never reaches in front of the decision that turned them away.
+  if (decision === true) {
+    await stagePlaceFor(to);
+  }
 
   return decision;
 });
