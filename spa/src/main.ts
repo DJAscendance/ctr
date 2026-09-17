@@ -10,6 +10,7 @@ import { createGtag } from "vue-gtag";
 import App from "./App.vue";
 import api from "./api";
 import appStore, { Place, User } from "./appStore";
+import { isJailReadablePath } from "./helpers/jail-navigation.helper";
 import { NavigationScopedValue } from "./helpers/navigation-place.helper";
 import routes from "./routes";
 import siteConfig from "./site-config";
@@ -223,6 +224,12 @@ router.beforeEach(async (to: RouteLocationNormalized): Promise<GuardDecision> =>
         ) {
           decide("/restricted");
         } else if (to.fullPath === "/restricted") {
+          decide(true);
+        } else if (banInfo.type === "jail" && isJailReadablePath(to.fullPath)) {
+          // Checked BEFORE the catch-all below, which sends a jailed citizen's every other
+          // navigation to /place/jail. Without this the NEWS button did not just refuse the
+          // news - App.vue opens it with window.open, so it opened a SECOND window showing
+          // the Jail again. See helpers/jail-navigation.helper.ts for what is on the list.
           decide(true);
         } else if (to.fullPath !== "/place/jail" && banInfo.type === "jail") {
           // The redirect below is a navigation of its own, and it matches "/place/",
