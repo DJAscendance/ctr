@@ -54,8 +54,8 @@ export const MOVEMENT_SPEED_STORAGE_KEY = "movementSpeedMultiplier";
  *
  * A raw X_ITE speed factor on the same scale as every other entry in
  * {@link WORLD_SPEED_OVERRIDES}, where `1` is the pace the rest of the Jail
- * is pinned to. `0.5` therefore means "half the speed of everybody else
- * standing in the Jail", and the ratio is what the real-GPU gate
+ * is pinned to. `0.4` therefore means "two fifths the speed of everybody
+ * else standing in the Jail", and the ratio is what the real-GPU gate
  * (qa/jail/tools/check-jail-speed.js) measures.
  *
  * To try a different pace, change THIS NUMBER AND NOTHING ELSE - e.g. `0.25`
@@ -75,7 +75,7 @@ export const MOVEMENT_SPEED_STORAGE_KEY = "movementSpeedMultiplier";
  * A jailed guard is served the inmate world too (a sentence outranks an
  * office - see JailService), so staff authority cannot buy a faster escape.
  */
-export const JAIL_INMATE_WALK_SPEED = 0.5;
+export const JAIL_INMATE_WALK_SPEED = 0.4;
 
 /**
  * The world file the server hands a citizen who is serving a sentence, by

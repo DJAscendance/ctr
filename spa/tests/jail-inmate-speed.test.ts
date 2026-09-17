@@ -86,8 +86,8 @@ test("the reduced pace is a real reduction against the rest of the Jail", () => 
   assert.strictEqual(factor(INMATE_WORLD) / factor(VISITOR_WORLD), JAIL_INMATE_WALK_SPEED);
 });
 
-test("the owner's test value is 0.5, and it lives in exactly one place", () => {
-  assert.strictEqual(JAIL_INMATE_WALK_SPEED, 0.5);
+test("the owner's test value is 0.4, and it lives in exactly one place", () => {
+  assert.strictEqual(JAIL_INMATE_WALK_SPEED, 0.4);
   assert.strictEqual(WORLD_SPEED_OVERRIDES["jailinmate.wrl"], JAIL_INMATE_WALK_SPEED);
   /* Changing the constant alone has to move the pace - nothing may hold a
    * second copy of the number. This is what makes 0.25 a one-line test. */
@@ -241,7 +241,7 @@ test("the worlds JailService serves visitors and staff keep the normal pace", ()
 });
 
 test("a sentence still outranks an office on the server side", () => {
-  /* The jailed-guard rule is what makes "jailed staff also get 0.5" true:
+  /* The jailed-guard rule is what makes "jailed staff also get 0.4" true:
    * applyWorldForMember must test `inmate` BEFORE `staff`. Order matters, so
    * it is asserted rather than assumed. */
   const body = jailServiceSource.slice(jailServiceSource.indexOf("applyWorldForMember"));

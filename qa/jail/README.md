@@ -77,21 +77,21 @@ The walk is measured in **two halves**. A world with walls can stop the avatar m
 a single start/end pair cannot tell "walked slowly" from "walked normally into a wall". Two
 halves that disagree by more than 30% fail the measurement instead of reporting a ratio.
 
-Real-GPU result at `JAIL_INMATE_WALK_SPEED = 0.5`:
+Real-GPU result at `JAIL_INMATE_WALK_SPEED = 0.4`:
 
 | world | dial | units/s | ratio |
 |---|---|---|---|
-| `jailvisit.wrl` (visitor) | 2.5 | 1.255 | 1.000 |
-| `jailstaff.wrl` (staff) | 2.5 | 1.257 | 1.002 |
-| `jailinmate.wrl` (inmate) | 2.5 | 0.628 | **0.500** |
-| `jailinmate.wrl` (inmate) | 6 | 0.628 | 0.500 |
+| `jailvisit.wrl` (visitor) | 2.5 | 1.256 | 1.000 |
+| `jailstaff.wrl` (staff) | 2.5 | 1.258 | 1.002 |
+| `jailinmate.wrl` (inmate) | 2.5 | 0.503 | **0.400** |
+| `jailinmate.wrl` (inmate) | 6 | 0.503 | 0.400 |
 
 The last row is the point: an inmate who drags the Walk Speed dial to its maximum walks at
 exactly the same pace as one who leaves it alone, because a world override short-circuits
 the dial rather than multiplying it.
 
 **To try a different pace**, change `JAIL_INMATE_WALK_SPEED` in
-`spa/src/helpers/movement-speed.helper.ts` — e.g. `0.5` → `0.25` — and re-run. Nothing else
+`spa/src/helpers/movement-speed.helper.ts` — e.g. `0.4` → `0.25` — and re-run. Nothing else
 carries the number; the gate reads it from that file and asserts the measurement against it.
 
 `CTR_JAIL_QA_HALF_MS` (default 1500) is the held-mouse interval per half. Raising it far
