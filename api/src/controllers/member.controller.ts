@@ -12,7 +12,13 @@ import {
   sendPasswordResetUnknownEmail,
   verifyBotChallenge,
 } from '../libs';
-import { MemberService, HomeService, PlaceService, MemberDataService } from '../services';
+import {
+  MemberService,
+  HomeService,
+  PlaceService,
+  MemberDataService,
+  JailService,
+} from '../services';
 import { SessionInfo } from 'session-info.interface';
 import {parseInt} from 'lodash';
 
@@ -38,7 +44,8 @@ class MemberController {
     private memberService: MemberService, 
     private homeService: HomeService,
     private placeService: PlaceService,
-    private memberDataService: MemberDataService) {}
+    private memberDataService: MemberDataService,
+    private jailService: JailService) {}
 
   public async getAdminLevel(request: Request, response: Response): Promise<object> {
     const session = this.memberService.decryptSession(request, response);
@@ -255,6 +262,30 @@ class MemberController {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     response.status(200).json({ active: true });
+  }
+
+  /**
+   * This caller's standing with the Jail, as the server sees it.
+   *
+   * The socket server has no database, so this is how it learns whether the citizen holding
+   * a given token is an inmate, staff, or neither -- the same shape of question it already
+   * asks about session standing and chat access.
+   *
+   * Authenticated, and answered only about the CALLER. There is no member id parameter and
+   * there is deliberately no way to ask about somebody else: a visitor who could enumerate
+   * standings would learn who is jailed, which is the roster this lane exists to protect.
+   * Every field is computed from database state; nothing in the request influences it.
+   */
+  public async jailStanding(request: Request, response: Response): Promise<void> {
+    const session = this.memberService.decryptSession(request, response);
+    if (!session) return;
+    try {
+      const standing = await this.jailService.getStanding(session.id);
+      response.status(200).json(standing);
+    } catch (error) {
+      console.error(error);
+      response.status(400).json({ error: 'Could not read jail standing.' });
+    }
   }
 
   /** Controller method for creating a new user session. */
@@ -840,6 +871,7 @@ const memberService = Container.get(MemberService);
 const homeService = Container.get(HomeService);
 const placeService = Container.get(PlaceService);
 const memberDataService = Container.get(MemberDataService);
+const jailService = Container.get(JailService);
 export const memberController = new MemberController(
-  memberService, homeService, placeService, memberDataService,
+  memberService, homeService, placeService, memberDataService, jailService,
 );

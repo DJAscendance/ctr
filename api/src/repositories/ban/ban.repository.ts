@@ -100,6 +100,57 @@ export class BanRepository {
     return !!row;
   }
 
+  /**
+   * Whether the member is confined to the Jail right now.
+   *
+   * The mirror of `hasActiveFullBan`, and kept apart from it for the same reason: the two
+   * sentences are different and must never be read off one another. `full` refuses entry to
+   * the city; `jail` leaves the citizen logged in, connected, and confined. Everything that
+   * decides what a jailed citizen may see, say, or walk into asks THIS, never
+   * `getBanMaxDate`, which returns whichever ban ends last and would let a stale full ban
+   * masquerade as a jail sentence.
+   *
+   * `status = 1` is a live row -- `deleteBan` sets it to 0, which is how a release is
+   * recorded -- and `end_date > now` is how a sentence expires on its own. A citizen whose
+   * time is up is therefore not an inmate on the very next read, with nothing to run.
+   *
+   * @param memberId member whose current standing is being read
+   * @returns true when at least one un-withdrawn, unexpired jail sentence applies
+   */
+  public async hasActiveJailBan(memberId: number): Promise<boolean> {
+    const row = await this.db.knex
+      .select('id')
+      .from('ban')
+      .where('ban_member_id', memberId)
+      .where('status', 1)
+      .where('type', 'jail')
+      .where('end_date', '>', new Date())
+      .limit(1)
+      .first();
+    return !!row;
+  }
+
+  /**
+   * Every member who has ever been under a jail sentence, live or spent.
+   *
+   * Used only by the Jail's chat-history read path, and deliberately wider than
+   * `hasActiveJailBan`. Stored messages carry no record of the author's standing at the
+   * moment they were written, so "was this line spoken by an inmate" cannot be answered
+   * from the `message` row alone. Rather than add a column for rows that already exist,
+   * the read path withholds Jail history written by anyone who has ever been jailed there.
+   * That errs towards hiding, never towards leaking, and it only reaches rows written
+   * before inmate speech stopped being persisted at all.
+   *
+   * @returns the distinct member ids carrying any jail ban row, withdrawn or expired
+   */
+  public async findEverJailedMemberIds(): Promise<number[]> {
+    const rows = await this.db.knex
+      .distinct('ban_member_id')
+      .from('ban')
+      .where('type', 'jail');
+    return rows.map((row: { ban_member_id: number }) => row.ban_member_id);
+  }
+
   public async getBannedTotal(): Promise<any> {
     return this.db.knex
       .countDistinct('ban_member_id as count')

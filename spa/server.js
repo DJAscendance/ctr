@@ -79,6 +79,91 @@ async function getChatAccessStatus(room) {
 }
 
 /*
+ * THE JAIL.
+ *
+ * Two rules live here, and both of them have to be server-side or they are not rules:
+ *
+ *  1. An inmate may not leave the Jail. The client already redirects a jailed citizen to
+ *     /place/jail, but that is a courtesy, not a wall -- a JOIN is a socket message and a
+ *     socket message can be sent by anything. The JOIN handler refuses the room instead.
+ *     That is also the answer for beaming: every beam, Jump Gate, world link and direct
+ *     route ends in the same JOIN, so there is one place to enforce and nothing to miss.
+ *
+ *  2. An inmate's chat does not reach ordinary visitors. Chat is normally a single
+ *     `io.to(room).emit`, which is exactly the "general broadcast before filtering" that
+ *     cannot be made private afterwards. For inmate speech the recipients are chosen first
+ *     and the message is sent only to them.
+ *
+ * Standing is never taken from the client. It is read from the API against the caller's
+ * own token, the same way session revocation and chat access already are, and cached for a
+ * few seconds so a busy room does not re-ask on every keystroke. A socket cannot claim to
+ * be staff: it can only present the token it authenticated with, and the API answers about
+ * that member and no other.
+ */
+/** How long a citizen's Jail standing is cached before the API is asked again. */
+const JAIL_STANDING_CACHE_MS = Number(process.env.JAIL_STANDING_CACHE_MS) || 15000;
+/** How long the Jail's place id is cached. */
+const JAIL_PLACE_CACHE_MS = 60000;
+const JAIL_STANDING = new Map();
+let JAIL_PLACE = null;
+
+/**
+ * The place id the Jail is served under, or null when it cannot be read.
+ *
+ * Null means "the Jail could not be identified", and every caller treats that as "this
+ * room is not the Jail". That fails towards ordinary public behaviour rather than towards
+ * locking the city down when the API is briefly unreachable, which is the same trade
+ * getChatAccessStatus makes and for the same reason.
+ */
+async function getJailPlaceId() {
+  if (JAIL_PLACE && Date.now() - JAIL_PLACE.fetchedAt < JAIL_PLACE_CACHE_MS) {
+    return JAIL_PLACE.id;
+  }
+  let id = null;
+  try {
+    const response = await axios.get(`${API_URL}/place/jail`);
+    id = response.data && response.data.place ? response.data.place.id : null;
+  } catch (err) {
+    console.error("Failed to fetch the Jail place:", err.message);
+    return JAIL_PLACE ? JAIL_PLACE.id : null;
+  }
+  JAIL_PLACE = { id, fetchedAt: Date.now() };
+  return id;
+}
+
+/**
+ * This token holder's Jail standing, as the API reports it.
+ *
+ * Fails CLOSED for staff and OPEN for inmate status: an error yields
+ * `{ inmate: false, staff: false }`, which is an ordinary visitor. That asymmetry is
+ * chosen. Guessing "staff" during an outage would hand inmate chat to whoever happened to
+ * be in the room; guessing "inmate" would jail the whole city. A visitor is the only
+ * answer that is wrong in a way nobody can exploit.
+ */
+async function getJailStanding(token) {
+  if (!token) return { inmate: false, staff: false };
+  const cached = JAIL_STANDING.get(token);
+  if (cached && Date.now() - cached.fetchedAt < JAIL_STANDING_CACHE_MS) {
+    return cached.standing;
+  }
+  let standing = { inmate: false, staff: false };
+  try {
+    const response = await axios.get(`${API_URL}/member/jail/standing`, {
+      headers: { apitoken: token },
+    });
+    standing = {
+      inmate: !!(response.data && response.data.inmate),
+      staff: !!(response.data && response.data.staff),
+    };
+  } catch (err) {
+    console.error("Failed to read jail standing:", err.message);
+    return cached ? cached.standing : standing;
+  }
+  JAIL_STANDING.set(token, { standing, fetchedAt: Date.now() });
+  return standing;
+}
+
+/*
  * The Outlands gameplay avatar, checked against the database before anybody is
  * told about it.
  *
@@ -338,6 +423,61 @@ app.get("*", (req, res) => {
   res.type("html").send(indexHtml);
 });
 
+/**
+ * Delivers one chat message when the speaker is an inmate in the Jail.
+ *
+ * Returns true when it has taken responsibility for the message, false when the ordinary
+ * room broadcast should happen instead. The caller must respect that: sending anyway is
+ * the leak.
+ *
+ * Who receives it:
+ *
+ *  * the SPEAKER, always, so their own line appears in their own chat exactly as it does
+ *    everywhere else in the city. Chat is unusable otherwise.
+ *  * JAIL AND SECURITY STAFF, which is the requirement -- supervising the Jail means
+ *    hearing it. Their own replies are ordinary public chat and reach the inmate through
+ *    the normal broadcast, so a conversation still works in both directions without a
+ *    second messaging system.
+ *  * OTHER INMATES. The historical record does not settle whether one prisoner could hear
+ *    another -- the visitor and prisoner worlds ship identical geometry and differ only in
+ *    where the viewer is held, which proves one shared Jail and settles nothing about the
+ *    chat server behind it. Rather than invent a policy, this preserves what CTR does
+ *    today: a citizen in the room hears the room. Nothing about that choice weakens the
+ *    rule that actually matters, which is the visitor.
+ *
+ * Everyone else in the room -- ordinary visitors -- receives nothing. Not a redacted
+ * message, not a placeholder: no event.
+ */
+async function deliverJailChat(senderSocket, user, payload) {
+  const jailPlaceId = await getJailPlaceId();
+  if (jailPlaceId === null || `${user.room}` !== `${jailPlaceId}`) return false;
+
+  const senderStanding = await getJailStanding(user.token);
+  if (!senderStanding.inmate) return false;
+
+  const clientsInRoom = io.sockets.adapter.rooms.get(user.room);
+  if (!clientsInRoom) {
+    senderSocket.emit("CHAT", payload);
+    return true;
+  }
+
+  for (const clientId of clientsInRoom) {
+    const clientSocket = io.sockets.sockets.get(clientId);
+    if (!clientSocket) continue;
+    if (clientId === senderSocket.id) {
+      clientSocket.emit("CHAT", payload);
+      continue;
+    }
+    const recipient = USERS.get(clientSocket);
+    if (!recipient || !recipient.token) continue;
+    const standing = await getJailStanding(recipient.token);
+    if (standing.staff || standing.inmate) {
+      clientSocket.emit("CHAT", payload);
+    }
+  }
+  return true;
+}
+
 io.on("connection", async function(socket) {
   console.log("a user connected");
   webhookMessage("System", `${socket.id} connected.`);
@@ -373,6 +513,19 @@ io.on("connection", async function(socket) {
       console.error("revoked session attempted to JOIN");
       socket.emit("JOIN:error", { room, joinId, reason: "session_revoked" });
       return;
+    }
+    // The wall around the Jail. Asked before any presence is recorded, so a jailed citizen
+    // who beams, follows a world link, edits the URL or hand-crafts a JOIN never enters the
+    // room and is never announced in it. There is no allowance for "the client said it was
+    // fine": the room id is compared against the Jail's own place id, read from the API.
+    const jailPlaceId = await getJailPlaceId();
+    if (jailPlaceId !== null && `${room}` !== `${jailPlaceId}`) {
+      const standing = await getJailStanding(data.token);
+      if (standing.inmate) {
+        console.error(`jailed member ${tokenData.id} attempted to JOIN room ${room}`);
+        socket.emit("JOIN:error", { room, joinId, reason: "jailed" });
+        return;
+      }
     }
     const presenceId = data.presenceId;
     const MAX_ID_LENGTH = 128;
@@ -646,14 +799,21 @@ io.on("connection", async function(socket) {
           return;
         }
 
-        io.to(user.room).emit("CHAT", {
+        const payload = {
           username: user.username,
           id: chatData.msg_id,
           msg: chatData.msg,
           role: chatData.role,
           new: true,
           exp: chatData.exp,
-        });
+        };
+
+        // Inmate speech never touches the room broadcast. deliverJailChat picks its
+        // recipients first and emits to each of them; if it handled the message there is
+        // no second send, and an ordinary visitor's socket is never written to at all.
+        if (await deliverJailChat(socket, user, payload)) return;
+
+        io.to(user.room).emit("CHAT", payload);
       }
     }
   });

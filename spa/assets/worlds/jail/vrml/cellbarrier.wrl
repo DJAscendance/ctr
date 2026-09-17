@@ -1,0 +1,32 @@
+#VRML V2.0 utf8
+# CTR: the force field, made solid.
+#
+# The original Jail enforced its cell boundary in `DEF CheckMe Script` -- a vrmlscript that
+# read `Browser.viewpointPosition` every frame and wrote `Browser.boundViewpoint.position`
+# back when you crossed the line. Those are Blaxxun browser extensions. X_ITE 16.2.0 has
+# neither, so the rule the authors wrote has not been enforced for anyone since the port,
+# which is why visitors can stand in the cells today.
+#
+# This restores the same rule with something every VRML97 browser implements: collision.
+# The box matches the force field polygon in jail.wrl -- `DEF forcefield`, a plane at
+# z = 1.25 spanning x -3.25..3.25 and y 0..4 once its -90 degree X rotation is applied --
+# so the thing that looks impassable finally is. It is a Collision PROXY and not a child,
+# because a proxy is used for collision and never drawn: nothing about the Jail looks any
+# different, and no historical geometry is touched. (A transparent Shape would not work --
+# X_ITE culls fully transparent geometry before collision, so it would block nothing.)
+#
+# The same barrier serves both directions. In the visitor world it keeps visitors out of
+# the cells; in the prisoner world it keeps inmates in. Only the staff world omits it, and
+# only the server decides who is served that file -- see JailService.applyWorldForMember.
+Collision {
+  collide TRUE
+  proxy Transform {
+    translation 0 2 1.25
+    children Shape {
+      geometry Box {
+        size 6.5 4 0.3
+      }
+    }
+  }
+  children []
+}

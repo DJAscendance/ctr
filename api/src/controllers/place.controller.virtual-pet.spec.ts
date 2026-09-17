@@ -8,7 +8,7 @@ jest.mock('../db/db.class', () =>
   require('@spec/mocks/db-module.mock').mockDbModule());
 
 import { PlaceController } from './place.controller';
-import { HomeService, MemberService, PlaceService } from '../services';
+import { HomeService, JailService, MemberService, PlaceService } from '../services';
 
 type MockResponse = jest.Mocked<Response>;
 
@@ -51,13 +51,15 @@ describe('PlaceController.updateVirtualPet', () => {
   let placeService: jest.Mocked<PlaceService>;
   let memberService: jest.Mocked<MemberService>;
   let homeService: jest.Mocked<HomeService>;
+  let jailService: jest.Mocked<JailService>;
   let controller: PlaceController;
 
   beforeEach(() => {
     placeService = createSpyObj(PlaceService);
     memberService = createSpyObj(MemberService);
     homeService = createSpyObj(HomeService);
-    controller = new PlaceController(placeService, memberService, homeService);
+    jailService = createSpyObj(JailService);
+    controller = new PlaceController(placeService, memberService, homeService, jailService);
 
     memberService.decryptSession.mockReturnValue({ id: 7 } as never);
     // The default actor is the home's owner and holds no staff capability.

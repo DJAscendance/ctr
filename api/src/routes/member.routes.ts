@@ -38,6 +38,11 @@ memberRoutes.get('/session', (request, response) => memberController.session(req
 memberRoutes.get('/session/status', (request, response) =>
   memberController.sessionStatus(request, response),
 );
+// The Jail's authority, answered only about the caller. The socket server asks this to
+// decide who may hear an inmate and where a jailed citizen may go.
+memberRoutes.get('/jail/standing', (request, response) =>
+  memberController.jailStanding(request, response),
+);
 memberRoutes.post('/update_password', (request, response) =>
   memberController.updatePassword(request, response),
 );

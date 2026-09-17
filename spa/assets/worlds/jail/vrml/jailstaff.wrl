@@ -1,0 +1,42 @@
+#VRML V2.0 utf8
+# CTR: the Jail as Security and the Jail guards see it.
+#
+# THIS IS THE STAFF CELL-ENTRY MECHANISM, and it is deliberately the most boring one
+# available: the same Jail, without the barrier. A guard walks in through the force field
+# and walks back out the same way. There is no key, no command, no hidden control and no
+# keyboard sequence -- so there is nothing for a visitor to discover, and nothing for an
+# inmate to press.
+#
+# The old method was to stand by a force field and hit ESC, which was a viewer bug rather
+# than a permission, and it is not reproduced here. Authority is not in this file at all:
+# it is in JailService.applyWorldForMember, which serves this world only to a member
+# holding a Security or Jail office, and serves the inmate world to a guard who is serving
+# a sentence, so an office can never be used to leave a cell.
+#
+# Entry and exit use one mechanism, so staff can always get out of anywhere they got into.
+# The visiting gallery's own navigation settings, copied from jail.wrl. Stated here rather
+# than left to the Inline: a NavigationInfo inside an Inline is not bound by the browser, so
+# relying on the one that arrives with the geometry would silently hand the viewer X_ITE's
+# defaults -- a different walk speed and a different avatar size from the world CyberTown
+# shipped.
+NavigationInfo {
+  avatarSize [0.25 1.75 0.75]
+  visibilityLimit 0.0
+  speed 3.0
+  headlight FALSE
+  type ["WALK"]
+}
+
+# The historical visitor spawn, from jail.wrl's own Viewpoint. Stated here for the same
+# reason as the NavigationInfo above, and it matters more: an Inline's Viewpoint is NOT
+# bound by the browser, so without this the viewer would start at X_ITE's default camera
+# instead of in the visiting gallery.
+Viewpoint {
+  position 0 1.75 19.51
+  orientation 1 0 0 0
+  description "Visiting Area"
+}
+
+Inline {
+  url "/assets/worlds/jail/vrml/jail.wrl"
+}

@@ -69,13 +69,26 @@ export class MessageRepository {
       .limit(5);
   }
 
+  /**
+   * The stored chat for one place.
+   *
+   * `excludeMemberIds` is how the Jail withholds inmate speech from an ordinary visitor.
+   * It is applied IN THE QUERY rather than to the rows it returns, which is the whole
+   * point: a filter applied after the fact still fetches the bodies, and anything that
+   * fetches them can leak them through a later refactor, a log line or an error path. The
+   * rows never leave the database.
+   *
+   * It also runs BEFORE the limit, so withholding a message does not silently shorten the
+   * answer -- the visitor gets their full page of history, made only of lines they may see.
+   */
   public async getResults(
     placeId: number,
     orderField: string,
     orderDirection: string,
     limit:number,
+    excludeMemberIds: number[] = [],
   ): Promise<any> {
-    return knex
+    const query = knex
       .select(
         'message.id',
         'message.body as msg',
@@ -84,7 +97,13 @@ export class MessageRepository {
       .from<Message, Message[]>('message')
       .where('message.place_id', placeId)
       .where('message.status', '1')
-      .innerJoin('member', 'message.member_id', 'member.id')
+      .innerJoin('member', 'message.member_id', 'member.id');
+
+    if (excludeMemberIds.length > 0) {
+      query.whereNotIn('message.member_id', excludeMemberIds);
+    }
+
+    return query
       .orderBy(orderField, orderDirection)
       .limit(limit);
   }

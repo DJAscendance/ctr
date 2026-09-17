@@ -1,0 +1,45 @@
+#VRML V2.0 utf8
+# CTR: the Jail as an inmate sees it.
+#
+# jailpris.wrl is the original prisoner world and is left exactly as CyberTown shipped it,
+# gzip and all. It starts the viewer at 0 1.75 -24.65 -- inside the cell block, behind the
+# force field -- which is the historical inmate spawn and is why nothing here has to place
+# anybody. A citizen is served this file because the server read a live jail ban against
+# their member id, never because a client asked for it.
+#
+# The barrier that keeps visitors out of the cells is the same one that keeps inmates in,
+# so it is the same file. See cellbarrier.wrl.
+# The visiting gallery's own navigation settings, copied from jail.wrl. Stated here rather
+# than left to the Inline: a NavigationInfo inside an Inline is not bound by the browser, so
+# relying on the one that arrives with the geometry would silently hand the viewer X_ITE's
+# defaults -- a different walk speed and a different avatar size from the world CyberTown
+# shipped.
+NavigationInfo {
+  avatarSize [0.25 1.75 0.75]
+  visibilityLimit 0.0
+  speed 3.0
+  headlight FALSE
+  type ["WALK"]
+}
+
+# The historical INMATE spawn, from jailpris.wrl's own Viewpoint: inside the cell block,
+# behind the force field, facing back down the wing. This is how a jailed citizen ends up
+# in the cells, and it is the reason nothing has to place them there afterwards -- no
+# client-supplied flag, no teleport, no "I am an inmate" message. They are served this
+# world because the server read a live jail ban, and this world starts here.
+#
+# Stated in the wrapper on purpose: a Viewpoint that arrives inside an Inline is added to
+# the browser's list but is never bound, so leaving it to jailpris.wrl would start the
+# inmate at the default camera -- outside the cells, which is an escape.
+Viewpoint {
+  position 0 1.75 -24.65
+  orientation 0 1 0 3.142
+  description "Cell Block"
+}
+
+Inline {
+  url "/assets/worlds/jail/vrml/jailpris.wrl"
+}
+Inline {
+  url "/assets/worlds/jail/vrml/cellbarrier.wrl"
+}

@@ -11,6 +11,8 @@ const SUITES = [
   "tests/.compiled/tests/reconnect-coordinator.test.js",
   "tests/.compiled/tests/server-presence.test.js",
   "tests/.compiled/tests/session-revocation.test.js",
+  "tests/.compiled/tests/jail-chat-privacy.test.js",
+  "tests/.compiled/tests/jail-client-rules.test.js",
   "tests/.compiled/tests/session-token-contract.test.js",
   "tests/.compiled/tests/remote-members.test.js",
   "tests/.compiled/tests/beta-outlands-presence.test.js",

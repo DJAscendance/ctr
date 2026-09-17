@@ -31,3 +31,4 @@ export * from './inbox/inbox.service';
 export * from './vote/vote.service';
 export * from './live-event/live-event.service';
 export * from './news/news.service';
+export * from './jail/jail.service';

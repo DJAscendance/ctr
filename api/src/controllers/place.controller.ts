@@ -1,5 +1,5 @@
 import {Request, Response} from 'express';
-import { PlaceService, MemberService, HomeService} from '../services';
+import { PlaceService, MemberService, HomeService, JailService } from '../services';
 import { Container } from 'typedi';
 
 import * as badwords from 'badwords-list';
@@ -12,6 +12,7 @@ export class PlaceController {
     private placeService: PlaceService, 
     private memberService: MemberService,
     private homeService: HomeService,
+    private jailService: JailService,
   ) {}
 
   /** Get Admin status for the specific place's slug */
@@ -127,11 +128,29 @@ export class PlaceController {
     response.status(200).json({ securityInfo });
   }
 
-  /** Provides data about the place with the given slug */
+  /**
+   * Provides data about the place with the given slug.
+   *
+   * For the Jail the answer is caller-specific: `JailService.applyWorldForMember` swaps in
+   * the inmate, staff or visitor world according to the caller's ban rows and role
+   * assignments. This is the only place the Jail's world is chosen, and it is chosen on the
+   * server -- a client cannot ask for the cells, and is not told that another world exists.
+   *
+   * The token is decoded WITHOUT `decryptSession`, which answers the request itself when it
+   * fails. This endpoint is public for every other place and must stay that way; an
+   * unreadable token simply leaves the caller unidentified, and unidentified is a visitor.
+   */
   public async getPlace(request: Request, response: Response): Promise<void> {
     const { slug } = request.params;
     try {
-      const place = await this.placeService.findBySlug(slug);
+      const found = await this.placeService.findBySlug(slug);
+      const { apitoken } = request.headers;
+      const session = apitoken
+        ? this.memberService.decodeMemberToken(<string> apitoken)
+        : null;
+      const place = await this.jailService.applyWorldForMember(
+        found, session ? session.id : undefined,
+      );
       response.status(200).json({ place });
     } catch (error) {
       console.error(error);
@@ -143,7 +162,10 @@ export class PlaceController {
     const session = this.memberService.decryptSession(request, response);
     if(!session) return;
     try {
-      const place = await this.placeService.findById(parseInt(request.params.id));
+      const found = await this.placeService.findById(parseInt(request.params.id));
+      // Same Jail rule as getPlace. Both lookups reach the same row, so both have to
+      // answer the same way -- otherwise the id route is a way around the slug route.
+      const place = await this.jailService.applyWorldForMember(found, session.id);
       response.status(200).json({ place });
     } catch (error) {
       console.error(error);
@@ -375,5 +397,6 @@ export class PlaceController {
 const placeService = Container.get(PlaceService);
 const memberService = Container.get(MemberService);
 const homeService = Container.get(HomeService);
+const jailService = Container.get(JailService);
 export const placeController = new PlaceController(
-  placeService, memberService, homeService);
+  placeService, memberService, homeService, jailService);

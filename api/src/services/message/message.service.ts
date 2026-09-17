@@ -39,6 +39,7 @@ export class MessageService {
     orderField: string,
     orderDirection: string,
     limit:number,
+    excludeMemberIds: number[] = [],
   ): Promise<any> {
     const queryLimit = (limit > 0 && limit <= MessageService.MAX_QUERY_LIMIT)
       ? limit
@@ -55,6 +56,7 @@ export class MessageService {
       queryOrder,
       queryOrderDirection,
       queryLimit,
+      excludeMemberIds,
     );
   }
 

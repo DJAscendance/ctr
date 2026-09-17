@@ -1,0 +1,40 @@
+#VRML V2.0 utf8
+# CTR: the Jail as an ordinary visitor sees it.
+#
+# The historical Jail shipped two world files with byte-for-byte identical geometry --
+# jail.wrl and jailpris.wrl -- that differed only in where the viewer stood and which side
+# of the force field they were held on. The geometry is not copied a third time here. This
+# world is jail.wrl plus the barrier, and nothing else, so there is exactly one place to
+# edit if the Jail is ever redecorated.
+#
+# jail.wrl carries its own NavigationInfo and its own Viewpoint at 0 1.75 19.51, in the
+# visiting gallery, which is where a visitor belongs. Both arrive with the Inline.
+# The visiting gallery's own navigation settings, copied from jail.wrl. Stated here rather
+# than left to the Inline: a NavigationInfo inside an Inline is not bound by the browser, so
+# relying on the one that arrives with the geometry would silently hand the viewer X_ITE's
+# defaults -- a different walk speed and a different avatar size from the world CyberTown
+# shipped.
+NavigationInfo {
+  avatarSize [0.25 1.75 0.75]
+  visibilityLimit 0.0
+  speed 3.0
+  headlight FALSE
+  type ["WALK"]
+}
+
+# The historical visitor spawn, from jail.wrl's own Viewpoint. Stated here for the same
+# reason as the NavigationInfo above, and it matters more: an Inline's Viewpoint is NOT
+# bound by the browser, so without this the viewer would start at X_ITE's default camera
+# instead of in the visiting gallery.
+Viewpoint {
+  position 0 1.75 19.51
+  orientation 1 0 0 0
+  description "Visiting Area"
+}
+
+Inline {
+  url "/assets/worlds/jail/vrml/jail.wrl"
+}
+Inline {
+  url "/assets/worlds/jail/vrml/cellbarrier.wrl"
+}

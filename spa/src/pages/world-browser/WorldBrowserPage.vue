@@ -17,6 +17,26 @@
       @contextmenu="recordWalkSpeedPointer"
     ></div>
     <!--
+      The Jail's staff door.
+
+      Shown only when the API says this citizen holds a Security or Jail office and is not
+      themselves serving a sentence, and only in the Jail. It is a plain, labelled button
+      on purpose: the historical way into the cells was to stand by a force field and press
+      ESC, which was a viewer bug rather than a permission, and a hidden key is exactly what
+      must not come back. There is nothing here for a visitor to discover, because for a
+      visitor there is no button.
+
+      The same control carries staff back out, so nobody can get in without a way home.
+    -->
+    <div
+      v-if="jailStaffDoorVisible"
+      class="absolute z-10 m-2 p-1"
+    >
+      <button class="jail-staff-door" type="button" @click="toggleJailCells">
+        {{ insideJailCells ? "Leave Cells" : "Enter Cells" }}
+      </button>
+    </div>
+    <!--
       Opened only from the "Walk Speed" entry this page adds to X_ITE's own
       world context menu. It positions itself `fixed`, in viewport coordinates,
       so this page's root needs no positioning of its own - see the note in
@@ -86,6 +106,15 @@ import {
   blaxxunAvatarURLFor,
 } from "@/libs/outlands";
 import { WorldBrowserData } from "./world-browser-data.interface";
+// The Jail's client-side rules, kept out of this component so they can be proved
+// directly. Authority itself is the API's, not theirs - see the file header.
+import {
+  JAIL_CELL_SPAWN,
+  JAIL_GALLERY_SPAWN,
+  JAIL_SLUG,
+  hasJailStaffAuthority,
+  mayBeamTo,
+} from "@/helpers/jail.helper";
 
 export default defineComponent({
   name: "WorldBrowserPage",
@@ -117,6 +146,16 @@ export default defineComponent({
       showUpdateWarning: false,
       mainComponent: null,
       force2d: false,
+      /*
+       * The Jail's answer about THIS citizen, straight from the API.
+       *
+       * Never derived from the room, the URL, the avatar or anything else the client can
+       * see -- those are all things a visitor controls. `null` means "not asked", which is
+       * every place that is not the Jail, and is treated exactly like "no authority".
+       */
+      jailStanding: null,
+      /** Whether the staff door has put this citizen on the cell side of the force field. */
+      insideJailCells: false,
       /*
        * True when Outlands has been asked for and the citizen is not wearing a
        * side yet: the historical entrance stands in front of the world until
@@ -410,6 +449,10 @@ export default defineComponent({
         }
       }
 
+      // Asked once per place load, and cleared for anywhere that is not the Jail.
+      await this.loadJailStanding();
+      if (this.loadGeneration !== generation) return;
+
       // Room membership (JOIN) and Chat readiness no longer wait on X_ITE -
       // only avatar rendering needs the 3D scene to exist. AV/AV:new/AV:del
       // events for this room can now arrive before X_ITE initializes; they
@@ -598,6 +641,59 @@ export default defineComponent({
         objectId: objectId,
       });
     },
+    /**
+     * Asks the API what the Jail makes of this citizen, and remembers the answer.
+     *
+     * Only in the Jail, so no other place pays for the lookup, and cleared on the way out
+     * so an old answer cannot authorize anything in the next room. A failure clears it too:
+     * "could not tell" and "is staff" must never be the same state.
+     */
+    async loadJailStanding(): Promise<void> {
+      this.insideJailCells = false;
+      if (this.$store.data.place?.slug !== JAIL_SLUG) {
+        this.jailStanding = null;
+        return;
+      }
+      try {
+        const response = await this.$http.get("/member/jail/standing");
+        this.jailStanding = response.data;
+      } catch (err) {
+        this.jailStanding = null;
+      }
+    },
+    /**
+     * The staff door: steps a Jail/Security officer through the force field, and back.
+     *
+     * Implemented as a bound Viewpoint at the historical spawn on each side -- the cell
+     * block at 0 1.75 -24.65 and the visiting gallery at 0 1.75 19.51, both taken from the
+     * worlds CyberTown shipped. The force field is solid to everyone under X_ITE 16, staff
+     * included, so there is no walking through it; this is the deliberate alternative to a
+     * viewer exploit rather than a re-creation of one.
+     *
+     * Re-checks `jailStaffDoorVisible` at the moment of use rather than trusting that the
+     * button was drawn. A control is not an authorization.
+     */
+    toggleJailCells(): void {
+      if (!this.jailStaffDoorVisible) return;
+      if (!this.browser || !this.$store.data.view3d) return;
+      const browser = X3D.getBrowser(this.browser);
+      if (!browser.currentScene) return;
+      const target = this.insideJailCells ? JAIL_GALLERY_SPAWN : JAIL_CELL_SPAWN;
+      const viewpoint = browser.currentScene.createNode("Viewpoint");
+      browser.currentScene.addRootNode(viewpoint);
+      viewpoint.position = new X3D.SFVec3f(...target.position);
+      viewpoint.orientation = new X3D.SFRotation(0, 1, 0, target.angle);
+      viewpoint.set_bind = true;
+      // Same disposal the beam uses: the node exists only to carry the viewer there, and
+      // is removed as soon as something else takes the binding.
+      viewpoint.addFieldCallback({}, "isBound", (value) => {
+        if (!value) {
+          browser.currentScene.removeRootNode(viewpoint);
+          viewpoint.dispose();
+        }
+      });
+      this.insideJailCells = !this.insideJailCells;
+    },
     beamTo(id): void {
       let target;
       let position;
@@ -654,6 +750,30 @@ export default defineComponent({
         // We want x = our -z to be 0 and y = our left = our -x. So, Math.atan(-x, -z)
         // Negating pos_offset gives Math.atan2(pos_offset.x, pos_offset.z)
         viewpoint.orientation = new X3D.SFRotation(0, 1, 0, Math.atan2(pos_offset.x, pos_offset.z));
+        /*
+         * The Jail's cell boundary, applied to the ONE movement in the city that does not
+         * walk.
+         *
+         * A beam binds a Viewpoint straight at the destination, so no wall and no force
+         * field is consulted on the way. In the Jail that made it a way into the cells for
+         * anyone who could see an inmate in the citizen list -- the modern shape of the old
+         * ESC trick, and a hole in exactly the confinement this lane restores. The landing
+         * point is checked instead of the button being taken away, because a control is not
+         * the rule.
+         *
+         * Only a landing inside the cells is refused, so beaming between visitors in the
+         * gallery is untouched. Staff are exempt: supervising the Jail means being able to
+         * reach an inmate, and their exemption is the API's answer, not a client flag.
+         *
+         * A dishonest client cannot use this to lure anyone in: the destination is the
+         * position the target REPORTED, so a fabricated position beams the caller to the
+         * fabricated place, never to the real one.
+         */
+        if (!mayBeamTo(this.$store.data.place?.slug, viewpoint.position.z, this.jailStanding)) {
+          browser.currentScene.removeRootNode(viewpoint);
+          viewpoint.dispose();
+          return;
+        }
         viewpoint.set_bind = true;
         viewpoint.addFieldCallback({}, "isBound", (value) => {
           if(!value) {
@@ -1799,6 +1919,17 @@ export default defineComponent({
       const { assets_dir, world_filename } = this.$store.data.place;
       return `/assets/worlds/${assets_dir}${world_filename}`;
     },
+    /**
+     * Whether the staff door is offered at all.
+     *
+     * Three conditions, and all three are the server's: the Jail answered about this
+     * citizen, it said they hold a Security or Jail office, and it said they are NOT
+     * themselves under sentence. The last one is what stops a jailed guard using their
+     * own office to walk out of their own cell.
+     */
+    jailStaffDoorVisible(): boolean {
+      return hasJailStaffAuthority(this.jailStanding);
+    },
   },
   watch: {
     "$store.data.x3dReady": function (to, from) {
@@ -1876,5 +2007,14 @@ export default defineComponent({
 <style>
   .update-warning a {
     cursor: pointer;
+  }
+
+  .jail-staff-door {
+    background: #1b1b1b;
+    border: 1px solid #6ae26a;
+    color: #6ae26a;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 8px;
   }
 </style>

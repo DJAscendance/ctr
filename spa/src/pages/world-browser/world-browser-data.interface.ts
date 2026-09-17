@@ -30,6 +30,10 @@ export interface WorldBrowserData {
     showUpdateWarning: boolean;
     mainComponent: any;
     force2d: boolean;
+    /** The Jail's server-side answer about this citizen, or null outside the Jail. */
+    jailStanding: { inmate: boolean; staff: boolean; jailPlaceId: number | null } | null;
+    /** Whether the staff door has put this citizen on the cell side of the force field. */
+    insideJailCells: boolean;
     /** Outlands asked for, no side worn yet: the historical entrance is up. */
     outlandsTeamNeeded: boolean;
     pet: any;
