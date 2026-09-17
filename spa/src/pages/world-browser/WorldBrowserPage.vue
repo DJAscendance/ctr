@@ -98,7 +98,7 @@ import { RemoteMemberRegistry } from "@/remote-members";
 import { createSharedEventCodecs } from "@/helpers/shared-event.helper";
 import { sharedEventNodes } from "../../libs/shared-events";
 import { releaseWorldScripts } from "@/libs/world-scripts";
-import { movementSpeedFactor } from "@/helpers/movement-speed.helper";
+import { mayChooseWalkSpeed, movementSpeedFactor } from "@/helpers/movement-speed.helper";
 import {
   isOutlands,
   outlandsTeamOfAvatar,
@@ -1793,12 +1793,23 @@ export default defineComponent({
         if (typeof browser.getContextMenu !== "function") return;
         const contextMenu = browser.getContextMenu();
         if (!contextMenu || typeof contextMenu.setUserMenu !== "function") return;
-        contextMenu.setUserMenu(() => ({
-          "walk-speed": {
-            name: "Walk Speed",
-            callback: () => this.openWalkSpeedPanel(),
-          },
-        }));
+        /*
+         * Built on every open, not once at install time. X_ITE keeps the
+         * browser across a world load, so this menu is installed a single
+         * time per page - if the entries were computed here an inmate would
+         * carry whichever menu the world before the Jail gave them, and a
+         * released citizen would carry the Jail's.
+         */
+        contextMenu.setUserMenu(() => (
+          this.mayChooseWalkSpeed
+            ? {
+              "walk-speed": {
+                name: "Walk Speed",
+                callback: () => this.openWalkSpeedPanel(),
+              },
+            }
+            : {}
+        ));
         this.walkSpeedMenuBrowser = browser;
       } catch (error) {
         console.warn("could not add the walk speed entry to the world menu", error);
@@ -1812,6 +1823,10 @@ export default defineComponent({
      * right-click near the right or bottom edge push it out of view.
      */
     openWalkSpeedPanel(): void {
+      /* The menu entry is already gone for an inmate; this is the same rule
+       * applied at the door, so a menu built before the Jail loaded - or any
+       * other way in added later - cannot put the panel back on screen. */
+      if (!this.mayChooseWalkSpeed) return;
       const world = document.querySelector("#world") as HTMLElement;
       if (!world) return;
       const worldBox = world.getBoundingClientRect();
@@ -1929,6 +1944,19 @@ export default defineComponent({
      */
     jailStaffDoorVisible(): boolean {
       return hasJailStaffAuthority(this.jailStanding);
+    },
+    /**
+     * Whether to offer the Walk Speed entry in the world's right-click menu.
+     *
+     * Hidden from an inmate, whose pace is fixed: a dial that moves and changes
+     * nothing is worse than no dial. Read from `world_filename`, so the answer
+     * is the server's -- only `JailService.applyWorldForMember` ever names the
+     * inmate world, and it names it only for a live sentence. Release is
+     * handled by the same read: the next place fetch answers the visitor world
+     * and the entry comes back.
+     */
+    mayChooseWalkSpeed(): boolean {
+      return mayChooseWalkSpeed(this.$store.data.place.world_filename);
     },
   },
   watch: {

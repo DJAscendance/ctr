@@ -49,10 +49,57 @@ export const MOVEMENT_SPEED_STORAGE_KEY = "movementSpeedMultiplier";
  * at 1x - X_ITE's own untouched default - regardless of the citizen's own
  * preference.
  */
+/**
+ * THE ONE PLACE AN INMATE'S WALKING PACE IS SET.
+ *
+ * A raw X_ITE speed factor on the same scale as every other entry in
+ * {@link WORLD_SPEED_OVERRIDES}, where `1` is the pace the rest of the Jail
+ * is pinned to. `0.5` therefore means "half the speed of everybody else
+ * standing in the Jail", and the ratio is what the real-GPU gate
+ * (qa/jail/tools/check-jail-speed.js) measures.
+ *
+ * To try a different pace, change THIS NUMBER AND NOTHING ELSE - e.g. `0.25`
+ * for a quarter of the normal Jail pace. No other file carries the value.
+ *
+ * WHY A WORLD OVERRIDE AND NOT A FLAG. The Jail serves three physically
+ * different world files and the server alone decides which one a citizen
+ * gets: `JailService.applyWorldForMember` reads their live `jail` ban row
+ * and their role assignments, and answers `vrml/jailinmate.wrl` only for a
+ * citizen actually serving a sentence. So keying the pace off the world file
+ * inherits that authority exactly - a client cannot ask for a world, cannot
+ * be told the other two exist, and its own dial is short-circuited by an
+ * override. Release or expiry is handled by the same route with nothing
+ * extra: the next place fetch answers `vrml/jailvisit.wrl`, which is pinned
+ * at the normal `1`.
+ *
+ * A jailed guard is served the inmate world too (a sentence outranks an
+ * office - see JailService), so staff authority cannot buy a faster escape.
+ */
+export const JAIL_INMATE_WALK_SPEED = 0.5;
+
+/**
+ * The world file the server hands a citizen who is serving a sentence, by
+ * basename. Named once so the pace below and
+ * {@link mayChooseWalkSpeed} cannot drift apart; it must stay equal to
+ * `JailService.WORLD_INMATE`, which is what
+ * tests/jail-inmate-speed.test.ts checks against the API's own source.
+ */
+export const JAIL_INMATE_WORLD = "jailinmate.wrl";
+
 /* Note: these are RAW X_ITE speed factors, deliberately exempt from the
  * cross-world normalisation - see movementSpeedFactor. */
 export const WORLD_SPEED_OVERRIDES: Record<string, number> = {
-  'jail.wrl': 1,
+  "jail.wrl": 1,
+  /*
+   * The three wrappers JailService serves in jail.wrl's place. They Inline
+   * the very same geometry, so the cell that is too small for the dial is
+   * still too small here - without these three the Jail's pin would have
+   * been silently lost the moment the server started answering with a
+   * wrapper name instead of `jail.wrl`.
+   */
+  "jailvisit.wrl": 1,
+  "jailstaff.wrl": 1,
+  [JAIL_INMATE_WORLD]: JAIL_INMATE_WALK_SPEED,
 };
 
 /**
@@ -205,4 +252,30 @@ export function movementSpeedFactor(
     return WORLD_SPEED_OVERRIDES[basename];
   }
   return normalisedSpeedFactor(authoredWorldSpeed, userMultiplier);
+}
+
+/**
+ * Whether the citizen standing in this world may open the Walk Speed control
+ * at all.
+ *
+ * An inmate may not. Their pace is a restriction, so offering them a dial
+ * that silently does nothing is worse than offering nothing: the control
+ * would move, the number would change, and the avatar would keep walking at
+ * {@link JAIL_INMATE_WALK_SPEED}. `WorldBrowserPage` therefore leaves the
+ * "Walk Speed" entry out of the world's right-click menu entirely while the
+ * inmate world is loaded.
+ *
+ * This is presentation, not enforcement - {@link movementSpeedFactor} already
+ * ignores the dial for an overridden world, so a citizen who reaches the
+ * panel some other way still cannot walk any faster. And it inherits the
+ * server's authority for free: the menu is decided from `world_filename`,
+ * which only `JailService.applyWorldForMember` ever sets to the inmate world.
+ *
+ * Staff and visitors in the Jail keep the entry. Their pace is pinned too,
+ * but that pin is the historical one on a cramped world rather than a penalty,
+ * and hiding the control there would be a behaviour change outside this lane.
+ */
+export function mayChooseWalkSpeed(worldFilename: string | undefined | null): boolean {
+  const basename = worldFilename ? worldFilename.split("/").pop() : undefined;
+  return basename !== JAIL_INMATE_WORLD;
 }

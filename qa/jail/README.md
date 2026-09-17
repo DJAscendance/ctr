@@ -57,3 +57,42 @@ Four textures 404 in every Jail world, including the untouched historical ones:
 `Browser.getWorldStartTime`, which are Blaxxun extensions X_ITE does not have. That is
 exactly why the confinement those scripts encoded had to be restored as collision geometry
 instead.
+
+## `check-jail-speed.js` — how fast an inmate actually walks
+
+```shell
+DISPLAY=:0 node qa/jail/tools/check-jail-speed.js [outDir]
+```
+
+Measured, not read. The gate loads each Jail world under the pinned X_ITE 16.2.0 with the
+application's **real** movement patch (`spa/src/libs/x_ite_mods/movement_speed.js`) and the
+application's **real** precedence helper (`spa/src/helpers/movement-speed.helper.ts`,
+transpiled on the fly rather than copied — a gate that carries its own copy of the numbers
+agrees with itself no matter what the app does). It then walks the viewer with real mouse
+input and reads the live camera out of an injected ProximitySensor. Reading
+`NavigationInfo.speed` back would prove nothing: the restriction is applied through
+`Viewpoint.getSpeedFactor()`, which never touches that field.
+
+The walk is measured in **two halves**. A world with walls can stop the avatar mid-run, and
+a single start/end pair cannot tell "walked slowly" from "walked normally into a wall". Two
+halves that disagree by more than 30% fail the measurement instead of reporting a ratio.
+
+Real-GPU result at `JAIL_INMATE_WALK_SPEED = 0.5`:
+
+| world | dial | units/s | ratio |
+|---|---|---|---|
+| `jailvisit.wrl` (visitor) | 2.5 | 1.255 | 1.000 |
+| `jailstaff.wrl` (staff) | 2.5 | 1.257 | 1.002 |
+| `jailinmate.wrl` (inmate) | 2.5 | 0.628 | **0.500** |
+| `jailinmate.wrl` (inmate) | 6 | 0.628 | 0.500 |
+
+The last row is the point: an inmate who drags the Walk Speed dial to its maximum walks at
+exactly the same pace as one who leaves it alone, because a world override short-circuits
+the dial rather than multiplying it.
+
+**To try a different pace**, change `JAIL_INMATE_WALK_SPEED` in
+`spa/src/helpers/movement-speed.helper.ts` — e.g. `0.5` → `0.25` — and re-run. Nothing else
+carries the number; the gate reads it from that file and asserts the measurement against it.
+
+`CTR_JAIL_QA_HALF_MS` (default 1500) is the held-mouse interval per half. Raising it far
+enough walks the avatar into the force field, which the gate reports rather than averages.
