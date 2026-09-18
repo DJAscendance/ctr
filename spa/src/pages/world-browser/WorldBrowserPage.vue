@@ -112,8 +112,8 @@ import {
   JAIL_CELL_SPAWN,
   JAIL_GALLERY_SPAWN,
   JAIL_SLUG,
-  hasJailStaffAuthority,
   mayBeamTo,
+  mayUseJailStaffDoor,
 } from "@/helpers/jail.helper";
 
 export default defineComponent({
@@ -1937,13 +1937,22 @@ export default defineComponent({
     /**
      * Whether the staff door is offered at all.
      *
-     * Three conditions, and all three are the server's: the Jail answered about this
-     * citizen, it said they hold a Security or Jail office, and it said they are NOT
-     * themselves under sentence. The last one is what stops a jailed guard using their
-     * own office to walk out of their own cell.
+     * Authority first, and it is the server's: the Jail answered about this citizen, it
+     * said they hold a Security or Jail office, and it said they are NOT themselves under
+     * sentence. That last part is what stops a jailed guard using their own office to
+     * walk out of their own cell.
+     *
+     * Then where they are standing, which is this page's to know. The door is drawn over
+     * the page rather than inside the world, so authority alone left it on screen above
+     * the 2D Jail's chat table, where it covered the chat and could do nothing. `v-if`
+     * and not `v-show`, so 2D leaves no element and no hit target behind.
      */
     jailStaffDoorVisible(): boolean {
-      return hasJailStaffAuthority(this.jailStanding);
+      return mayUseJailStaffDoor(this.jailStanding, {
+        slug: this.$store.data.place?.slug,
+        view3d: this.$store.data.view3d,
+        force2d: this.force2d,
+      });
     },
     /**
      * Whether to offer the Walk Speed entry in the world's right-click menu.

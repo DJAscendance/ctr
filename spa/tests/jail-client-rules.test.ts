@@ -21,6 +21,7 @@ import {
   hasJailStaffAuthority,
   isJailCellSide,
   mayBeamTo,
+  mayUseJailStaffDoor,
 } from "../src/helpers/jail.helper";
 
 let passed = 0;
@@ -152,6 +153,92 @@ test("a missing standing does not buy a beam into the cells", () => {
 
 test("exactly on the boundary is the gallery side, not the cells", () => {
   assert.strictEqual(mayBeamTo(JAIL_SLUG, JAIL_CELL_BOUNDARY_Z, VISITOR), true);
+});
+
+console.log("\n5. THE STAFF DOOR ON SCREEN");
+
+// The door is drawn over the page, not inside the world, so authority alone is not enough
+// to decide whether to draw it. In the 2D Jail it sat on top of the chat table and could
+// do nothing, because there is no world to step into. Each case below fixes one fact and
+// moves one other, so a failure names which of the four conditions broke.
+
+const IN_3D_JAIL = { slug: JAIL_SLUG, view3d: true, force2d: false };
+
+test("authorised staff in the 3D Jail are offered the door", () => {
+  assert.strictEqual(mayUseJailStaffDoor(STAFF, IN_3D_JAIL), true);
+});
+
+test("the same staff member reading the 2D Jail is not", () => {
+  assert.strictEqual(
+    mayUseJailStaffDoor(STAFF, { slug: JAIL_SLUG, view3d: false, force2d: false }),
+    false,
+  );
+});
+
+test("a forced 2D fallback withdraws the door even with view3d still set", () => {
+  assert.strictEqual(
+    mayUseJailStaffDoor(STAFF, { slug: JAIL_SLUG, view3d: true, force2d: true }),
+    false,
+  );
+});
+
+test("both 2D facts at once still withdraw it", () => {
+  assert.strictEqual(
+    mayUseJailStaffDoor(STAFF, { slug: JAIL_SLUG, view3d: false, force2d: true }),
+    false,
+  );
+});
+
+test("staff standing in another world are not offered a Jail door", () => {
+  assert.strictEqual(
+    mayUseJailStaffDoor(STAFF, { slug: "plaza", view3d: true, force2d: false }),
+    false,
+  );
+  assert.strictEqual(
+    mayUseJailStaffDoor(STAFF, { slug: "mall", view3d: true, force2d: false }),
+    false,
+  );
+  assert.strictEqual(
+    mayUseJailStaffDoor(STAFF, { slug: "outlands", view3d: true, force2d: false }),
+    false,
+  );
+});
+
+test("a place the page has not answered yet is not the Jail", () => {
+  assert.strictEqual(
+    mayUseJailStaffDoor(STAFF, { slug: undefined, view3d: true, force2d: false }),
+    false,
+  );
+  assert.strictEqual(
+    mayUseJailStaffDoor(STAFF, { slug: null, view3d: true, force2d: false }),
+    false,
+  );
+});
+
+test("an ordinary citizen in the 3D Jail is never offered it", () => {
+  assert.strictEqual(mayUseJailStaffDoor(VISITOR, IN_3D_JAIL), false);
+});
+
+test("an inmate in the 3D Jail is never offered it", () => {
+  assert.strictEqual(mayUseJailStaffDoor(INMATE, IN_3D_JAIL), false);
+});
+
+test("a guard serving a sentence is still an inmate here", () => {
+  assert.strictEqual(mayUseJailStaffDoor(JAILED_STAFF, IN_3D_JAIL), false);
+});
+
+test("a missing standing does not open the door", () => {
+  assert.strictEqual(mayUseJailStaffDoor(null, IN_3D_JAIL), false);
+  assert.strictEqual(mayUseJailStaffDoor(undefined, IN_3D_JAIL), false);
+});
+
+test("the door agrees with the authority rule it is built on", () => {
+  // Every standing that fails hasJailStaffAuthority must also fail here, whatever the
+  // place and view say -- the view conditions may only ever remove the door, never add it.
+  for (const standing of [VISITOR, INMATE, JAILED_STAFF, null, undefined]) {
+    assert.strictEqual(hasJailStaffAuthority(standing), false);
+    assert.strictEqual(mayUseJailStaffDoor(standing, IN_3D_JAIL), false);
+  }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

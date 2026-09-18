@@ -89,3 +89,38 @@ export function mayBeamTo(
   if (!isJailCellSide(slug, z)) return true;
   return hasJailStaffAuthority(standing);
 }
+
+/** What the 3D page can tell the visibility rule about where the citizen is standing. */
+export interface JailDoorContext {
+  /** The slug of the place the page currently holds. */
+  slug?: string | null;
+  /** The store's 3D flag -- false while the citizen is reading the 2D room. */
+  view3d: boolean;
+  /** The page's own override, set when a world cannot be served and 2D is forced. */
+  force2d: boolean;
+}
+
+/**
+ * Whether the Jail's staff door should be on screen at all.
+ *
+ * Authority is only the first of four conditions. The other three are about WHERE the
+ * citizen is looking, and they exist because the door is drawn over the page, not inside
+ * the world: with authority alone an officer kept the button while reading the 2D Jail,
+ * where it sits on top of the chat table and does nothing. A control that cannot act must
+ * not be drawn, so the whole element is withheld rather than disabled -- a disabled button
+ * still covers the chat underneath it.
+ *
+ * `force2d` is checked separately from `view3d` because they are separate facts: the store
+ * says which view the citizen chose, and the page says whether the world could actually be
+ * served. Either one being 2D means there is no world to step into.
+ */
+export function mayUseJailStaffDoor(
+  standing: JailStanding | null | undefined,
+  context: JailDoorContext,
+): boolean {
+  if (!hasJailStaffAuthority(standing)) return false;
+  if (context.slug !== JAIL_SLUG) return false;
+  if (context.view3d !== true) return false;
+  if (context.force2d === true) return false;
+  return true;
+}
