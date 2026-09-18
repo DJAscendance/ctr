@@ -116,12 +116,26 @@ export class RoleAssignmentRepository {
     }
   }
 
+  /**
+   * Grants a member a role, optionally inside a caller's transaction.
+   *
+   * `trx` exists so an admin hire and its audit event can commit as one unit: CTBL-0025
+   * makes the event part of what the action owes, so a hire that could not be recorded
+   * must not survive. Callers that pass nothing keep the behaviour they have always had --
+   * the insert commits on its own.
+   * @param placeId the place the role is scoped to, or null for a global role
+   * @param memberId the member being given the role
+   * @param roleId the role
+   * @param trx optional transaction to run the insert inside
+   * @returns promise resolving in the inserted row's id, as knex reports it
+   */
   public async addIdToAssignment(
     placeId: number,
     memberId: number,
     roleId: number,
+    trx?: Knex.Transaction,
   ): Promise<number[]> {
-    return this.db.knex('role_assignment')
+    return queryOn(this.db.knex, trx)('role_assignment')
       .insert(
         {
           role_id: roleId,

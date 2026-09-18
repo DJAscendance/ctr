@@ -128,6 +128,55 @@ export class AdminController {
     });
   }
   
+  /**
+   * Applies a moderator's avatar decision and records it, as one unit.
+   *
+   * The transaction is opened here rather than inside `AvatarService` because the audit
+   * store is an admin concern and `AvatarService` is a domain service with citizen-facing
+   * callers -- the same reason `removeAccount` below orchestrates its own transaction
+   * across several services. `recordChange` runs inside it and throws on failure, so the
+   * status change unwinds with the event it could not record.
+   *
+   * The before-status is read in the same transaction as the update, because afterwards it
+   * is gone and it is the only thing that separates "the id named no avatar" (null) from
+   * "the avatar already had that status" (`rows_updated` zero). Neither is refused: this
+   * route has always accepted a raw id and answered 200, and CTBL-0025 records what
+   * happened rather than changing what the route accepts.
+   *
+   * @param event `admin.avatar.approve` or `admin.avatar.reject`, never merged into one --
+   *   they are different decisions and a reviewer must be able to query them apart
+   * @param avatarId the avatar, as the request named it
+   * @param session the authenticated operator
+   * @param request read only for its origin address
+   */
+  private async moderateAvatar(
+    event: typeof AUDIT_EVENTS.AVATAR_APPROVE | typeof AUDIT_EVENTS.AVATAR_REJECT,
+    avatarId: number,
+    session: { id: number },
+    request: Request,
+  ): Promise<void> {
+    await this.memberService.runInTransaction(async trx => {
+      const result = event === AUDIT_EVENTS.AVATAR_APPROVE
+        ? await this.avatarService.approve(avatarId, trx)
+        : await this.avatarService.reject(avatarId, trx);
+      await this.adminAuditService.recordChange(trx, {
+        event,
+        actorMemberId: session.id,
+        authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
+        targetType: AUDIT_TARGETS.AVATAR,
+        targetId: avatarId,
+        request,
+        metadata: {
+          old_status: result.previousStatus,
+          new_status: event === AUDIT_EVENTS.AVATAR_APPROVE
+            ? AvatarService.STATUS_ACTIVE
+            : AvatarService.STATUS_DELETED,
+          rows_updated: result.rowsUpdated,
+        },
+      });
+    });
+  }
+
   public async addBan(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
@@ -339,26 +388,34 @@ export class AdminController {
     const roleId = parseInt(role_id);
     const canManageSecurityRoles =
       await this.memberService.canManageSecurityRoles(session.id);
+    // Which of the two independent paths granted this, recorded rather than inferred --
+    // the same distinction `fireRole` above makes, for the same reason: baseline section 4
+    // keeps the global role and the security-role manager's scoped right apart, and role
+    // holdings change, so the actor's id alone cannot answer it later.
+    const globalGrant = hasAccess(accessLevel, 'admin');
     const canManageRole =
-      hasAccess(accessLevel, 'admin') ||
+      globalGrant ||
       (canManageSecurityRoles &&
         await this.memberService.canSecurityManageRole(roleId));
+    const authority = globalGrant
+      ? AUDIT_AUTHORITIES.GLOBAL_ROLE
+      : AUDIT_AUTHORITIES.RESOURCE_SCOPED;
     if (canManageRole) {
       try {
-        // No `allowed` audit event here, deliberately. `AdminService.hireRole` does not
-        // await `addIdToAssignment`, so this handler answers 200 before the insert has
-        // resolved and there is no committed write for an audit row to commit WITH.
-        // Auditing it correctly means awaiting that promise, which is a change to the
-        // write contract and its own item -- see `docs/ADMIN_AUDIT_TRAIL.md`. Recording
-        // the success from here anyway would produce the one row this store must never
-        // hold: an `allowed` event for a mutation nobody checked.
+        // Awaited, so the 200 below cannot be sent before the assignment row commits. The
+        // service writes the `allowed` event inside that same transaction.
         await this.adminService.hireRole(
           parseInt(member_id),
           roleId,
+          {actorMemberId: session.id, authority, request},
         );
         response.status(200).json({message: 'Role hired successfully'});
       } catch(e) {
         console.log(e);
+        await this.auditFailed(
+          AUDIT_EVENTS.ROLE_HIRE, session, request, authority,
+          {type: AUDIT_TARGETS.ROLE, id: roleId, memberId: parseInt(member_id)},
+        );
         response.status(500).json({error: 'Internal Server Error'});
       }
     } else {
@@ -596,15 +653,19 @@ export class AdminController {
       response.status(403).json({message: 'Access Denied'});
       return;
     }
+    // Parsed inside the try, where it has always been: a body with no `id` throws on
+    // `.toString()` and this route has always answered that with a 400, not a crash.
+    let avatarId: number = null;
     try {
-      // No `allowed` audit event here, deliberately: the call below is not awaited, so
-      // the 200 is sent before the write resolves. See the note in `hireRole`.
-      this.avatarService.approve(
-        parseInt(request.body.id.toString()),
-      );
+      avatarId = parseInt(request.body.id.toString());
+      await this.moderateAvatar(AUDIT_EVENTS.AVATAR_APPROVE, avatarId, session, request);
       response.status(200).json({'status':'success'});
     } catch (error) {
       console.log(error);
+      await this.auditFailed(
+        AUDIT_EVENTS.AVATAR_APPROVE, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+        {type: AUDIT_TARGETS.AVATAR, id: avatarId},
+      );
       response.status(400).json({error});
     }
   }
@@ -618,15 +679,19 @@ export class AdminController {
       response.status(403).json({message: 'Access Denied'});
       return;
     }
+    // Parsed inside the try, where it has always been: a body with no `id` throws on
+    // `.toString()` and this route has always answered that with a 400, not a crash.
+    let avatarId: number = null;
     try {
-      // No `allowed` audit event here, deliberately: the call below is not awaited, so
-      // the 200 is sent before the write resolves. See the note in `hireRole`.
-      this.avatarService.reject(
-        parseInt(request.body.id.toString()),
-      );
+      avatarId = parseInt(request.body.id.toString());
+      await this.moderateAvatar(AUDIT_EVENTS.AVATAR_REJECT, avatarId, session, request);
       response.status(200).json({'status':'success'});
     } catch (error) {
       console.log(error);
+      await this.auditFailed(
+        AUDIT_EVENTS.AVATAR_REJECT, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+        {type: AUDIT_TARGETS.AVATAR, id: avatarId},
+      );
       response.status(400).json({error});
     }
   }
@@ -756,13 +821,34 @@ export class AdminController {
       return;
     }
 
+    const placeId = Number(placeinfo.id);
     try {
-      // No `allowed` audit event here, deliberately: the call below is not awaited, so
-      // the 200 is sent before the write resolves. See the note in `hireRole`.
-      this.placeService.updatePlaces(placeinfo);
+      // Awaited inside a transaction the audit event joins, so the 200 below cannot be
+      // sent before the row commits, and the row cannot commit without its event.
+      // `rows_updated` is recorded rather than assumed: this route accepts a raw id, and
+      // an id that names no place changes nothing. The validation above is unchanged.
+      await this.memberService.runInTransaction(async trx => {
+        const rowsUpdated = await this.placeService.updatePlaces(placeinfo, trx);
+        await this.adminAuditService.recordChange(trx, {
+          event: AUDIT_EVENTS.PLACE_UPDATE,
+          actorMemberId: session.id,
+          authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
+          targetType: AUDIT_TARGETS.PLACE,
+          targetId: placeId,
+          request,
+          metadata: {
+            rows_updated: Number(rowsUpdated),
+            place_type: typeof placeinfo.type === 'string' ? placeinfo.type : null,
+          },
+        });
+      });
       response.status(200).json({status: 'success'});
     } catch (error) {
       console.log(error);
+      await this.auditFailed(
+        AUDIT_EVENTS.PLACE_UPDATE, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+        {type: AUDIT_TARGETS.PLACE, id: placeId},
+      );
       response.status(400).json({error: 'An error occurred while updating the place'});
       return;
     }
@@ -802,10 +888,11 @@ export class AdminController {
       try {
         if(id && name && directory && filename && image && 
           price >= 0 && limit >= 0 && quantity >= 0 && status >= 0){
-          // No `allowed` audit event here, deliberately: the call below is not awaited,
-          // so the 200 is sent before the write resolves. See the note in `hireRole`.
-          // The CTBL-0032 directory and filename check above is untouched.
-          this.adminService.updateObjects(
+          // Awaited, so the 200 below cannot be sent before the row commits. The service
+          // writes the `allowed` event inside the same transaction as the update. The
+          // CTBL-0032 directory and filename check above is untouched and still runs
+          // first, before any path resolution or database write.
+          await this.adminService.updateObjects(
             id,
             name,
             directory,
@@ -815,6 +902,11 @@ export class AdminController {
             limit,
             quantity,
             status,
+            {
+              actorMemberId: session.id,
+              authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
+              request,
+            },
           );
         } else {
           throw new Error ('Some details are blank. Please complete the form');
@@ -822,6 +914,10 @@ export class AdminController {
         response.status(200).json({status: 'success'});
       } catch (error) {
         console.log(error);
+        await this.auditFailed(
+          AUDIT_EVENTS.OBJECT_UPDATE, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+          {type: AUDIT_TARGETS.OBJECT, id},
+        );
         response.status(400).json({error});
       }
     } else {

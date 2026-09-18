@@ -92,9 +92,12 @@ back. Neither may change the response the handler already decided on — an audi
 must not turn a 403 into a 500, and must certainly not turn a refusal into an allowance.
 A `denied` or `failed` row therefore carries no atomicity promise, by design.
 
-Proved by `api/src/controllers/admin.controller.audit.integration.spec.ts` against a real
-MySQL, both directions: a forced audit failure leaves no ban and no account removal, and a
-forced business failure leaves no `allowed` row.
+Proved against a real MySQL, both directions, by
+`api/src/controllers/admin.controller.audit.integration.spec.ts` for the ban and
+account-removal paths and
+`api/src/controllers/admin.controller.audit.phase-b.integration.spec.ts` for the other
+five: a forced audit failure leaves no mutation behind, and a forced business failure
+leaves no `allowed` row.
 
 ---
 
@@ -111,11 +114,14 @@ written under it.
 | `admin.ban.remove` | ban delete | **yes, atomic** | yes |
 | `admin.role.fire` | role fire | **yes, atomic** | yes |
 | `admin.account.remove` | account removal | **yes, atomic** | yes |
-| `admin.role.hire` | role hire | no — see section 6 | yes |
-| `admin.avatar.approve` | avatar approve | no — see section 6 | yes |
-| `admin.avatar.reject` | avatar reject | no — see section 6 | yes |
-| `admin.place.update` | place update | no — see section 6 | yes |
-| `admin.object.update` | object update | no — see section 6 | yes |
+| `admin.role.hire` | role hire | **yes, atomic** | yes |
+| `admin.avatar.approve` | avatar approve | **yes, atomic** | yes |
+| `admin.avatar.reject` | avatar reject | **yes, atomic** | yes |
+| `admin.place.update` | place update | **yes, atomic** | yes |
+| `admin.object.update` | object update | **yes, atomic** | yes |
+
+All nine mutation actions record both directions. The last five arrived later than the
+first four, and section 6 says what had to change first.
 
 `admin.donor.change` deliberately does not exist. Baseline section 11 lists donor change
 as owing an event "if ever enabled", and it is not: `AdminController.addDonor` compares a
@@ -134,23 +140,69 @@ repository's and the service's method surface.
 
 ---
 
-## 6. What is deliberately not covered, and why
+## 6. The five writes that had to be repaired first
 
-Five of the nine actions record refusals but **not** successes. The reason is the same in
-every case and it is not an audit problem:
+Four actions were audited before the other five, and the gap was never an audit problem.
+Five handlers answered 200 before their own write had resolved:
 
-- `AdminService.hireRole` does not await `addIdToAssignment`;
-- `AdminController.avatarApprove` and `avatarReject` do not await `AvatarService`;
-- `AdminController.placesUpdate` does not await `PlaceService.updatePlaces`;
-- `AdminController.objectssUpdate` does not await `AdminService.updateObjects`.
+- `AdminService.hireRole` did not await `addIdToAssignment`;
+- `AdminController.avatarApprove` and `avatarReject` did not await `AvatarService`;
+- `AdminController.placesUpdate` did not await `PlaceService.updatePlaces`;
+- `AdminController.objectssUpdate` did not await `AdminService.updateObjects`.
 
-Each answers 200 before its write has resolved, so there is no committed mutation for an
-audit row to commit *with*. Recording success anyway would produce the one row this store
-must never hold: an `allowed` event for a change nobody checked. Awaiting those promises
-is a change to the write contract — it turns silent write failures into visible 500s — and
-belongs to the floating-promise repair item, not here. **When that lands, adding
-`recordChange` to those five is small: the names already exist and the refusal paths are
-already wired.**
+Two consequences, and the second is worse than the first. There was no committed mutation
+for an audit row to commit *with*, so recording success would have produced the one row
+this store must never hold — an `allowed` event for a change nobody checked. And a write
+that *rejected* could not reach its own handler's catch block: the rejection left the
+process as an unhandled rejection while the operator was told the action had succeeded.
+
+All five now await their write inside a transaction the `allowed` event joins, so the rule
+in section 1 holds for every mutation action: no success answer before the write lands, and
+no committed write without its event. The visible change for a client is that a database
+failure is now a 500 or a 400 instead of a false success.
+
+### Where each transaction is opened
+
+Two shapes, and the split follows what the action touches.
+
+`AdminService.hireRole` and `AdminService.updateObjects` open their own, exactly as
+`addBan`, `deleteBan` and `fireRole` already did: `AdminService` holds `AdminAuditService`
+and these are wholly admin operations.
+
+Avatar approve/reject and place update are opened by the controller, because
+`AvatarService` and `PlaceService` are domain services with citizen-facing callers and the
+audit store is not their concern. `removeAccount` is the precedent — it orchestrates a
+transaction across several services for the same reason. Each service method gained an
+optional `Knex.Transaction`, routed through `queryOn`, so every pre-existing caller that
+passes nothing keeps the behaviour it has always had.
+
+### Zero rows is not a change
+
+An `allowed` row says an authorised operator's write ran and committed. It does not by
+itself say a row moved, because these routes accept raw ids and always have: an id that
+names nothing updates nothing and still answers 200.
+
+Rather than change what those routes accept — a separate contract, and not this lane's —
+each event records what the database actually did. `rows_updated` is the affected-row count
+the update reported, and the avatar events also carry `old_status`, read inside the same
+transaction, which is the only thing that separates "the id named no avatar" (null) from
+"the avatar already had that status" (`rows_updated` zero). `admin.ban.remove` set this
+precedent in the first four: a missing ban reads as nulls rather than throwing.
+
+### What is still missing after this
+
+- **Operator reasons.** Baseline section 11 requires a reason for role changes, and neither
+  role route has one to record: the hire request carries no reason field at all, and
+  `fireRole` discards the one its request does carry. Both events therefore store
+  `reason = NULL`. Collecting and enforcing reasons is its own item; inventing one here
+  would put a sentence in the store that no operator wrote. **CTBL-0025 stays OPEN for it.**
+- **Private-content reads.** `searchUserChat` returns a member's chat lines to an operator
+  and records nothing. Baseline section 11 asks for the access to be logged — the fact and
+  the identifier, never the content. The other admin read surfaces (transaction history,
+  wallet history, user places, owned objects) still need classifying against that rule.
+- **No audit read API and no audit UI.** The recovered contract names a store, not a
+  surface, and an admin-readable surface needs its own gate and its own redaction review
+  before it exists.
 
 Also untouched, and tracked elsewhere:
 
@@ -161,10 +213,6 @@ Also untouched, and tracked elsewhere:
   store records the actions current authorization allows; it does not redefine who may
   perform them;
 - account-removal financial-history and completeness debts.
-
-No audit **read API** and no audit **UI** ship here. The recovered contract names a store,
-not a surface, and an admin-readable surface needs its own gate and its own redaction
-review before it exists.
 
 ---
 
@@ -214,7 +262,12 @@ Small, named, and chosen to answer a question a reviewer will have after the fac
 |---|---|
 | `admin.ban.add` | `ban_type`, `ban_id`, `time_frame_days`, `end_date_utc` |
 | `admin.ban.remove` | `ban_type`, `old_status`, `new_status` |
+| `admin.role.hire` | `role_id`, `place_id`, `assignment_id` |
 | `admin.role.fire` | `role_id`, `place_id`, `assignments_removed` |
+| `admin.avatar.approve` | `old_status`, `new_status`, `rows_updated` |
+| `admin.avatar.reject` | `old_status`, `new_status`, `rows_updated` |
+| `admin.place.update` | `rows_updated`, `place_type` |
+| `admin.object.update` | `rows_updated`, `object_status`, `price`, `directory`, `filename` |
 | `admin.account.remove` | `username`, `owned_places_removed` |
 
 `ban_type` is mandatory on both ban events: `full` and `jail` are two different sentences
@@ -223,3 +276,11 @@ down without inferring it from the `ban` table. `admin.ban.remove` reads the bef
 inside the same transaction as the update, because afterwards the old status is gone.
 `username` is kept on account removal because after the delete the id alone identifies
 nobody.
+
+`admin.role.hire` records `place_id` as null rather than omitting it: this route grants
+global roles only, and the field is kept so the row reads the same way as the
+`admin.role.fire` row next to it. `admin.object.update` keeps `directory` and `filename`
+because they are the CTBL-0032 surface — the asset an object points at is the thing a
+security reviewer will want to see a history of. No place name, description or slug is
+stored: `place_type` and `rows_updated` answer what changed without copying member-visible
+text into the store.

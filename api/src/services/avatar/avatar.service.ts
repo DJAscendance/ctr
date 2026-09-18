@@ -9,6 +9,18 @@ import {
   AvatarRepository,
 } from '../../repositories';
 
+/**
+ * What a moderation decision actually did to an avatar row.
+ *
+ * Returned rather than discarded because CTBL-0025 forbids an `allowed` audit event that
+ * claims a change the database did not make. `previousStatus` is null when the id named no
+ * avatar; `rowsUpdated` is zero when the row was already at the requested status.
+ */
+export interface AvatarModerationResult {
+  previousStatus: number | null;
+  rowsUpdated: number;
+}
+
 /** Service for dealing with avatars */
 @Service()
 export class AvatarService {
@@ -146,10 +158,56 @@ export class AvatarService {
     return response;
   }
 
-  public async approve(id): Promise<any> {
-    await this.avatarRepository.updateStatus(id,AvatarService.STATUS_ACTIVE);
+  /**
+   * Approves a pending avatar.
+   *
+   * Awaited to completion and reported on, because CTBL-0025 makes the moderator's audit
+   * event part of what the decision owes: the caller has to know the write landed before
+   * it may answer success, and has to know what it changed before it may record one.
+   * @param id the avatar
+   * @param trx optional transaction, so the decision and its audit event commit together
+   * @returns promise resolving in what the update actually did
+   */
+  public async approve(id, trx?: Knex.Transaction): Promise<AvatarModerationResult> {
+    return this.setModeratedStatus(id, AvatarService.STATUS_ACTIVE, trx);
   }
-  public async reject(id): Promise<any> {
-    await this.avatarRepository.updateStatus(id,AvatarService.STATUS_DELETED);
+
+  /**
+   * Rejects a pending avatar.
+   *
+   * Kept separate from `approve` rather than folded into one status setter with a flag:
+   * the two are different decisions, they record different audit events, and a shared
+   * entry point is one argument away from becoming the wrong one.
+   * @param id the avatar
+   * @param trx optional transaction, so the decision and its audit event commit together
+   * @returns promise resolving in what the update actually did
+   */
+  public async reject(id, trx?: Knex.Transaction): Promise<AvatarModerationResult> {
+    return this.setModeratedStatus(id, AvatarService.STATUS_DELETED, trx);
+  }
+
+  /**
+   * Reads the status a moderation decision is about to replace, then replaces it.
+   *
+   * Both statements run on the caller's transaction when there is one, so the before-state
+   * the audit row reports is the state the update acted on and not one another request
+   * changed in between. Reading first is the only way to tell "the id named no avatar"
+   * from "the avatar already had that status" -- both change zero rows, and neither is a
+   * change an `allowed` audit event may claim.
+   * @param id the avatar
+   * @param status the status to set
+   * @param trx optional transaction
+   */
+  private async setModeratedStatus(
+    id,
+    status: number,
+    trx?: Knex.Transaction,
+  ): Promise<AvatarModerationResult> {
+    const before = await this.avatarRepository.findById(id, trx);
+    const rowsUpdated = await this.avatarRepository.updateStatus(id, status, trx);
+    return {
+      previousStatus: before ? Number(before.status) : null,
+      rowsUpdated: Number(rowsUpdated),
+    };
   }
 }

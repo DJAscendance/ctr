@@ -184,13 +184,25 @@ export class PlaceRepository {
       : undefined;
   }
 
-  public async updatePlaces(placeinfo: any): Promise<void> {
+  /**
+   * Applies an update to one place, optionally inside a caller's transaction.
+   *
+   * `trx` exists so an admin place edit and its CTBL-0025 audit event commit as one unit.
+   * Callers that pass nothing keep the behaviour they have always had.
+   *
+   * The affected-row count is returned rather than discarded, so the audit row can record
+   * what the database actually changed instead of asserting a change that may not have
+   * happened. Which columns are updatable is unchanged.
+   * @param placeinfo the place id plus the columns to set
+   * @param trx optional transaction to run the update inside
+   * @returns promise resolving in the number of rows the update changed
+   */
+  public async updatePlaces(placeinfo: any, trx?: Knex.Transaction): Promise<number> {
     const { id, created_at, updated_at, ...updateData } = placeinfo;
 
-    await this.db.knex('place')
+    return queryOn(this.db.knex, trx)('place')
       .where('id', id)
       .update(updateData);
-    return;
   }
 
   /**

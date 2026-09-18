@@ -159,12 +159,27 @@ export class ObjectRepository {
     return object;
   }
 
-  public async update(objectId: number, props: object, trx?: Knex.Transaction): Promise<void> {
+  /**
+   * Applies an update to one object row, optionally inside a caller's transaction.
+   *
+   * The affected-row count is returned rather than discarded, so the CTBL-0025 audit row
+   * can record what the database actually changed instead of asserting a change that may
+   * not have happened. Existing callers that ignore it are unaffected.
+   * @param objectId the object
+   * @param props the columns to set
+   * @param trx optional transaction to run the update inside
+   * @returns promise resolving in the number of rows the update changed
+   */
+  public async update(
+    objectId: number,
+    props: object,
+    trx?: Knex.Transaction,
+  ): Promise<number> {
     const query = this.db.object.where({ id: objectId });
     if (trx) {
       query.transacting(trx);
     }
-    await query.update(props);
+    return query.update(props);
   }
 
   public async updateObjectLimit(objectId: number, limit: number): Promise<void> {

@@ -244,8 +244,50 @@ export class AdminService {
     return this.roleRepository.findAll();
   }
 
-  public async hireRole(member_id: number, role_id: number): Promise<void> {
-    this.roleAssignmentRepository.addIdToAssignment(null, member_id, role_id);
+  /**
+   * Grants a role, and records that it was granted, as one unit.
+   *
+   * The assignment row and its audit event commit together or not at all, on the same
+   * contract as `fireRole` above. Before CTBL-0025 Phase B this method did not await the
+   * insert at all: the route answered 200 while the write was still in flight, a rejected
+   * write could not reach the handler's catch block, and there was no committed mutation
+   * for an audit row to commit with. Both defects are the same missing `await`.
+   *
+   * `place_id` is null by design -- this route grants global roles only, and the scoped
+   * grants go through `RoleAssignmentService`. It is recorded anyway so the row has the
+   * same shape as the `admin.role.fire` row a reviewer will read next to it.
+   *
+   * No reason is recorded: this route's request carries none. Collecting and enforcing
+   * operator reasons is CTBL-0025 Phase C; inventing one here would put a sentence in the
+   * store that no operator wrote.
+   *
+   * @param context the authenticated caller, including WHICH gate granted this -- a global
+   *   Admin and a security-role manager both reach here, and baseline section 4 requires
+   *   the two to stay distinguishable afterwards
+   */
+  public async hireRole(
+    member_id: number,
+    role_id: number,
+    context: AdminActionContext,
+  ): Promise<void> {
+    await this.memberRepository.runInTransaction(async trx => {
+      const inserted = await this.roleAssignmentRepository
+        .addIdToAssignment(null, member_id, role_id, trx);
+      await this.adminAuditService.recordChange(trx, {
+        event: AUDIT_EVENTS.ROLE_HIRE,
+        actorMemberId: context.actorMemberId,
+        authority: context.authority,
+        targetType: AUDIT_TARGETS.ROLE,
+        targetId: role_id,
+        targetMemberId: member_id,
+        request: context.request,
+        metadata: {
+          role_id: Number(role_id),
+          place_id: null,
+          assignment_id: Array.isArray(inserted) ? Number(inserted[0]) : null,
+        },
+      });
+    });
     return;
   }
   
@@ -453,6 +495,20 @@ export class AdminService {
     };
   }
 
+  /**
+   * Edits a mall object, and records the edit, as one unit.
+   *
+   * The object row and its audit event commit together or not at all. Before CTBL-0025
+   * Phase B the controller did not await this call, so the route answered 200 with the
+   * write still in flight and a rejected write could not reach its catch block.
+   *
+   * `rows_updated` is recorded rather than assumed: the route accepts a raw id, so an id
+   * that names no object changes nothing, and an `allowed` event may not claim a change
+   * the database did not make. The CTBL-0032 directory and filename rules are enforced
+   * before this method is reached and are untouched here.
+   *
+   * @param context the authenticated caller; never reconstructed from the request body
+   */
   public async updateObjects(
     id: number,
     name: string,
@@ -463,19 +519,36 @@ export class AdminService {
     limit: number,
     quantity: number,
     status: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing, out of scope
-  ): Promise<any> {
-    await this.objectRepository
-      .update(id, {
-        name: name,
-        directory: directory,
-        filename: filename,
-        image: image,
-        price: price,
-        limit: limit,
-        quantity: quantity,
-        status: status,
+    context: AdminActionContext,
+  ): Promise<void> {
+    await this.memberRepository.runInTransaction(async trx => {
+      const rowsUpdated = await this.objectRepository
+        .update(id, {
+          name: name,
+          directory: directory,
+          filename: filename,
+          image: image,
+          price: price,
+          limit: limit,
+          quantity: quantity,
+          status: status,
+        }, trx);
+      await this.adminAuditService.recordChange(trx, {
+        event: AUDIT_EVENTS.OBJECT_UPDATE,
+        actorMemberId: context.actorMemberId,
+        authority: context.authority,
+        targetType: AUDIT_TARGETS.OBJECT,
+        targetId: id,
+        request: context.request,
+        metadata: {
+          rows_updated: Number(rowsUpdated),
+          object_status: Number(status),
+          price: Number(price),
+          directory: String(directory),
+          filename: String(filename),
+        },
       });
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pre-existing, out of scope

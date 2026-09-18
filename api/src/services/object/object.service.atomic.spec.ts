@@ -176,7 +176,7 @@ describe('ObjectService rejection atomicity (real database)', () => {
   });
 
   dbTest('rolls the refund back when the status update fails', async () => {
-    objectRepository.update = async (): Promise<void> => {
+    objectRepository.update = async (): Promise<number> => {
       throw new Error('status update failed');
     };
 
@@ -193,7 +193,7 @@ describe('ObjectService rejection atomicity (real database)', () => {
 
   dbTest('refunds exactly once across a rolled-back attempt and a retry', async () => {
     const realUpdate = objectRepository.update.bind(objectRepository);
-    objectRepository.update = async (): Promise<void> => {
+    objectRepository.update = async (): Promise<number> => {
       throw new Error('status update failed');
     };
 

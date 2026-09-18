@@ -313,8 +313,19 @@ export class PlaceService {
     });
   }
 
-  public async updatePlaces(placeinfo: any): Promise<void> {
-    return await this.placeRepository.updatePlaces(placeinfo);
+  /**
+   * Applies an update to one place.
+   *
+   * `trx` exists so an admin place edit and its CTBL-0025 audit event commit as one unit,
+   * and the affected-row count is passed back so that event can say what actually changed.
+   * Callers that pass nothing and ignore the result keep the behaviour they have always
+   * had. Which columns are updatable, and what validates them, are unchanged.
+   * @param placeinfo the place id plus the columns to set
+   * @param trx optional transaction to run the update inside
+   * @returns promise resolving in the number of rows the update changed
+   */
+  public async updatePlaces(placeinfo: any, trx?: Knex.Transaction): Promise<number> {
+    return await this.placeRepository.updatePlaces(placeinfo, trx);
   }
 
   /**

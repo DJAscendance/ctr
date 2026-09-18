@@ -91,8 +91,40 @@ export class AvatarRepository {
       });
   }
 
-  public async updateStatus(id, status): Promise<any> {
-    return this.db.avatar
+  /**
+   * Reads one avatar by id, optionally inside a caller's transaction.
+   *
+   * Used by the admin approve/reject paths to read the status the update is about to
+   * replace, in the same transaction that replaces it -- afterwards the old value is gone,
+   * and it is the only thing that distinguishes "the id named no avatar" from "the avatar
+   * already had that status". A missing row reads as undefined rather than throwing: the
+   * route accepts raw ids and CTBL-0025 does not change what it accepts.
+   * @param id the avatar
+   * @param trx optional transaction to run the read inside
+   * @returns promise resolving in the avatar row, or undefined when there is none
+   */
+  public async findById(id: number, trx?: Knex.Transaction): Promise<Avatar | undefined> {
+    const [avatar] = await queryOn(this.db.knex, trx)<Avatar, Avatar[]>('avatar')
+      .where({ id });
+    return avatar;
+  }
+
+  /**
+   * Sets an avatar's status, optionally inside a caller's transaction.
+   *
+   * `trx` exists so the moderator decision and its CTBL-0025 audit event commit as one
+   * unit. Callers that pass nothing keep the behaviour they have always had.
+   *
+   * The affected-row count is returned rather than swallowed: the audit row records what
+   * the database actually changed, and "the id named no avatar" and "the avatar already
+   * had that status" are both zero here and neither may be recorded as a change.
+   * @param id the avatar
+   * @param status the new status
+   * @param trx optional transaction to run the update inside
+   * @returns promise resolving in the number of rows the update changed
+   */
+  public async updateStatus(id, status, trx?: Knex.Transaction): Promise<number> {
+    return queryOn(this.db.knex, trx)('avatar')
       .update({
         status: status,
       })
