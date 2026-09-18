@@ -70,7 +70,7 @@
             minute: 'numeric',
             timeZone: 'America/New_York',}) }}
           </td>
-          <td class="p-5 text-center">{{ reasonDisplay[transaction.reason_display] }}</td>
+          <td class="p-5 text-center">{{ formatReason(transaction.reason) }}</td>
         </tr>
       </table>
     </div>
@@ -97,6 +97,8 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
+
+import { transactionReasonLabel } from "@/helpers/transaction-reason.helper";
 export default defineComponent({
   name: "Transactions",
   data: () => {
@@ -111,30 +113,6 @@ export default defineComponent({
       error: null,
       user: null,
       type: "object-sell",
-      reasonDisplay: [
-        'Daily Credit',
-        'Home Purchase',
-        'Home Refund',
-        'User Object Sells', 
-        'Mall Object Upload',
-        'Mall Reject Refund',
-        'Mall Object Restock',
-        'Mall Unsold Refund',
-        'Mall Purchase',
-        'Mall Sold',
-      ],
-      reasons: [
-        'daily-credit',
-        'home-purchase',
-        'home-refund',
-        'object-sell', 
-        'object-upload',
-        'object-upload-refund',
-        'object-restock',
-        'object-unsold-instance-refund',
-        'object-purchase',
-        'object-profit',
-      ],
     };
   },
   methods: {
@@ -165,10 +143,11 @@ export default defineComponent({
         this.totalCount = result.data.returnResults[1][0].count;
       });
       this.userTransactions.forEach((result) => {
-        const index = this.reasons.indexOf(result.reason);
-        result.reason_display = index;
         this.finalTransactions.push(result);
       })
+    },
+    formatReason(reason) {
+      return transactionReasonLabel(reason);
     },
     async next() {
       this.offset = this.offset + this.limit;

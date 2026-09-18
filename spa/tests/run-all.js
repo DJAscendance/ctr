@@ -42,6 +42,7 @@ const SUITES = [
   "tests/.compiled/tests/router-link.test.js",
   "tests/.compiled/tests/club-world-mount.test.js",
   "tests/.compiled/tests/clubdoor-redirect.test.js",
+  "tests/.compiled/tests/transaction-reason.test.js",
 ];
 
 let failed = false;

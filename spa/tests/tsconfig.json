@@ -28,6 +28,7 @@
     "../src/helpers/legacy-url.helper.ts",
     "../src/helpers/navigation-place.helper.ts",
     "../src/helpers/movement-speed.helper.ts",
+    "../src/helpers/transaction-reason.helper.ts",
     "../src/routes.ts",
     "../src/types/shims-vue.d.ts"
   ]

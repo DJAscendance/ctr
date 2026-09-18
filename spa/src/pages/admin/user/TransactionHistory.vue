@@ -86,6 +86,8 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
+
+import { transactionReasonLabel } from "@/helpers/transaction-reason.helper";
 export default defineComponent({
   name: "TransactionHistory",
   data: () => {
@@ -97,30 +99,6 @@ export default defineComponent({
       pages: [],
       showNext: false,
       totalCount: 0,
-      reasonDisplay: [
-        'Daily Credit',
-        'Home Purchase',
-        'Home Refund',
-        'User Object Sells', 
-        'Mall Object Upload',
-        'Mall Reject Refund',
-        'Mall Object Restock',
-        'Mall Unsold Refund',
-        'Mall Item Purchase',
-        'Mall Item Sold',
-      ],
-      reasons: [
-        'daily-credit',
-        'home-purchase',
-        'home-refund',
-        'object-sell', 
-        'object-upload',
-        'object-upload-refund',
-        'object-restock',
-        'object-unsold-instance-refund',
-        'object-purchase',
-        'object-profit',
-      ],
     };
   },
   methods: {
@@ -144,13 +122,8 @@ export default defineComponent({
           setTimeout(this.getTransactions, 1000);
         }
     },
-    formatReason(data) {
-      const index = this.reasons.indexOf(data);
-      if(index === -1) {
-        return "Weekly Role Credit";
-      } else {
-        return this.reasonDisplay[index];
-      }
+    formatReason(reason) {
+      return transactionReasonLabel(reason);
     },
     setLimit(){
       this.offset = 0;
