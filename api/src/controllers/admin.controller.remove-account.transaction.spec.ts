@@ -113,6 +113,21 @@ function mockResponse(): Response & { statusCode?: number; body?: unknown } {
   return response;
 }
 
+/**
+ * A removal request.
+ *
+ * `reason` is present because CTBL-0025 Phase C made an operator reason mandatory before
+ * the destructive transaction opens (baseline section 11). This spec is about the
+ * transaction, not the reason contract, so every case here supplies a valid one; the
+ * reason contract itself is `admin.controller.audit.phase-c.spec.ts`.
+ */
+function removeRequest(): Request {
+  return {
+    body: { id: MEMBER_ID, reason: 'the operator wrote this' },
+    headers: { apitoken: 't' },
+  } as unknown as Request;
+}
+
 describe('AdminController.removeAccount transaction identity', () => {
   let controller: AdminController;
   let memberService: MemberService;
@@ -178,7 +193,7 @@ describe('AdminController.removeAccount transaction identity', () => {
     const response = mockResponse();
 
     await controller.removeAccount(
-      { body: { id: MEMBER_ID }, headers: { apitoken: 't' } } as unknown as Request,
+      removeRequest(),
       response,
     );
 
@@ -209,7 +224,7 @@ describe('AdminController.removeAccount transaction identity', () => {
     const response = mockResponse();
 
     await controller.removeAccount(
-      { body: { id: MEMBER_ID }, headers: { apitoken: 't' } } as unknown as Request,
+      removeRequest(),
       response,
     );
 
@@ -226,7 +241,7 @@ describe('AdminController.removeAccount transaction identity', () => {
     const response = mockResponse();
 
     await controller.removeAccount(
-      { body: { id: MEMBER_ID }, headers: { apitoken: 't' } } as unknown as Request,
+      removeRequest(),
       response,
     );
 
@@ -243,7 +258,7 @@ describe('AdminController.removeAccount transaction identity', () => {
     const response = mockResponse();
 
     await controller.removeAccount(
-      { body: { id: MEMBER_ID }, headers: { apitoken: 't' } } as unknown as Request,
+      removeRequest(),
       response,
     );
 

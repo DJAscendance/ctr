@@ -73,6 +73,20 @@ function asSpyTarget(target: unknown): Record<string, (...args: unknown[]) => un
   return target as Record<string, (...args: unknown[]) => unknown>;
 }
 
+/** A read request: the admin read routes take their arguments on the query string. */
+function readRequest(
+  query: Record<string, string> = {},
+  params: Record<string, string> = {},
+): Request {
+  return {
+    ip: '203.0.113.7',
+    headers: { apitoken: 'eyJhbGciOiJIUzI1NiJ9.spoofed.signature' },
+    query: { limit: '10', offset: '0', search: '', ...query },
+    params,
+    body: {},
+  } as unknown as Request;
+}
+
 type MockResponse = Response & { statusCode?: number; body?: unknown };
 
 function mockResponse(): MockResponse {
@@ -112,6 +126,12 @@ function spoofingRequest(body: Record<string, unknown> = {}): Request {
       session_id: SPOOFED_ID,
       username: 'not-the-operator',
       password: 'hunter2',
+      // Phase C made an operator reason mandatory on every mutation route that baseline
+      // section 11 names. These cases are about the ACTOR, not the reason, so a valid one
+      // is supplied by default and overridden per case where the reason is the subject.
+      // The reason contract itself is `admin.controller.audit.phase-c.spec.ts`.
+      reason: 'the operator wrote this',
+      banReason: 'the operator wrote this',
       ...body,
     },
   } as unknown as Request;
@@ -618,6 +638,21 @@ describe('CTBL-0025 admin audit trail', () => {
           c.removeAccount(spoofingRequest({ id: TARGET_MEMBER_ID }), r),
         status: 403,
       },
+      // The two access events, added in Phase C. A refused private read owes the same
+      // record a refused mutation does -- "who tried to read this member's chat" is the
+      // question the store exists to answer.
+      {
+        event: 'admin.chat.read',
+        run: (c: AdminController, r: MockResponse) =>
+          c.searchUserChat(readRequest({ user: String(TARGET_MEMBER_ID) }), r),
+        status: 403,
+      },
+      {
+        event: 'admin.transaction.read',
+        run: (c: AdminController, r: MockResponse) =>
+          c.getTransactions(readRequest({ type: 'purchase' }), r),
+        status: 403,
+      },
     ];
 
     it.each(DENIAL_CASES)('$event records a denied event', async ({ event, run, status }) => {
@@ -670,9 +705,14 @@ describe('CTBL-0025 admin audit trail', () => {
     });
 
     it('offers no mutation entry point on the service either', () => {
+      // `recordAccess` joined this list in Phase C. It is still a write-only entry point:
+      // it inserts one `allowed` row for a private-content read and cannot touch a
+      // written one. The assertion stays exhaustive so a future read or edit method has
+      // to be added here deliberately rather than slipping in.
       const service = Container.get(AdminAuditService);
       const surface = Object.getOwnPropertyNames(Object.getPrototypeOf(service));
-      expect(surface.sort()).toEqual(['constructor', 'recordChange', 'recordOutcome', 'toRow']);
+      expect(surface.sort())
+        .toEqual(['constructor', 'recordAccess', 'recordChange', 'recordOutcome', 'toRow']);
     });
   });
 

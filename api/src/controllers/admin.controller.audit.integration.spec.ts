@@ -248,7 +248,11 @@ describeWithDb('CTBL-0025 audit atomicity against a real database', () => {
     // that no longer exists, and it has to survive anyway.
     const response = mockResponse();
 
-    await controller.removeAccount(request({ id: targetId }), response as Response);
+    await controller.removeAccount(
+      // CTBL-0025 Phase C: removal is refused without an operator reason.
+      request({ id: targetId, reason: 'account removal requested' }),
+      response as Response,
+    );
 
     expect(response.statusCode).toBe(200);
     expect(await knex('member').select('id').where('id', targetId)).toHaveLength(0);
@@ -269,7 +273,11 @@ describeWithDb('CTBL-0025 audit atomicity against a real database', () => {
       });
     const response = mockResponse();
 
-    await controller.removeAccount(request({ id: targetId }), response as Response);
+    await controller.removeAccount(
+      // CTBL-0025 Phase C: removal is refused without an operator reason.
+      request({ id: targetId, reason: 'account removal requested' }),
+      response as Response,
+    );
 
     expect(response.statusCode).toBe(400);
     // SEC-V's atomicity is intact: the account is whole, not half removed.

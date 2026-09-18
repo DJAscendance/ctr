@@ -52,6 +52,45 @@
         v-if="accessLevel.includes('admin')" @click="confirmRemoval(id.id, id.username)">Delete</button>
         </div>
   </div>
+  <div v-if="showRemovalModal">
+    <div class="fixed inset-0 z-50 flex justify-center items-center">
+      <div class="flex flex-col w-2/6 max-w-5xl rounded-lg shadow-lg bg-red-300 text-red-800">
+        <div class="p-5">
+          <div class="flex justify-between items-start">
+            <h3 class="text-2xl font-semibold">Delete Account</h3>
+            <button class="p-1 leading-none" @click="closeRemovalModal">
+              <div class="text-xl font-semibold h-6 w-6">
+                <span>x</span>
+              </div>
+            </button>
+          </div>
+        </div>
+        <div class="p-6">
+          <p>
+            Permanently delete {{ removalUsername }}'s account?
+            This action cannot be undone.
+          </p>
+          <label class="block mt-3 mb-1" for="removal-reason">
+            Reason (required)
+          </label>
+          <textarea id="removal-reason"
+                    class="text-black w-full"
+                    v-model="removalReason"
+                    rows="3"
+                    maxlength="255"
+                    placeholder="Why is this account being removed?"></textarea>
+          <div class="font-bold mt-1" v-if="modalError">
+            {{ modalError }}
+          </div>
+        </div>
+        <div class="p-6 flex justify-end items-center">
+          <button class="btn pr-1" @click="closeRemovalModal">Cancel</button>
+          <button class="btn" @click="deleteAccount">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div class="opacity-50 fixed inset-0 z-60 bg-black"></div>
+  </div>
       <div class="grid grid-cols-2 w-4/6 justify-items-center">
         <div class="p-1 text-right w-full">
           <button
@@ -87,6 +126,11 @@ export default defineComponent({
       offset: 0,
       showNext: true,
       error: null,
+      showRemovalModal: false,
+      removalId: null,
+      removalUsername: "",
+      removalReason: "",
+      modalError: "",
     };
   },
   props: [
@@ -135,21 +179,41 @@ export default defineComponent({
       await this.getUsers();
       this.showNext = true;
     },
+    // Replaces window.confirm: account removal now owes an operator reason
+    // (CTBL-0025, baseline section 11), and a native confirm box cannot collect
+    // one. The confirmation itself is unchanged -- it is still one deliberate
+    // step before an irreversible delete.
     confirmRemoval(id, username) {
-      const confirmed = window.confirm(`Are you sure you want to permanently delete ${username}'s account? This action cannot be undone!`);
-      if (confirmed) {
-        this.deleteAccount(id);
+      this.removalId = id;
+      this.removalUsername = username;
+      this.removalReason = "";
+      this.modalError = "";
+      this.showRemovalModal = true;
+    },
+    closeRemovalModal() {
+      this.showRemovalModal = false;
+      this.removalId = null;
+      this.removalUsername = "";
+      this.removalReason = "";
+      this.modalError = "";
+    },
+    async deleteAccount(): Promise <void> {
+      const reason = this.removalReason.trim();
+      if (!reason) {
+        this.modalError = "Please enter a reason";
         return;
       }
-     },
-    async deleteAccount(id): Promise <void> {
-      const removeAccount = await this.$http.post("/admin/remove-account", {
-        id: id,
-      });
-      if(removeAccount){
+      const id = this.removalId;
+      this.closeRemovalModal();
+      try {
+        await this.$http.post("/admin/remove-account", {
+          id: id,
+          reason: reason,
+        });
         this.error = "Account successfully deleted.";
-      } else {
-        this.error = "Account removal failed."
+        await this.getUsers();
+      } catch {
+        this.error = "Account removal failed.";
       }
     },
   },

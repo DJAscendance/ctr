@@ -24,15 +24,22 @@ import { AUDIT_EVENTS, AUDIT_TARGETS, AuditAuthority } from '../../libs/audit-ev
 /**
  * What an admin route knows about its own caller, carried down to the audit write.
  *
- * Only two fields, and both come from the server: `actorMemberId` is the id
- * `MemberService.decryptSession` returned, and `authority` is the branch of the gate that
- * actually granted the request. Nothing here may be reconstructed from a request body --
- * see `AdminAuditService`.
+ * `actorMemberId` is the id `MemberService.decryptSession` returned and `authority` is the
+ * branch of the gate that actually granted the request; neither may be reconstructed from
+ * a request body -- see `AdminAuditService`.
+ *
+ * `reason` is different: it is the one field here the operator writes, and it arrives
+ * already validated by `validateOperatorReason` at the route. It is the OPERATOR's reason
+ * and only that -- never a business or history string the server assembled around it, and
+ * never a placeholder standing in for one the operator did not write. Baseline section 11
+ * requires it for bans, role changes and account removal; a route that requires it refuses
+ * before it gets here, so an absent value at this point means the action does not owe one.
  */
 export interface AdminActionContext {
   actorMemberId: number;
   authority: AuditAuthority;
   request?: Request | null;
+  reason?: string | null;
 }
 
 @Service()
@@ -90,7 +97,10 @@ export class AdminService {
         targetType: AUDIT_TARGETS.MEMBER,
         targetId: Number(ban_member_id),
         targetMemberId: Number(ban_member_id),
-        reason,
+        // The operator's own words, validated at the route. `reason` the parameter is the
+        // same text here, but it is the BAN row's field and a future change to what the
+        // ban stores must not silently change what the audit row claims an operator wrote.
+        reason: context.reason,
         request: context.request,
         metadata: {
           ban_type: typeof type === 'string' ? type : String(type),
@@ -154,7 +164,11 @@ export class AdminService {
         targetType: AUDIT_TARGETS.BAN,
         targetId: banId,
         targetMemberId: before ? Number(before.ban_member_id) : null,
-        reason: updateReason,
+        // `updateReason` is the BAN HISTORY string and carries a server-built
+        // "(Deleted by <username>)" suffix. That suffix is CTR's sentence, not the
+        // operator's, and baseline section 11's `reason` field means what the operator
+        // wrote -- so the audit row takes the validated operator reason on its own.
+        reason: context.reason,
         request: context.request,
         metadata: {
           ban_type: before ? String(before.type) : null,
@@ -198,6 +212,7 @@ export class AdminService {
         targetType: AUDIT_TARGETS.ROLE,
         targetId: role_id,
         targetMemberId: member_id,
+        reason: context.reason,
         request: context.request,
         metadata: {
           role_id: Number(role_id),
@@ -257,9 +272,9 @@ export class AdminService {
    * grants go through `RoleAssignmentService`. It is recorded anyway so the row has the
    * same shape as the `admin.role.fire` row a reviewer will read next to it.
    *
-   * No reason is recorded: this route's request carries none. Collecting and enforcing
-   * operator reasons is CTBL-0025 Phase C; inventing one here would put a sentence in the
-   * store that no operator wrote.
+   * The operator reason is recorded from `context`, validated at the route. Baseline
+   * section 11 requires one for a role change, so the route refuses before reaching here
+   * when none was written -- nothing in this method may invent one.
    *
    * @param context the authenticated caller, including WHICH gate granted this -- a global
    *   Admin and a security-role manager both reach here, and baseline section 4 requires
@@ -280,6 +295,7 @@ export class AdminService {
         targetType: AUDIT_TARGETS.ROLE,
         targetId: role_id,
         targetMemberId: member_id,
+        reason: context.reason,
         request: context.request,
         metadata: {
           role_id: Number(role_id),

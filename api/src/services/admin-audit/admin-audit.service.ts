@@ -83,6 +83,31 @@ export class AdminAuditService {
   }
 
   /**
+   * Records a private-content read, before the content is disclosed.
+   *
+   * Baseline section 11: "reads of another member's private content -- chat history above
+   * all -- owe an access event". A read has no business transaction to join, so there is
+   * nothing here to be atomic WITH. What replaces atomicity is the order the caller keeps
+   * and the fact that this **throws**: the read runs first, this row is written second,
+   * and only then may the handler answer with the content. An audit store that cannot
+   * record the access therefore blocks the disclosure instead of silently allowing an
+   * unlogged one.
+   *
+   * `result` is always `allowed`, because this is only ever called after the read
+   * succeeded. A refused attempt goes through `recordOutcome(DENIED, ...)` and a read that
+   * errored goes through `recordOutcome(FAILED, ...)`; neither may produce an `allowed`
+   * row, for the same reason the mutation paths may not.
+   *
+   * @param input the event; its metadata must name facts about the read, never its result
+   * @throws whatever the insert throws, so the caller withholds the content
+   */
+  public async recordAccess(input: AuditEventInput): Promise<void> {
+    await this.adminAuditEventRepository.insert(
+      this.toRow(input, AUDIT_RESULTS.ALLOWED),
+    );
+  }
+
+  /**
    * Records a refused or failed attempt, outside any transaction, best effort.
    *
    * @param result `denied` for a refused attempt, `failed` for one that errored

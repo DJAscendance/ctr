@@ -30,6 +30,24 @@
       </select>
     </div>
 
+    <div class="text-center mb-3 w-1/2">
+      <label
+        class="block mb-1"
+        for="hire-reason"
+      >
+        Reason (required)
+      </label>
+
+      <textarea
+        id="hire-reason"
+        class="text-black w-full"
+        v-model="reason"
+        rows="3"
+        maxlength="255"
+        placeholder="Why is this role being given?"
+      ></textarea>
+    </div>
+
     <div class="text-center w-1/2 mb-3 mr-3">
       <span
         class="text-red-500"
@@ -74,6 +92,7 @@ export default defineComponent({
     return {
       roleSelector: "first",
       error: null,
+      reason: "",
       roles: [],
       success: null,
       canManageSecurityRoles: false,
@@ -89,10 +108,22 @@ export default defineComponent({
         return;
       }
 
+      // The API refuses a role change without an operator reason (CTBL-0025,
+      // baseline section 11). Checked here too so the operator is told why
+      // before a request is sent -- never filled in for them.
+      const reason = this.reason.trim();
+
+      if (!reason) {
+        this.success = null;
+        this.error = "Please enter a reason";
+        return;
+      }
+
       try {
         await this.$http.post("/admin/hirerole", {
           member_id: this.$route.params.id,
           role_id: this.roleSelector,
+          reason: reason,
         });
 
         this.error = null;

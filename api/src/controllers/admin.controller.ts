@@ -21,11 +21,13 @@ import { isAssetDirectory, isAssetFilename } from '../libs/asset-identifier';
 import {
   AUDIT_AUTHORITIES,
   AUDIT_EVENTS,
+  AUDIT_REASON_MAX,
   AUDIT_RESULTS,
   AUDIT_TARGETS,
   AuditAuthority,
   AuditEventName,
   AuditTarget,
+  validateOperatorReason,
 } from '../libs/audit-event';
 
 /**
@@ -54,6 +56,14 @@ import {
  *
  * `hasAccess` fails closed, so a null, undefined or otherwise malformed access
  * level denies instead of throwing. See `libs/access-level.ts`.
+ *
+ * Three of the reads above also owe an ACCESS event under baseline section 11, because
+ * they return another member's private content: `searchUserChat`, `getTransactions` and
+ * `getTransactionsByWalletId`. The rest are ordinary administrative reads and owe nothing
+ * -- `findUserPlaces`, `getObjectInstances` and `getOwnedObjects` return world-entity rows
+ * whose equivalents a citizen can already reach (`GET /api/club/search`, and
+ * `GET /api/place/:placeId/object_instance`, which needs no session at all). The full
+ * classification and its evidence is section 9 of `docs/ADMIN_AUDIT_TRAIL.md`.
  */
 export class AdminController {
   constructor(
@@ -103,6 +113,40 @@ export class AdminController {
   }
 
   /**
+   * The operator's reason, or a 400 and nothing else.
+   *
+   * Baseline section 11 makes a reason part of what a ban, a role change and an account
+   * removal owe. An obligation the server does not enforce is a suggestion, so this
+   * refuses the action outright rather than storing a blank, a placeholder or a sentence
+   * CTR wrote on the operator's behalf. No reason, no state change.
+   *
+   * Called AFTER the authorization gate, never before. A caller without authority must
+   * still receive the 403 and its denied event -- turning their refusal into a
+   * validation 400 would both mislead them and lose the row that refusal owes. Nothing is
+   * audited here: an authorised operator who mistyped a form has attempted no
+   * administrative action, and Phase B QA classified controller validation 400s as
+   * outside the authorization-denial contract.
+   *
+   * @param field the request-body field the route reads the reason from
+   * @returns the trimmed reason, or null when the response has already been sent
+   */
+  private requireReason(
+    request: Request,
+    response: Response,
+    field: string,
+  ): string | null {
+    const reason = validateOperatorReason(request.body?.[field]);
+    if (reason === null) {
+      response.status(400).json({
+        message:
+          `A reason is required, 1 to ${AUDIT_REASON_MAX} characters.`,
+      });
+      return null;
+    }
+    return reason;
+  }
+
+  /**
    * Records an authorised attempt that then errored.
    *
    * Written outside any transaction, because the mutation's own transaction has already
@@ -128,6 +172,56 @@ export class AdminController {
     });
   }
   
+  /**
+   * Records a private-content read, and says whether the content may now be disclosed.
+   *
+   * Baseline section 11: an ordinary administrative read owes nothing, but "reads of
+   * another member's private content -- chat history above all -- owe an access event".
+   * There is no business transaction to be atomic with here, so the ordering is what
+   * carries the guarantee: the read has already succeeded when this runs, so the row is
+   * never a claim about a read that did not happen, and the handler may not answer with
+   * the content until this has returned true.
+   *
+   * On an audit-store failure this refuses the disclosure. That is the opposite of
+   * `recordOutcome`'s fail-soft rule, and deliberately so: a refusal that goes unrecorded
+   * still refused, whereas private content handed over unrecorded is exactly the
+   * disclosure the event exists to make answerable. A 500 here is an outage, not a denial,
+   * and leaves the caller's authority untouched.
+   *
+   * `metadata` names facts ABOUT the read -- how many rows, which page -- never anything
+   * out of them, and never the search string, which is operator input that can itself
+   * carry private content. `redactMetadata` drops a content-bearing key anyway, as the net
+   * under this rule rather than a substitute for it.
+   *
+   * @returns true when the event was written and the caller may respond with the content
+   */
+  private async auditAccess(
+    response: Response,
+    event: AuditEventName,
+    session: { id: number },
+    request: Request,
+    target: { type: AuditTarget | null; id: number | null; memberId: number | null },
+    metadata: Record<string, string | number | boolean | null>,
+  ): Promise<boolean> {
+    try {
+      await this.adminAuditService.recordAccess({
+        event,
+        actorMemberId: session.id,
+        authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
+        targetType: target.type,
+        targetId: target.id,
+        targetMemberId: target.memberId,
+        request,
+        metadata,
+      });
+      return true;
+    } catch (error) {
+      console.error(`Audit access event ${event} could not be written:`, error);
+      response.status(500).json({message: 'Access could not be recorded.'});
+      return false;
+    }
+  }
+
   /**
    * Applies a moderator's avatar decision and records it, as one unit.
    *
@@ -182,6 +276,10 @@ export class AdminController {
     if (!session) return;
     const admin = await this.memberService.canAdmin(session.id);
     if (admin) {
+      // After the gate, before the mutation: an unauthorised caller keeps their 403 and
+      // its denied event, and an authorised one with no reason changes nothing.
+      const reason = this.requireReason(request, response, 'reason');
+      if (reason === null) return;
       try {
         // `session.id` is the actor, here and in the audit row the service writes. The
         // request body names only the SUBJECT of the ban; a body field claiming to be the
@@ -191,11 +289,12 @@ export class AdminController {
           request.body.time_frame,
           request.body.type,
           session.id,
-          request.body.reason,
+          reason,
           {
             actorMemberId: session.id,
             authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
             request,
+            reason,
           },
         );
         response.status(200).json({message: 'Ban added successfully'});
@@ -262,15 +361,22 @@ export class AdminController {
     if (!session) return;
     const admin = await this.memberService.canAdmin(session.id);
     if (admin) {
+      const reason = this.requireReason(request, response, 'banReason');
+      if (reason === null) return;
       try {
         const banId = Number(request.body.banId);
-        const reason = request.body.banReason;
         const deleteBy = await this.memberService.getMemberInfoPublic(session.id);
+        // Two different strings from here on, and keeping them apart is the point. The
+        // ban history keeps its existing "(Deleted by <username>)" suffix so the members
+        // screen reads as it always has; the audit row gets `reason` on its own, because
+        // baseline section 11's `reason` means what the OPERATOR wrote and the actor is
+        // already its own column.
         const updateReason = `${reason} (Deleted by ${deleteBy.username})`;
         await this.adminService.deleteBan(banId, updateReason, {
           actorMemberId: session.id,
           authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
           request,
+          reason,
         });
         response.status(200).json({message: 'Ban deleted successfully'});
       } catch (error) {
@@ -313,12 +419,14 @@ export class AdminController {
       ? AUDIT_AUTHORITIES.GLOBAL_ROLE
       : AUDIT_AUTHORITIES.RESOURCE_SCOPED;
     if (canManageRole) {
+      const reason = this.requireReason(request, response, 'reason');
+      if (reason === null) return;
       try {
         await this.adminService.fireRole(
           parseInt(member_id),
           roleId,
           place_id,
-          {actorMemberId: session.id, authority, request},
+          {actorMemberId: session.id, authority, request, reason},
         );
         response.status(200).json({message: 'Role fired successfully'});
       } catch(e) {
@@ -401,13 +509,15 @@ export class AdminController {
       ? AUDIT_AUTHORITIES.GLOBAL_ROLE
       : AUDIT_AUTHORITIES.RESOURCE_SCOPED;
     if (canManageRole) {
+      const reason = this.requireReason(request, response, 'reason');
+      if (reason === null) return;
       try {
         // Awaited, so the 200 below cannot be sent before the assignment row commits. The
         // service writes the `allowed` event inside that same transaction.
         await this.adminService.hireRole(
           parseInt(member_id),
           roleId,
-          {actorMemberId: session.id, authority, request},
+          {actorMemberId: session.id, authority, request, reason},
         );
         response.status(200).json({message: 'Role hired successfully'});
       } catch(e) {
@@ -446,96 +556,169 @@ export class AdminController {
     }
   }
 
+  /**
+   * Reads the community ledger, and records that it was read.
+   *
+   * Classified alongside `getTransactionsByWalletId` below and for the same evidence: a
+   * transaction row is a member's own financial history, and `GET /api/bank/account` --
+   * the only citizen-facing view of it -- returns the caller's own and nothing else. This
+   * route is the unscoped form of that private read, so auditing the per-member one and
+   * not this one would leave an operator a way to read everyone's ledger unrecorded.
+   *
+   * `target_member_id` is null because this read names no member. `scope` says so in the
+   * row rather than leaving a later reader to infer it from an absent column.
+   */
   public async getTransactions(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
     const returnResults = [];
     const rebuild = [];
-    if (hasAccess(admin, 'security')) {
-      try {
-        let results = null;
-        let findUsername = null;
-        results = await this.adminService.getTransactions(
-          request.query.type.toString(),
-          Number.parseInt(request.query.limit.toString()),
-          Number.parseInt(request.query.offset.toString()),
-        );
-        findUsername = results.transactions;
-        for(const res of findUsername) {
-          let sender = [{username: 'System'}];
-          let receiver = [{username: 'System'}];
-          if(res.sender_wallet_id){
-            sender = await this.memberService
-              .getMemberByWalletId(res.sender_wallet_id);
-          }
-          if(res.recipient_wallet_id){
-            receiver = await this.memberService
-              .getMemberByWalletId(res.recipient_wallet_id);
-          }
-          res.sender = sender;
-          res.receiver = receiver;
-          res.sender_wallet_id = null;
-          res.recipient_wallet_id = null;
-          rebuild.push(res);
-        }
-        returnResults.push(rebuild);
-        returnResults.push(results.total);
-        response.status(200).json({returnResults});
-      } catch (error) {
-        console.log(error);
-        response.status(400).json({error});
-      }
-    } else {
+    if (!hasAccess(admin, 'security')) {
+      await this.auditDenied(AUDIT_EVENTS.TRANSACTION_READ, session, request);
       response.status(403).json({message: 'Access Denied'});
+      return;
     }
+    let limit: number;
+    let offset: number;
+    try {
+      let results = null;
+      let findUsername = null;
+      limit = Number.parseInt(request.query.limit.toString());
+      offset = Number.parseInt(request.query.offset.toString());
+      results = await this.adminService.getTransactions(
+        request.query.type.toString(),
+        limit,
+        offset,
+      );
+      findUsername = results.transactions;
+      for(const res of findUsername) {
+        let sender = [{username: 'System'}];
+        let receiver = [{username: 'System'}];
+        if(res.sender_wallet_id){
+          sender = await this.memberService
+            .getMemberByWalletId(res.sender_wallet_id);
+        }
+        if(res.recipient_wallet_id){
+          receiver = await this.memberService
+            .getMemberByWalletId(res.recipient_wallet_id);
+        }
+        res.sender = sender;
+        res.receiver = receiver;
+        res.sender_wallet_id = null;
+        res.recipient_wallet_id = null;
+        rebuild.push(res);
+      }
+      returnResults.push(rebuild);
+      returnResults.push(results.total);
+    } catch (error) {
+      console.log(error);
+      await this.auditFailed(
+        AUDIT_EVENTS.TRANSACTION_READ, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+      );
+      response.status(400).json({error});
+      return;
+    }
+    const recorded = await this.auditAccess(
+      response, AUDIT_EVENTS.TRANSACTION_READ, session, request,
+      {type: null, id: null, memberId: null},
+      {
+        capability: 'security',
+        scope: 'community',
+        rows_returned: rebuild.length,
+        limit,
+        offset,
+      },
+    );
+    if (!recorded) return;
+    response.status(200).json({returnResults});
   }
 
+  /**
+   * Reads one member's financial history, and records that it was read.
+   *
+   * Private content by the API's own evidence: `GET /api/bank/account` resolves the
+   * account from the session and from nothing else, so no citizen can see another
+   * member's ledger anywhere in CTR. Baseline section 11's access-event rule therefore
+   * covers it, and the row names the member whose history was opened.
+   *
+   * No amount, counterparty or transaction line reaches the row -- only how many rows came
+   * back and which page they were on.
+   */
   public async getTransactionsByWalletId(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
     const returnResults = [];
     const rebuild = [];
-    if (hasAccess(admin, 'security')) {
-      try {
-        let results = null;
-        let findUsername = null;
-        const memberId = request.params.id;
-        const user = await this.memberService.find({ id: Number.parseInt(memberId) });
-        results = await this.adminService.getTransactionsByWalletId(
-          user.wallet_id,
-          Number.parseInt(request.query.limit.toString()),
-          Number.parseInt(request.query.offset.toString()),
-        );
-        findUsername = results.transactions;
-        for(const res of findUsername) {
-          let sender = [{username: 'System'}];
-          let receiver = [{username: 'System'}];
-          if(res.sender_wallet_id){
-            sender = await this.memberService
-              .getMemberByWalletId(res.sender_wallet_id);
-          }
-          if(res.recipient_wallet_id){
-            receiver = await this.memberService
-              .getMemberByWalletId(res.recipient_wallet_id);
-          }
-          res.sender = sender;
-          res.receiver = receiver;
-          res.sender_wallet_id = null;
-          res.recipient_wallet_id = null;
-          rebuild.push(res);
-        }
-        returnResults.push(rebuild);
-        returnResults.push(results.total);
-        response.status(200).json({results});
-      } catch (error) {
-        console.log(error);
-        response.status(400).json({error});
-      }
-    } else {
+    const walletTarget = {
+      type: AUDIT_TARGETS.MEMBER as AuditTarget | null,
+      id: Number(request.params?.id),
+      memberId: Number(request.params?.id),
+    };
+    if (!hasAccess(admin, 'security')) {
+      await this.auditDenied(AUDIT_EVENTS.TRANSACTION_READ, session, request, {
+        type: AUDIT_TARGETS.MEMBER, id: walletTarget.id, memberId: walletTarget.memberId,
+      });
       response.status(403).json({message: 'Access Denied'});
+      return;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the service is untyped
+    let results: any = null;
+    let limit: number;
+    let offset: number;
+    try {
+      let findUsername = null;
+      const memberId = request.params.id;
+      const user = await this.memberService.find({ id: Number.parseInt(memberId) });
+      limit = Number.parseInt(request.query.limit.toString());
+      offset = Number.parseInt(request.query.offset.toString());
+      results = await this.adminService.getTransactionsByWalletId(
+        user.wallet_id,
+        limit,
+        offset,
+      );
+      findUsername = results.transactions;
+      for(const res of findUsername) {
+        let sender = [{username: 'System'}];
+        let receiver = [{username: 'System'}];
+        if(res.sender_wallet_id){
+          sender = await this.memberService
+            .getMemberByWalletId(res.sender_wallet_id);
+        }
+        if(res.recipient_wallet_id){
+          receiver = await this.memberService
+            .getMemberByWalletId(res.recipient_wallet_id);
+        }
+        res.sender = sender;
+        res.receiver = receiver;
+        res.sender_wallet_id = null;
+        res.recipient_wallet_id = null;
+        rebuild.push(res);
+      }
+      returnResults.push(rebuild);
+      returnResults.push(results.total);
+    } catch (error) {
+      console.log(error);
+      await this.auditFailed(
+        AUDIT_EVENTS.TRANSACTION_READ, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+        {type: AUDIT_TARGETS.MEMBER, id: walletTarget.id, memberId: walletTarget.memberId},
+      );
+      response.status(400).json({error});
+      return;
+    }
+    const recorded = await this.auditAccess(
+      response, AUDIT_EVENTS.TRANSACTION_READ, session, request, walletTarget,
+      {
+        capability: 'security',
+        scope: 'member',
+        rows_returned: rebuild.length,
+        limit,
+        offset,
+      },
+    );
+    if (!recorded) return;
+    response.status(200).json({results});
   }
 
   public async getObjectInstances(request: Request, response: Response): Promise<void> {
@@ -583,26 +766,70 @@ export class AdminController {
     }
   }
   
+  /**
+   * Reads one member's chat history, and records that it was read.
+   *
+   * The one read surface baseline section 11 names outright: "reads of another member's
+   * private content -- chat history above all -- owe an access event". The rows returned
+   * carry `message.body`, which is the member's own words, and no citizen can obtain
+   * another member's chat history anywhere else in the API.
+   *
+   * What the row records is the operator, the member whose chat was read, the capability
+   * that allowed it, the page read and how many lines came back. What it never records is
+   * a single one of those lines, or the search string -- section 12 forbids the first and
+   * the second is operator input that can carry private content of its own.
+   */
   public async searchUserChat(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
-    if (hasAccess(admin, 'security')) {
-      try {
-        const results = await this.adminService.searchUserChat(
-          request.query.search.toString(),
-          Number.parseInt(request.query.user.toString()),
-          Number.parseInt(request.query.limit.toString()),
-          Number.parseInt(request.query.offset.toString()),
-        );
-        response.status(200).json({results});
-      } catch (error) {
-        console.log(error);
-        response.status(400).json({error});
-      }
-    } else {
+    const chatTarget = {
+      type: AUDIT_TARGETS.MEMBER as AuditTarget | null,
+      id: Number(request.query?.user),
+      memberId: Number(request.query?.user),
+    };
+    if (!hasAccess(admin, 'security')) {
+      await this.auditDenied(AUDIT_EVENTS.CHAT_READ, session, request, {
+        type: AUDIT_TARGETS.MEMBER, id: chatTarget.id, memberId: chatTarget.memberId,
+      });
       response.status(403).json({message: 'Access Denied'});
+      return;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the service is untyped
+    let results: any;
+    let limit: number;
+    let offset: number;
+    try {
+      limit = Number.parseInt(request.query.limit.toString());
+      offset = Number.parseInt(request.query.offset.toString());
+      results = await this.adminService.searchUserChat(
+        request.query.search.toString(),
+        Number.parseInt(request.query.user.toString()),
+        limit,
+        offset,
+      );
+    } catch (error) {
+      console.log(error);
+      // A read that never produced anything discloses nothing, so it owes no access event.
+      // It is still an authorised attempt, and `failed` is the existing name for that.
+      await this.auditFailed(
+        AUDIT_EVENTS.CHAT_READ, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+        {type: AUDIT_TARGETS.MEMBER, id: chatTarget.id, memberId: chatTarget.memberId},
+      );
+      response.status(400).json({error});
+      return;
+    }
+    const recorded = await this.auditAccess(
+      response, AUDIT_EVENTS.CHAT_READ, session, request, chatTarget,
+      {
+        capability: 'security',
+        rows_returned: Array.isArray(results?.messages) ? results.messages.length : null,
+        limit,
+        offset,
+      },
+    );
+    if (!recorded) return;
+    response.status(200).json({results});
   }
 
   public async getCommunityData(request: Request, response: Response): Promise<void> {
@@ -949,6 +1176,10 @@ export class AdminController {
     const admin = await this.memberService.canAdmin(session.id);
     if (admin) {
       const id = request.body.id;
+      // Validated before the destructive transaction is opened, not inside it: the
+      // cheapest place to refuse an unrecordable removal is before any row is locked.
+      const reason = this.requireReason(request, response, 'reason');
+      if (reason === null) return;
       try {
         await this.memberService.runInTransaction(async trx => {
           const member = await this.memberService.lockForRemoval(id, trx);
@@ -987,7 +1218,7 @@ export class AdminController {
             targetType: AUDIT_TARGETS.MEMBER,
             targetId: Number(id),
             targetMemberId: Number(id),
-            reason: request.body?.reason,
+            reason,
             request,
             metadata: {
               username: member.username,

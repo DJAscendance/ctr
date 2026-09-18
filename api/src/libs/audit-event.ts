@@ -21,6 +21,11 @@
  * event "if ever enabled", and it is not: `AdminController.addDonor` compares a list of
  * access levels against the string 'admin', so its granted branch has never run. An event
  * name for a path that cannot execute would assert a capability CTR does not have.
+ *
+ * The last two are ACCESS events rather than change events. Section 11: "Read-only
+ * administrative reads do not owe a change event, but reads of another member's private
+ * content -- chat history above all -- owe an access event." They name the read, never
+ * what was read; see `redactMetadata` and `docs/ADMIN_AUDIT_TRAIL.md` section 11.
  */
 export const AUDIT_EVENTS = {
   BAN_ADD: 'admin.ban.add',
@@ -32,10 +37,29 @@ export const AUDIT_EVENTS = {
   PLACE_UPDATE: 'admin.place.update',
   OBJECT_UPDATE: 'admin.object.update',
   ACCOUNT_REMOVE: 'admin.account.remove',
+  CHAT_READ: 'admin.chat.read',
+  TRANSACTION_READ: 'admin.transaction.read',
 } as const;
 
-/** One of the nine names above. */
+/** One of the eleven names above. */
 export type AuditEventName = typeof AUDIT_EVENTS[keyof typeof AUDIT_EVENTS];
+
+/**
+ * The names that record a private-content READ rather than a state change.
+ *
+ * Kept as a set rather than a naming convention because the difference decides which
+ * write path a caller may use: a change event commits inside the mutation's transaction,
+ * an access event has no mutation to join and instead gates the disclosure itself.
+ */
+export const AUDIT_ACCESS_EVENTS: ReadonlyArray<AuditEventName> = Object.freeze([
+  AUDIT_EVENTS.CHAT_READ,
+  AUDIT_EVENTS.TRANSACTION_READ,
+]);
+
+/** Whether this name records a private-content read rather than a state change. */
+export function isAccessEvent(event: AuditEventName): boolean {
+  return AUDIT_ACCESS_EVENTS.includes(event);
+}
 
 /** Every registered name, for tests and for a future read surface. */
 export const AUDIT_EVENT_NAMES: ReadonlyArray<AuditEventName> =
@@ -240,6 +264,32 @@ export function normaliseReason(reason: unknown): string | null {
   const trimmed = reason.trim();
   if (!trimmed) return null;
   return trimmed.slice(0, AUDIT_REASON_MAX);
+}
+
+/** Shortest operator reason accepted, after trimming. One real character. */
+export const AUDIT_REASON_MIN = 1;
+
+/**
+ * The operator reason as the API accepts it, or `null` when there is no usable one.
+ *
+ * Baseline section 11 makes a reason part of what a ban, a role change and an account
+ * removal owe. That is only true if the server refuses the action when the reason is
+ * missing, so this REJECTS rather than repairs: no default, no placeholder, no "N/A", and
+ * no silent truncation of an over-long one. A caller who sends nothing gets nothing done.
+ *
+ * `normaliseReason` below is the storage-side net and behaves differently on purpose -- it
+ * truncates, because its job is to protect the column from a value that already passed the
+ * gate, not to decide whether the action may run.
+ *
+ * @param reason the raw `reason` field off the request body
+ * @returns the trimmed reason when it is 1..255 characters, otherwise null
+ */
+export function validateOperatorReason(reason: unknown): string | null {
+  if (typeof reason !== 'string') return null;
+  const trimmed = reason.trim();
+  if (trimmed.length < AUDIT_REASON_MIN) return null;
+  if (trimmed.length > AUDIT_REASON_MAX) return null;
+  return trimmed;
 }
 
 /**

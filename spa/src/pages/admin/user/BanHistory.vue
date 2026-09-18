@@ -50,10 +50,7 @@
         </div>
         <div class="flex col-span-12 justify-end">
           <button class="btn"
-                  @click="
-                  showDeleteModal = true;
-                  banId = ban.id;
-                  banReason = ban.reason;"
+                  @click="openDeleteModal(ban)"
                   v-if="accessLevel.includes('security')">DELETE BAN</button>
         </div>
       </div>
@@ -65,7 +62,7 @@
           <div class="p-5">
             <div class="flex justify-between items-start">
               <h3 class="text-2xl font-semibold">Delete Ban</h3>
-              <button class="p-1 leading-none" @click="showDeleteModal = false">
+              <button class="p-1 leading-none" @click="closeDeleteModal">
                 <div class="text-xl font-semibold h-6 w-6">
                   <span>x</span>
                 </div>
@@ -75,10 +72,22 @@
           <!-- body -->
           <div class="p-6">
             <p>Are you sure you want to delete this ban?</p>
+            <label class="block mt-3 mb-1" for="delete-ban-reason">
+              Reason (required)
+            </label>
+            <textarea id="delete-ban-reason"
+                      class="text-black w-full"
+                      v-model="banReason"
+                      rows="3"
+                      maxlength="255"
+                      placeholder="Why is this ban being lifted?"></textarea>
+            <div class="text-red-800 font-bold mt-1" v-if="modalError">
+              {{ modalError }}
+            </div>
           </div>
           <!-- footer -->
           <div class=" p-6 flex justify-end items-center">
-            <button class="btn pr-1" @click="showDeleteModal = false">Cancel</button>
+            <button class="btn pr-1" @click="closeDeleteModal">Cancel</button>
             <button class="btn" @click="deleteban">Confirm</button>
           </div>
         </div>
@@ -100,6 +109,7 @@ export default defineComponent({
       showDeleteModal: false,
       banId: 0,
       banReason: "",
+      modalError: "",
     };
   },
   props: [
@@ -114,13 +124,33 @@ export default defineComponent({
           this.info = response.data.banHistory;
         });
     },
+    openDeleteModal(ban): void {
+      this.banId = ban.id;
+      // Deliberately NOT pre-filled with the original ban's reason. That text is
+      // the reason the ban was GIVEN, written by whoever issued it; reusing it
+      // here would file it in the audit store as this operator's reason for
+      // lifting the ban (CTBL-0025, baseline section 11).
+      this.banReason = "";
+      this.modalError = "";
+      this.showDeleteModal = true;
+    },
+    closeDeleteModal(): void {
+      this.showDeleteModal = false;
+      this.banReason = "";
+      this.modalError = "";
+    },
     async deleteban(): Promise<void>{
+      const banReason = this.banReason.trim();
+      if (!banReason) {
+        this.modalError = "Please enter a reason";
+        return;
+      }
       await this.$http.post("/admin/deleteban/", {
         banId: this.banId,
-        banReason: this.banReason,
+        banReason: banReason,
       })
         .then(() => {
-          this.showDeleteModal = false;
+          this.closeDeleteModal();
           this.success = "Ban Deleted";
           this.getinfo();
         });

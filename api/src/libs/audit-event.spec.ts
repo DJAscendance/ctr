@@ -1,16 +1,20 @@
 import {
+  AUDIT_ACCESS_EVENTS,
   AUDIT_EVENTS,
   AUDIT_EVENT_NAMES,
+  AUDIT_REASON_MIN,
   AUDIT_METADATA_MAX_KEYS,
   AUDIT_METADATA_MAX_STRING,
   AUDIT_REASON_MAX,
   AUDIT_RESULTS,
+  isAccessEvent,
   isForbiddenMetadataKey,
   normaliseReason,
   normaliseSource,
   redactMetadata,
   serialiseMetadata,
   utcTimestamp,
+  validateOperatorReason,
 } from './audit-event';
 
 /**
@@ -23,13 +27,12 @@ import {
  */
 
 describe('audit event registry', () => {
-  it('names exactly the nine actions the baseline says owe an event', () => {
+  it('names exactly the nine state changes the baseline says owe an event', () => {
     // Baseline section 11: "ban add, ban delete, role hire, role fire, avatar approve,
     // avatar reject, place update, object update, donor change (if ever enabled), account
     // removal". Donor change is not enabled -- `addDonor`'s granted branch cannot run --
     // so nine names, not ten.
-    expect(AUDIT_EVENT_NAMES).toHaveLength(9);
-    expect([...AUDIT_EVENT_NAMES].sort()).toEqual([
+    expect(AUDIT_EVENT_NAMES.filter(name => !isAccessEvent(name)).sort()).toEqual([
       'admin.account.remove',
       'admin.avatar.approve',
       'admin.avatar.reject',
@@ -40,6 +43,25 @@ describe('audit event registry', () => {
       'admin.role.fire',
       'admin.role.hire',
     ]);
+  });
+
+  it('names the private-content reads the baseline says owe an access event', () => {
+    // Same section: "reads of another member's private content -- chat history above all
+    // -- owe an access event". Two names, and no more: an ordinary administrative read
+    // owes nothing, and inventing an event for one would claim a rule the baseline does
+    // not state. The per-route classification is section 10 of docs/ADMIN_AUDIT_TRAIL.md.
+    expect([...AUDIT_ACCESS_EVENTS].sort()).toEqual([
+      'admin.chat.read',
+      'admin.transaction.read',
+    ]);
+    for (const name of AUDIT_ACCESS_EVENTS) {
+      expect(AUDIT_EVENT_NAMES).toContain(name);
+      expect(isAccessEvent(name)).toBe(true);
+    }
+  });
+
+  it('keeps the registry at exactly the names both rules produce', () => {
+    expect(AUDIT_EVENT_NAMES).toHaveLength(11);
   });
 
   it('has no name for the donor path, which cannot execute', () => {
@@ -231,5 +253,62 @@ describe('the event names are the ones the controllers use', () => {
     expect(AUDIT_EVENTS.PLACE_UPDATE).toBe('admin.place.update');
     expect(AUDIT_EVENTS.OBJECT_UPDATE).toBe('admin.object.update');
     expect(AUDIT_EVENTS.ACCOUNT_REMOVE).toBe('admin.account.remove');
+  });
+});
+
+/**
+ * The operator-reason contract (CTBL-0025 Phase C).
+ *
+ * Baseline section 11 requires a reason for bans, role changes and account removal. An
+ * obligation the server does not enforce is a suggestion, so the rule under test is that
+ * `validateOperatorReason` REFUSES rather than repairs: it never returns a value the
+ * operator did not write, and never quietly shortens one they did.
+ */
+describe('operator reason validation', () => {
+  it('refuses a reason that was never sent', () => {
+    expect(validateOperatorReason(undefined)).toBeNull();
+    expect(validateOperatorReason(null)).toBeNull();
+  });
+
+  it('refuses a value that is not a string', () => {
+    // A JSON body can carry any of these where a sentence was expected.
+    expect(validateOperatorReason(0)).toBeNull();
+    expect(validateOperatorReason(1)).toBeNull();
+    expect(validateOperatorReason(true)).toBeNull();
+    expect(validateOperatorReason(['a reason'])).toBeNull();
+    expect(validateOperatorReason({ reason: 'a reason' })).toBeNull();
+  });
+
+  it('refuses an empty or whitespace-only reason', () => {
+    expect(validateOperatorReason('')).toBeNull();
+    expect(validateOperatorReason('   ')).toBeNull();
+    expect(validateOperatorReason('\t\n  \r')).toBeNull();
+  });
+
+  it('accepts the shortest real reason there is', () => {
+    expect(AUDIT_REASON_MIN).toBe(1);
+    expect(validateOperatorReason('x')).toBe('x');
+  });
+
+  it('accepts an ordinary reason and stores it trimmed', () => {
+    expect(validateOperatorReason('  spamming the plaza  ')).toBe('spamming the plaza');
+  });
+
+  it('accepts a reason exactly as long as the column allows', () => {
+    const exact = 'r'.repeat(AUDIT_REASON_MAX);
+    expect(validateOperatorReason(exact)).toBe(exact);
+    expect(validateOperatorReason(`  ${exact}  `)).toBe(exact);
+  });
+
+  it('refuses an over-long reason rather than silently cutting it short', () => {
+    // The difference from `normaliseReason` is the whole point: a stored reason that is
+    // not the sentence the operator wrote is a misquote in an evidentiary record.
+    expect(validateOperatorReason('r'.repeat(AUDIT_REASON_MAX + 1))).toBeNull();
+  });
+
+  it('never substitutes a placeholder for a missing reason', () => {
+    for (const absent of [undefined, null, '', '   ']) {
+      expect(validateOperatorReason(absent)).toBeNull();
+    }
   });
 });

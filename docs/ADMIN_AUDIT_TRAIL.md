@@ -1,7 +1,7 @@
 # CTR admin audit trail (CTBL-0025)
 
-The operator audit store: what it records, what it refuses to record, and which admin
-actions are covered so far.
+The operator audit store: what it records, what it refuses to record, which admin actions
+are covered, and which admin reads owe an access event.
 
 `docs/ADMIN_SECURITY_BASELINE.md` section 11 states the obligation and section 12 states
 the redaction rule. This document is the implementation of both. Where the two disagree,
@@ -13,7 +13,9 @@ the baseline wins and this file is wrong.
 
 Every administrative action that changes state writes one durable row naming the
 authenticated operator, and a successful change and its record commit together or neither
-of them happens.
+of them happens. Where the baseline requires a reason, the operator writes it or the action
+does not run; and where an administrative read returns another member's private content,
+the content is not disclosed until the read has been recorded.
 
 ---
 
@@ -85,6 +87,15 @@ state change owes an event, so a state change that could not be recorded has not
 its commit. The consequence that matters: **an `allowed` row can only exist where the
 business mutation committed.**
 
+**`recordAccess(input)` — private-content reads, disclosure-gating.**
+Writes `result = 'allowed'` on the ordinary connection and **throws** if the insert fails.
+There is no business transaction to be atomic with, because a read changes nothing; what
+replaces atomicity is order plus refusal. The read runs first, so the row is never a claim
+about a read that did not happen; the row is written second; and only then may the handler
+answer with the content. The consequence that matters: **private content this store covers
+is never disclosed without a row naming who read it.** This is the one path where an audit
+outage changes the response, and it changes it to a 500, never to an allowance.
+
 **`recordOutcome(result, input)` — refusals and failures, best effort.**
 Writes `denied` or `failed` on the ordinary connection, and **never throws**. Neither has
 a transaction to join: a refusal never opened one, and a failure's has already rolled
@@ -103,7 +114,8 @@ leaves no `allowed` row.
 
 ## 4. The event registry
 
-Nine names, in `api/src/libs/audit-event.ts`. Shape: `admin.<noun>.<verb>`, lower case,
+Eleven names, in `api/src/libs/audit-event.ts` -- nine state changes and two private-content
+reads. Shape: `admin.<noun>.<verb>`, lower case,
 dotted, so the store can be queried by prefix and the name survives a URL, a log line or a
 grep unchanged. **These names are permanent** — renaming one orphans the rows already
 written under it.
@@ -122,6 +134,25 @@ written under it.
 
 All nine mutation actions record both directions. The last five arrived later than the
 first four, and section 6 says what had to change first.
+
+Two more names record a READ rather than a change. Baseline section 11: "Read-only
+administrative reads do not owe a change event, but reads of another member's private
+content — chat history above all — owe an access event."
+
+| event | the read | success recorded | refusal recorded |
+|---|---|---|---|
+| `admin.chat.read` | `searchUserChat` | **yes, before disclosure** | yes |
+| `admin.transaction.read` | `getTransactions`, `getTransactionsByWalletId` | **yes, before disclosure** | yes |
+
+One name per KIND of private content, not one per route. `getTransactions` and
+`getTransactionsByWalletId` return the same rows from the same table and differ only in
+scope, so they share a name and say which scope they were in — `scope: 'member'` or
+`scope: 'community'` — in metadata. A separate name would split one history in two and
+answer no question the metadata does not.
+
+`isAccessEvent(name)` distinguishes the two families, because the difference decides which
+write path a caller may use: a change event commits inside the mutation's transaction, an
+access event gates the disclosure instead.
 
 `admin.donor.change` deliberately does not exist. Baseline section 11 lists donor change
 as owing an event "if ever enabled", and it is not: `AdminController.addDonor` compares a
@@ -189,20 +220,15 @@ transaction, which is the only thing that separates "the id named no avatar" (nu
 "the avatar already had that status" (`rows_updated` zero). `admin.ban.remove` set this
 precedent in the first four: a missing ban reads as nulls rather than throwing.
 
-### What is still missing after this
+### What Phase C then closed
 
-- **Operator reasons.** Baseline section 11 requires a reason for role changes, and neither
-  role route has one to record: the hire request carries no reason field at all, and
-  `fireRole` discards the one its request does carry. Both events therefore store
-  `reason = NULL`. Collecting and enforcing reasons is its own item; inventing one here
-  would put a sentence in the store that no operator wrote. **CTBL-0025 stays OPEN for it.**
-- **Private-content reads.** `searchUserChat` returns a member's chat lines to an operator
-  and records nothing. Baseline section 11 asks for the access to be logged — the fact and
-  the identifier, never the content. The other admin read surfaces (transaction history,
-  wallet history, user places, owned objects) still need classifying against that rule.
+Phase B left two gaps and named them. Section 10 (reasons) and section 9 (private reads)
+below are what closed them. What remains after Phase C:
+
 - **No audit read API and no audit UI.** The recovered contract names a store, not a
   surface, and an admin-readable surface needs its own gate and its own redaction review
-  before it exists.
+  before it exists. Baseline section 11 does not require one, so this is not an open
+  CTBL-0025 obligation.
 
 Also untouched, and tracked elsewhere:
 
@@ -254,7 +280,156 @@ from the actor's id alone, because role holdings change.
 
 ---
 
-## 9. Metadata actually recorded
+## 9. Which admin reads owe an access event
+
+Baseline section 11 draws a line, not a blanket: "Read-only administrative reads do not owe
+a change event, but reads of another member's private content — chat history above all —
+owe an access event." Auditing every admin `GET` would be the easy reading and the wrong
+one; it would assert an obligation the baseline does not state and bury the events that
+matter under ones that do not.
+
+**The test used, stated so a future route can be measured against it:** a read owes an
+access event when it returns a member's own authored words or their own recorded personal
+activity, and no citizen can obtain that data about them anywhere else in the API. A read
+that returns rows describing the shared world — a place, an object, who holds a role —
+does not, even when it is scoped to one member and even when only Security may call it.
+Neither "Security-only" nor "member-scoped" is by itself evidence of private content.
+
+| route | classification | evidence |
+|---|---|---|
+| `searchUserChat` | **REQUIRES_ACCESS_AUDIT** | Selects `message.body` for one named member. The baseline names chat history outright, and nothing in CTR lets a citizen search another member's chat lines. |
+| `getTransactionsByWalletId` | **REQUIRES_ACCESS_AUDIT** | One named member's whole financial ledger. `GET /api/bank/account` resolves the account from the session and from nothing else, so no citizen can see another member's. |
+| `getTransactions` | **REQUIRES_ACCESS_AUDIT** | The same ledger columns from the same table, unscoped across every member. Auditing the per-member read and not this one would leave an operator a way to read everyone's ledger unrecorded. |
+| `findUserPlaces` | ORDINARY_ADMIN_READ | Returns `place` rows of type `club` or `storage` — world entities, not member content. Any logged-in citizen can already list clubs at `GET /api/club/search`. |
+| `getObjectInstances` | ORDINARY_ADMIN_READ | An inventory listing: object name, owner username, the place it sits in. `GET /api/place/:placeId/object_instance` serves the same rows to anyone, with no session at all. |
+| `getOwnedObjects` | ORDINARY_ADMIN_READ | The same inventory shape scoped to one member. See the note below — this is the closest call on the list. |
+| `searchUsers` | ORDINARY_ADMIN_READ | Username and last-login, the same identity a citizen sees on any profile. |
+| `getBanHistory` | ORDINARY_ADMIN_READ | CTR's own moderation record about a member, not content the member authored. |
+| `getCommunityData` | ORDINARY_ADMIN_READ | Aggregate community counts. Names no member. |
+| `places`, `searchAllPlaces` | ORDINARY_ADMIN_READ | World-entity rows, member-visible in the world itself. |
+| `getRoleList` | ORDINARY_ADMIN_READ | Role names and assignment counts. Names no member. |
+| `avatars` | ORDINARY_ADMIN_READ | The moderation queue: avatars submitted for review, which is what the queue is for. |
+
+`api/src/controllers/admin.controller.audit.phase-c.spec.ts` asserts both halves — that the
+three audited reads write their event, and that the ordinary ones write nothing.
+
+### The one close call, recorded rather than buried
+
+`getOwnedObjects` lists a member's objects including those in their backpack, and a
+backpack is the one part of that inventory no other citizen can see. It is classified
+ORDINARY_ADMIN_READ because an inventory line names a world object and its location, not
+something the member wrote or a record of their personal activity — the same reason
+`findUserPlaces` is ordinary. That is a judgement about where the baseline's line falls,
+not a proof, and it is written here so a later reviewer can disagree with it on the
+evidence rather than discover it by reading the controller.
+
+---
+
+## 10. The operator reason contract
+
+Baseline section 11 lists `reason` as "required for bans, role changes and account
+removal". Phase A and Phase B recorded whatever arrived and accepted nothing arriving; a
+requirement the server does not enforce is a suggestion, so Phase C enforces it.
+
+**Five actions require one**, recovered from the current routes rather than assumed:
+
+| action | route | body field |
+|---|---|---|
+| ban add | `POST /api/admin/ban` | `reason` |
+| ban delete | `POST /api/admin/deleteban` | `banReason` |
+| role hire | `POST /api/admin/hirerole` | `reason` |
+| role fire | `POST /api/admin/firerole` | `reason` |
+| account removal | `POST /api/admin/remove-account` | `reason` |
+
+No other currently active admin action is covered: avatar approve/reject, place update and
+object update are not bans, role changes or account removal, and widening the rule past what
+the baseline says would be this lane inventing a contract rather than recovering one.
+
+**The rule**, `validateOperatorReason` in `api/src/libs/audit-event.ts`: the value must be a
+string; it is trimmed; what is left must be 1 to 255 characters, the width of the `reason`
+column. Anything else is refused. There is no default, no placeholder, no `N/A`, and no
+silent truncation of an over-long reason — a stored reason that is not the sentence the
+operator wrote is a misquote in an evidentiary record.
+
+**The refusal** is `400`, with no business mutation and **no audit row at all** — not even a
+denied one. A denied row means an authority question that answered no; an authorised
+operator who mistyped a form has attempted no administrative action. Phase B's independent
+QA classified controller validation 400s as outside the authorization-denial contract, and
+this follows it.
+
+**Order.** The authorization gate runs first, always. A caller without authority still gets
+`403` and still owes the denied event; turning their refusal into a validation `400` would
+both mislead them and lose the row. `AdminController.requireReason` is called only after the
+gate has opened.
+
+`normaliseReason` still exists and still truncates. It is the storage-side net protecting
+the column from a value that already passed the gate, not a second opinion about whether the
+action may run.
+
+### Where the operator's reason ends and CTR's sentence begins
+
+`deleteBan` keeps a business string of the form `<reason> (Deleted by <username>)` in the
+ban history, unchanged, because the members screen has always read that way. The audit row
+stores the operator's reason **without** that suffix: section 11's `reason` field means what
+the operator wrote, and the actor already has a column of its own. The two strings are built
+separately in the controller and asserted apart in
+`admin.controller.audit.phase-c.spec.ts`.
+
+The admin UI collects each reason from the operator and never supplies one. Two controls
+had no input at all before Phase C (role hire, role fire), one had a field the modal never
+showed (ban delete), and account removal used a `window.confirm` box, which cannot collect
+text — each now has a required input, and nothing more about those screens changed. The ban
+delete modal deliberately opens EMPTY rather than pre-filled with the original ban's reason:
+that text is why the ban was *given*, by whoever gave it, and reusing it would file someone
+else's words as this operator's reason for lifting it.
+
+---
+
+## 11. What an access event never contains
+
+Section 7's redaction rule applies to access events in full, and one addition is specific to
+them: **the search string is never stored.** `searchUserChat` takes operator-supplied search
+text, and operator-supplied text aimed at a member's chat can itself name private content.
+`redactMetadata` would drop a key called `search`-anything under its content rules anyway;
+not passing it is the rule, and the scrub is the net under it.
+
+What an access event does carry: the operator, the member read about, the capability relied
+on, the page read, and how many rows came back.
+
+| event | metadata |
+|---|---|
+| `admin.chat.read` | `capability`, `rows_returned`, `limit`, `offset` |
+| `admin.transaction.read` | `capability`, `scope`, `rows_returned`, `limit`, `offset` |
+
+`capability` records which tag actually granted the read — `security` for all three routes
+today — because `authority` can only say *which layer* of baseline section 4 was relied on,
+and all three rely on the global layer. `admin.controller.audit.phase-c.spec.ts` asserts, on
+a read whose rows and search string are both known strings, that neither appears anywhere in
+the stored row.
+
+---
+
+## 12. What happens when an access event cannot be written
+
+**The private content is withheld.** The handler answers `500` and the operator sees
+nothing. This is the opposite of `recordOutcome`'s fail-soft rule, and the asymmetry is the
+point: a refusal that goes unrecorded still refused, but private content handed over
+unrecorded is exactly the disclosure the event exists to make answerable later.
+
+Three neighbouring cases, so the policy is not over-read:
+
+- **The read itself failed.** No `allowed` event — there was no disclosure to record. The
+  attempt is written as `failed` through the ordinary fail-soft path, and the handler's
+  `400` is unchanged.
+- **The caller had no authority.** `403` and a `denied` event, exactly as a refused mutation
+  behaves. An audit outage here does **not** change the response: a denial may never become
+  anything else because the store was unreachable.
+- **An ordinary admin read.** Nothing is written and nothing is gated. A store outage cannot
+  take those routes down, because they never call the store.
+
+---
+
+## 13. Metadata actually recorded
 
 Small, named, and chosen to answer a question a reviewer will have after the fact.
 

@@ -121,9 +121,19 @@ function mockResponse(): Response & { statusCode?: number; body?: unknown } {
   return response;
 }
 
-/** The admin request the handler reads the target id from. */
+/**
+ * The admin request the handler reads the target id from.
+ *
+ * `reason` is present because CTBL-0025 Phase C made an operator reason mandatory before
+ * the destructive transaction opens (baseline section 11). This spec is about removal
+ * atomicity, not the reason contract, so every case supplies a valid one; the reason
+ * contract itself is `admin.controller.audit.phase-c.spec.ts`.
+ */
 function removeRequest(id: number): Request {
-  return { body: { id }, headers: { apitoken: 'token' } } as unknown as Request;
+  return {
+    body: { id, reason: 'the operator wrote this' },
+    headers: { apitoken: 'token' },
+  } as unknown as Request;
 }
 
 describeWithDb('AdminController.removeAccount atomicity (real database)', () => {

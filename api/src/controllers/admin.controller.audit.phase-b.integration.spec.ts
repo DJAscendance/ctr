@@ -183,7 +183,9 @@ describeWithDb('CTBL-0025 Phase B atomicity against a real database', () => {
     const response = mockResponse();
 
     await controller.hireRole(
-      request({ member_id: targetId, role_id: roleId }), response as Response,
+      // CTBL-0025 Phase C: a role change is refused without an operator reason.
+      request({ member_id: targetId, role_id: roleId, reason: 'promoted' }),
+      response as Response,
     );
 
     expect(response.statusCode).toBe(200);
@@ -198,8 +200,10 @@ describeWithDb('CTBL-0025 Phase B atomicity against a real database', () => {
     expect(events[0].actor_member_id).toBe(actorId);
     expect(events[0].target_id).toBe(roleId);
     expect(events[0].target_member_id).toBe(targetId);
-    // Phase C owns operator reasons; this route's request carries none.
-    expect(events[0].reason).toBeNull();
+    // Phase B recorded a NULL here and named it as the gap. Phase C closed it: the route
+    // now refuses a role change with no operator reason, so a committed row always
+    // carries the sentence the operator actually wrote.
+    expect(events[0].reason).toBe('promoted');
     expect(JSON.parse(events[0].metadata).assignment_id).toBe(assignments[0].id);
   });
 
@@ -208,7 +212,9 @@ describeWithDb('CTBL-0025 Phase B atomicity against a real database', () => {
     const response = mockResponse();
 
     await controller.hireRole(
-      request({ member_id: targetId, role_id: roleId }), response as Response,
+      // CTBL-0025 Phase C: a role change is refused without an operator reason.
+      request({ member_id: targetId, role_id: roleId, reason: 'promoted' }),
+      response as Response,
     );
 
     expect(response.statusCode).toBe(500);
@@ -223,7 +229,9 @@ describeWithDb('CTBL-0025 Phase B atomicity against a real database', () => {
     const response = mockResponse();
 
     await controller.hireRole(
-      request({ member_id: targetId, role_id: roleId }), response as Response,
+      // CTBL-0025 Phase C: a role change is refused without an operator reason.
+      request({ member_id: targetId, role_id: roleId, reason: 'promoted' }),
+      response as Response,
     );
 
     expect(response.statusCode).toBe(500);

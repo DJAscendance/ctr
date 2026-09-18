@@ -115,6 +115,10 @@ function spoofingRequest(body: Record<string, unknown> = {}): Request {
       session_id: SPOOFED_ID,
       username: 'not-the-operator',
       password: 'hunter2',
+      // Phase C made an operator reason mandatory on the role routes. These cases are
+      // about the awaited write and its actor, not the reason, so a valid one is always
+      // present. The reason contract is `admin.controller.audit.phase-c.spec.ts`.
+      reason: 'the operator wrote this',
       ...body,
     },
   } as unknown as Request;

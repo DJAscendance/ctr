@@ -33,12 +33,7 @@
               <button
                 v-if="canFireRole(id.name)"
                 class="border text-white px-4 py-2 bg-red-900"
-                @click="
-                  showFireModal = true;
-                  fireId = id.id;
-                  firePlace = id.place_id;
-                  fireRoleName = id.name;
-                "
+                @click="openFireModal(id)"
               >
                 Fire
               </button>
@@ -64,7 +59,7 @@
 
               <button
                 class="p-1 leading-none"
-                @click="showFireModal = false"
+                @click="closeFireModal"
               >
                 <div class="text-xl font-semibold h-6 w-6">
                   <span>x</span>
@@ -77,12 +72,35 @@
             <p>
               Are you sure you want to terminate this user?
             </p>
+
+            <label
+              class="block mt-3 mb-1"
+              for="fire-reason"
+            >
+              Reason (required)
+            </label>
+
+            <textarea
+              id="fire-reason"
+              class="text-black w-full"
+              v-model="reason"
+              rows="3"
+              maxlength="255"
+              placeholder="Why is this role being removed?"
+            ></textarea>
+
+            <div
+              class="text-red-800 font-bold mt-1"
+              v-if="modalError"
+            >
+              {{ modalError }}
+            </div>
           </div>
 
           <div class="p-6 flex justify-end items-center">
             <button
               class="btn pr-1"
-              @click="showFireModal = false"
+              @click="closeFireModal"
             >
               Cancel
             </button>
@@ -113,6 +131,8 @@ export default {
       firePlace: null,
       fireRoleName: null,
       loaded: false,
+      modalError: "",
+      reason: "",
       roles: [],
       showFireModal: false,
       canManageSecurityRoles: false,
@@ -154,7 +174,32 @@ export default {
       return securityRoles.includes(roleName);
     },
 
+    openFireModal(role) {
+      this.fireId = role.id;
+      this.firePlace = role.place_id;
+      this.fireRoleName = role.name;
+      this.reason = "";
+      this.modalError = "";
+      this.showFireModal = true;
+    },
+
+    closeFireModal() {
+      this.showFireModal = false;
+      this.reason = "";
+      this.modalError = "";
+    },
+
     async fireUser() {
+      // The API refuses a role change without an operator reason (CTBL-0025,
+      // baseline section 11). The modal stays open and says so rather than
+      // sending a request that cannot succeed, and never supplies its own text.
+      const reason = this.reason.trim();
+
+      if (!reason) {
+        this.modalError = "Please enter a reason";
+        return;
+      }
+
       this.showFireModal = false;
 
       try {
@@ -162,8 +207,10 @@ export default {
           member_id: this.$route.params.id,
           role_id: this.fireId,
           place_id: this.firePlace,
+          reason: reason,
         });
 
+        this.reason = "";
         await this.getRoles();
       } catch (error) {
         this.error =

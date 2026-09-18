@@ -42,14 +42,15 @@
             {{ $store.data.user.username }}
           </div>
           <div class="text-center col-span-12 mt-1">
-            Reason
+            Reason (required)
           </div>
         <div class="flex items-center justify-center col-span-12">
           <div class="flex items-center justify-center">
             <textarea class="text-black"
               v-model="banReason"
               rows="8"
-              cols="100"></textarea>
+              cols="100"
+              maxlength="255"></textarea>
           </div>
         </div>
           <div class="text-center col-span-12 my-1">
@@ -86,12 +87,21 @@ export default defineComponent({
   ],
   methods:{
     async addBan(): Promise <void>{
+      // The API refuses a ban without an operator reason (CTBL-0025, baseline
+      // section 11). Checked here so the operator is told before the request is
+      // sent; nothing is ever substituted for what they did not write.
+      const reason = this.banReason.trim();
+      if (!reason) {
+        this.success = "";
+        this.error = "A reason is required.";
+        return;
+      }
       try {
         await this.$http.post("/admin/ban", {
           ban_member_id: this.$route.params.id,
           time_frame: this.banDuration,
           type: this.banType,
-          reason: this.banReason,
+          reason: reason,
         })
           .then(() => {
             this.success = "Ban Added";
