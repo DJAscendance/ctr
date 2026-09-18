@@ -12,6 +12,7 @@ import {
   WalletRepository,
 } from '../repositories';
 import {
+  AdminAuditService,
   AdminService,
   AvatarService,
   ClubService,
@@ -336,6 +337,7 @@ describeWithDb('AdminController.removeAccount atomicity (real database)', () => 
       Container.get(InboxService),
       Container.get(MessageboardService),
       Container.get(ClubService),
+      Container.get(AdminAuditService),
     );
     // Authorization is proved in admin.controller.authorization.spec.ts; these tests are
     // about what happens after the gate opens.

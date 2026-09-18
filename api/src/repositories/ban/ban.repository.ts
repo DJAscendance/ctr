@@ -13,8 +13,21 @@ export class BanRepository {
   ) {
   }
   
-  public async addBan(ban_member_id, end_date, type, assigner_member_id, reason) {
-    return knex('ban')
+  /**
+   * Writes a ban row.
+   *
+   * @param trx the caller's transaction, when the ban must commit with its audit event.
+   *   Omitted, the insert commits on its own, as it always has.
+   */
+  public async addBan(
+    ban_member_id,
+    end_date,
+    type,
+    assigner_member_id,
+    reason,
+    trx?: Knex.Transaction,
+  ) {
+    return queryOn(this.db.knex, trx)('ban')
       .insert({
         ban_member_id: ban_member_id,
         end_date: end_date,
@@ -24,13 +37,38 @@ export class BanRepository {
       });
   }
   
-  public async deleteBan(banId: number, updateReason: string): Promise<void> {
-    return knex('ban')
+  /**
+   * Withdraws a ban by clearing its live flag; the row itself is kept as history.
+   *
+   * @param trx the caller's transaction, when the withdrawal must commit with its audit
+   *   event. Omitted, the update commits on its own, as it always has.
+   */
+  public async deleteBan(
+    banId: number,
+    updateReason: string,
+    trx?: Knex.Transaction,
+  ): Promise<void> {
+    return queryOn(this.db.knex, trx)('ban')
       .where({id: banId})
       .update({
         status: 0,
         reason: updateReason,
       });
+  }
+
+  /**
+   * One ban row by id, read through the caller's transaction when given one.
+   *
+   * Used by the audit path to record what a withdrawal was actually withdrawing --
+   * baseline section 11 asks for the `before` facts, and after the update the old status
+   * and type are gone. Read inside the same transaction as the update, so the facts
+   * recorded are the facts that were changed.
+   */
+  public async findById(banId: number, trx?: Knex.Transaction): Promise<any> {
+    return queryOn(this.db.knex, trx)('ban')
+      .select('id', 'ban_member_id', 'type', 'status', 'end_date')
+      .where('id', banId)
+      .first();
   }
 
   public async removeAllByUserId(id: number, trx?: Knex.Transaction): Promise<any> {

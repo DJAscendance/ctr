@@ -191,8 +191,13 @@ export class RoleAssignmentRepository {
     return {deputies, owner};
   }
   
-  public async getByMemberId(memberId: number): Promise<RoleAssignment[]> {
-    const roleResults = await this.db.roleAssignment.where('member_id', memberId);
+  public async getByMemberId(
+    memberId: number,
+    trx?: Knex.Transaction,
+  ): Promise<RoleAssignment[]> {
+    const roleResults = await queryOn(this.db.knex, trx)<RoleAssignment, RoleAssignment[]>(
+      'role_assignment',
+    ).where('member_id', memberId);
     return roleResults;
   }
 
@@ -277,12 +282,17 @@ export class RoleAssignmentRepository {
     return rows.map(row => row.id);
   }
 
+  /**
+   * @param trx the caller's transaction, when the removal must commit with an audit
+   *   event. Omitted, the delete commits on its own, as it always has.
+   */
   public async removeIdFromAssignment(
     placeId: number,
     memberId: number,
     roleId: number,
+    trx?: Knex.Transaction,
   ): Promise<number> {
-    return await this.db.knex('role_assignment')
+    return await queryOn(this.db.knex, trx)('role_assignment')
       .where('place_id', placeId)
       .where('member_id', memberId)
       .where('role_id', roleId)

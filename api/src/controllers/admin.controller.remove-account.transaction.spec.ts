@@ -4,6 +4,7 @@ import { Container } from 'typedi';
 
 import { Db } from '../db/db.class';
 import {
+  AdminAuditEventRepository,
   AvatarRepository,
   BanRepository,
   ClubMemberRepository,
@@ -23,6 +24,7 @@ import {
   WalletRepository,
 } from '../repositories';
 import {
+  AdminAuditService,
   AdminService,
   AvatarService,
   ClubService,
@@ -85,6 +87,11 @@ const PARTICIPANTS: ReadonlyArray<[unknown, string]> = [
   [TransactionRepository, 'removeAllByWalletId'],
   [MemberRepository, 'removeAccount'],
   [WalletRepository, 'removeAccount'],
+  // The audit event is a participant, not an afterthought: baseline section 11 makes the
+  // record part of what the removal owes, so it has to join the same transaction as the
+  // writes it describes. If it ever stops being handed the transaction, the store could
+  // hold an `allowed` row for a removal that rolled back.
+  [AdminAuditEventRepository, 'insert'],
 ];
 
 /** A repository seen as a bag of async methods, so a test can replace one of them. */
@@ -125,6 +132,7 @@ describe('AdminController.removeAccount transaction identity', () => {
       Container.get(InboxService),
       Container.get(MessageboardService),
       Container.get(ClubService),
+      Container.get(AdminAuditService),
     );
 
     jest.spyOn(memberService, 'decryptSession').mockReturnValue({ id: 1 } as never);

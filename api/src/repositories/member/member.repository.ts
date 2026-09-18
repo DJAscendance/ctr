@@ -277,8 +277,11 @@ export class MemberRepository {
    * an empty set when the column is null -- indistinguishable from "member not found".
    * Reconciliation needs to tell those apart.
    */
-  public async getPrimaryRoleId(memberId: number): Promise<number | null> {
-    const row = await this.db.knex
+  public async getPrimaryRoleId(
+    memberId: number,
+    trx?: Knex.Transaction,
+  ): Promise<number | null> {
+    const row = await queryOn(this.db.knex, trx)
       .select('primary_role_id')
       .from('member')
       .where('id', memberId)
@@ -409,9 +412,12 @@ export class MemberRepository {
     memberId: number,
     props: Partial<Member>,
     returning = false,
+    trx?: Knex.Transaction,
   ): Promise<Member | undefined> {
-    await this.db.member.where({ id: memberId }).update(props);
-    return returning ? this.findById(memberId) : undefined;
+    await queryOn(this.db.knex, trx)<Member, Member[]>('member')
+      .where({ id: memberId })
+      .update(props);
+    return returning ? this.findById(memberId, trx) : undefined;
   }
 
   /**

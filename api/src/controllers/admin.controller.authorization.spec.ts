@@ -10,6 +10,7 @@ jest.mock('../db/db.class', () =>
 
 import { AdminController } from './admin.controller';
 import {
+  AdminAuditService,
   AdminService,
   AvatarService,
   ClubService,
@@ -222,6 +223,7 @@ describe('AdminController authorization', () => {
   let inboxService: jest.Mocked<InboxService>;
   let messageboardService: jest.Mocked<MessageboardService>;
   let clubService: jest.Mocked<ClubService>;
+  let adminAuditService: jest.Mocked<AdminAuditService>;
   let controller: AdminController;
   let services: Record<string, Record<string, jest.Mock>>;
 
@@ -237,6 +239,10 @@ describe('AdminController authorization', () => {
     inboxService = createSpyObj(InboxService);
     messageboardService = createSpyObj(MessageboardService);
     clubService = createSpyObj(ClubService);
+    // A spy, not the real service: this spec is about the gate, and a real audit write
+    // would reach for a database. That the refusals ARE recorded is proved separately, in
+    // admin.controller.audit.spec.ts.
+    adminAuditService = createSpyObj(AdminAuditService);
     controller = new AdminController(
       adminService,
       memberService,
@@ -249,6 +255,7 @@ describe('AdminController authorization', () => {
       inboxService,
       messageboardService,
       clubService,
+      adminAuditService,
     );
 
     services = {

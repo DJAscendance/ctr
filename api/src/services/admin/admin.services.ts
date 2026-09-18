@@ -1,3 +1,4 @@
+import { Request } from 'express';
 import { Service } from 'typedi';
 
 import {
@@ -17,6 +18,22 @@ import {
   WalletRepository,
 } from '../../repositories';
 import { RoleAssignmentService } from '../role-assignment/role-assignment.service';
+import { AdminAuditService } from '../admin-audit/admin-audit.service';
+import { AUDIT_EVENTS, AUDIT_TARGETS, AuditAuthority } from '../../libs/audit-event';
+
+/**
+ * What an admin route knows about its own caller, carried down to the audit write.
+ *
+ * Only two fields, and both come from the server: `actorMemberId` is the id
+ * `MemberService.decryptSession` returned, and `authority` is the branch of the gate that
+ * actually granted the request. Nothing here may be reconstructed from a request body --
+ * see `AdminAuditService`.
+ */
+export interface AdminActionContext {
+  actorMemberId: number;
+  authority: AuditAuthority;
+  request?: Request | null;
+}
 
 @Service()
 export class AdminService {
@@ -35,13 +52,54 @@ export class AdminService {
    private transactionRepository: TransactionRepository,
    private walletRepository: WalletRepository,
    private roleAssignmentService: RoleAssignmentService,
+   private adminAuditService: AdminAuditService,
   ) {}
   
-  public async addBan(ban_member_id, time_frame, type, assigner_member_id, reason): Promise<void> {
+  /**
+   * Issues a ban, and records that it was issued, as one unit.
+   *
+   * The ban row and its audit event commit together or not at all. Baseline section 11
+   * makes the event part of what the action owes, so a ban that could not be recorded is
+   * not a ban CTR is willing to have issued -- the insert throws, the transaction unwinds,
+   * and the caller reports a failure instead of a silent unlogged sanction.
+   *
+   * `type` stays in the metadata verbatim: 'full' and 'jail' are two different sentences
+   * with two different contracts, and a later reader must be able to tell which one was
+   * handed down without inferring it from the ban table.
+   *
+   * @param context the authenticated caller; never reconstructed from the request body
+   */
+  public async addBan(
+    ban_member_id,
+    time_frame,
+    type,
+    assigner_member_id,
+    reason,
+    context: AdminActionContext,
+  ): Promise<void> {
     const end_date = new Date();
     end_date.setTime(end_date.getTime() + time_frame * 24 * 60 * 60 * 1000);
     end_date.getUTCDate();
-    await this.banRepository.addBan(ban_member_id, end_date, type, assigner_member_id, reason);
+    await this.memberRepository.runInTransaction(async trx => {
+      const inserted = await this.banRepository
+        .addBan(ban_member_id, end_date, type, assigner_member_id, reason, trx);
+      await this.adminAuditService.recordChange(trx, {
+        event: AUDIT_EVENTS.BAN_ADD,
+        actorMemberId: context.actorMemberId,
+        authority: context.authority,
+        targetType: AUDIT_TARGETS.MEMBER,
+        targetId: Number(ban_member_id),
+        targetMemberId: Number(ban_member_id),
+        reason,
+        request: context.request,
+        metadata: {
+          ban_type: typeof type === 'string' ? type : String(type),
+          ban_id: Array.isArray(inserted) ? Number(inserted[0]) : null,
+          time_frame_days: Number(time_frame),
+          end_date_utc: end_date.toISOString(),
+        },
+      });
+    });
   }
   
   public async addDonor(member_id: number, donor: string): Promise<void> {
@@ -71,17 +129,83 @@ export class AdminService {
     }
   }
   
-  public async deleteBan(banId: number, updateReason: string): Promise<void>{
-    await this.banRepository.deleteBan(banId, updateReason);
+  /**
+   * Withdraws a ban, and records the withdrawal, as one unit.
+   *
+   * The `before` facts are read inside the same transaction as the update, because after
+   * it the old status is gone and the type is the only thing that still says whether a
+   * full ban or a jail sentence was just lifted. A missing row reads as nulls rather than
+   * throwing: the route accepts raw ids, and this lane does not change what it accepts.
+   *
+   * @param context the authenticated caller; never reconstructed from the request body
+   */
+  public async deleteBan(
+    banId: number,
+    updateReason: string,
+    context: AdminActionContext,
+  ): Promise<void>{
+    await this.memberRepository.runInTransaction(async trx => {
+      const before = await this.banRepository.findById(banId, trx);
+      await this.banRepository.deleteBan(banId, updateReason, trx);
+      await this.adminAuditService.recordChange(trx, {
+        event: AUDIT_EVENTS.BAN_REMOVE,
+        actorMemberId: context.actorMemberId,
+        authority: context.authority,
+        targetType: AUDIT_TARGETS.BAN,
+        targetId: banId,
+        targetMemberId: before ? Number(before.ban_member_id) : null,
+        reason: updateReason,
+        request: context.request,
+        metadata: {
+          ban_type: before ? String(before.type) : null,
+          old_status: before ? Number(before.status) : null,
+          new_status: 0,
+        },
+      });
+    });
   }
 
-  public async fireRole(member_id: number, role_id: number, place_id: number): Promise<void> {
-    // Remove first, then reconcile. The previous version inspected primary_role_id
-    // before deleting the assignment, deciding against state it was about to change --
-    // and it only cleared the column when the fired role happened to be the displayed
-    // one, leaving a member who still held other roles with no display role at all.
-    await this.roleAssignmentRepository.removeIdFromAssignment(place_id, member_id, role_id);
-    await this.roleAssignmentService.reconcilePrimaryRole(member_id);
+  /**
+   * Takes a role away, reconciles the member's displayed role, and records it, as one unit.
+   *
+   * Remove first, then reconcile. The previous version inspected primary_role_id
+   * before deleting the assignment, deciding against state it was about to change --
+   * and it only cleared the column when the fired role happened to be the displayed
+   * one, leaving a member who still held other roles with no display role at all.
+   *
+   * All three steps now share a transaction. That is not only for the audit event: the
+   * removal and the reconciliation were already two writes that had to agree, and a
+   * failure between them left a member displaying a role they no longer held.
+   *
+   * @param context the authenticated caller, including WHICH gate granted this -- a global
+   *   Admin and a security-role manager both reach here, and baseline section 4 requires
+   *   the two to stay distinguishable afterwards
+   */
+  public async fireRole(
+    member_id: number,
+    role_id: number,
+    place_id: number,
+    context: AdminActionContext,
+  ): Promise<void> {
+    await this.memberRepository.runInTransaction(async trx => {
+      const removed = await this.roleAssignmentRepository
+        .removeIdFromAssignment(place_id, member_id, role_id, trx);
+      await this.roleAssignmentService.reconcilePrimaryRole(member_id, trx);
+      await this.adminAuditService.recordChange(trx, {
+        event: AUDIT_EVENTS.ROLE_FIRE,
+        actorMemberId: context.actorMemberId,
+        authority: context.authority,
+        targetType: AUDIT_TARGETS.ROLE,
+        targetId: role_id,
+        targetMemberId: member_id,
+        request: context.request,
+        metadata: {
+          role_id: Number(role_id),
+          place_id: place_id === null || place_id === undefined ? null : Number(place_id),
+          assignments_removed: Number(removed),
+        },
+      });
+    });
     return;
   }
   

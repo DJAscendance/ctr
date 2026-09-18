@@ -279,6 +279,10 @@ This document defines the obligation and the redaction rule. The store that
 receives the events is **`CTBL-0025`**, which depends on this item. CTBL-0032 adds
 no audit table, repository, service or UI.
 
+The store is now built. See `docs/ADMIN_AUDIT_TRAIL.md` for the table, the event
+registry, the transaction contract, and which of the actions below are covered
+so far.
+
 An audit event records:
 
 | field | meaning |

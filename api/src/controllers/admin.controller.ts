@@ -13,10 +13,20 @@ import {
   InboxService,
   MessageboardService,
   ClubService,
+  AdminAuditService,
 } from '../services';
 import * as badwordlist from 'badwords-list';
 import { hasAccess } from '../libs/access-level';
 import { isAssetDirectory, isAssetFilename } from '../libs/asset-identifier';
+import {
+  AUDIT_AUTHORITIES,
+  AUDIT_EVENTS,
+  AUDIT_RESULTS,
+  AUDIT_TARGETS,
+  AuditAuthority,
+  AuditEventName,
+  AuditTarget,
+} from '../libs/audit-event';
 
 /**
  * Admin-panel endpoints.
@@ -58,7 +68,65 @@ export class AdminController {
     private inboxService: InboxService,
     private messageboardService: MessageboardService,
     private clubService: ClubService,
+    private adminAuditService: AdminAuditService,
   ) {}
+
+  /**
+   * Records a refused administrative attempt.
+   *
+   * Baseline section 11: "Refusals are audited too. A denied administrative attempt is
+   * exactly the event an operator most needs later." A refusal has no transaction to join
+   * and must not acquire one -- `recordOutcome` never throws, so a 403 stays a 403 even
+   * when the store is unreachable.
+   *
+   * `actorMemberId` is the session id and nothing else. A caller who reaches a denial has
+   * still authenticated; it is only their authority that fell short, so the row names who
+   * actually tried.
+   */
+  private async auditDenied(
+    event: AuditEventName,
+    session: { id: number },
+    request: Request,
+    target?: { type: AuditTarget; id: number | null; memberId?: number | null },
+  ): Promise<void> {
+    await this.adminAuditService.recordOutcome(AUDIT_RESULTS.DENIED, {
+      event,
+      actorMemberId: session.id,
+      // The refused caller relied on the global layer by definition: every gate below
+      // asks a community-wide question first, and a denial means that question said no.
+      authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
+      targetType: target ? target.type : null,
+      targetId: target ? target.id : null,
+      targetMemberId: target ? (target.memberId ?? null) : null,
+      request,
+    });
+  }
+
+  /**
+   * Records an authorised attempt that then errored.
+   *
+   * Written outside any transaction, because the mutation's own transaction has already
+   * rolled back by the time this runs. It records that an operator tried and the change
+   * did not land -- it is never evidence that anything committed. Only `recordChange`,
+   * which runs inside the mutation's transaction, can produce an `allowed` row.
+   */
+  private async auditFailed(
+    event: AuditEventName,
+    session: { id: number },
+    request: Request,
+    authority: AuditAuthority,
+    target?: { type: AuditTarget; id: number | null; memberId?: number | null },
+  ): Promise<void> {
+    await this.adminAuditService.recordOutcome(AUDIT_RESULTS.FAILED, {
+      event,
+      actorMemberId: session.id,
+      authority,
+      targetType: target ? target.type : null,
+      targetId: target ? target.id : null,
+      targetMemberId: target ? (target.memberId ?? null) : null,
+      request,
+    });
+  }
   
   public async addBan(request: Request, response: Response): Promise<void> {
     const session = this.memberService.decryptSession(request, response);
@@ -66,19 +134,33 @@ export class AdminController {
     const admin = await this.memberService.canAdmin(session.id);
     if (admin) {
       try {
+        // `session.id` is the actor, here and in the audit row the service writes. The
+        // request body names only the SUBJECT of the ban; a body field claiming to be the
+        // actor is never read, so a caller cannot sign someone else's name to a sanction.
         await this.adminService.addBan(
           request.body.ban_member_id,
           request.body.time_frame,
           request.body.type,
           session.id,
           request.body.reason,
+          {
+            actorMemberId: session.id,
+            authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
+            request,
+          },
         );
         response.status(200).json({message: 'Ban added successfully'});
       } catch (error) {
         console.log(error);
+        await this.auditFailed(
+          AUDIT_EVENTS.BAN_ADD, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+          {type: AUDIT_TARGETS.MEMBER, id: Number(request.body.ban_member_id)},
+        );
         response.status(400).json({error});
       }
     } else {
+      await this.auditDenied(AUDIT_EVENTS.BAN_ADD, session, request,
+        {type: AUDIT_TARGETS.MEMBER, id: Number(request.body.ban_member_id)});
       response.status(403).json({message: 'Access Denied'});
     }
   }
@@ -136,13 +218,23 @@ export class AdminController {
         const reason = request.body.banReason;
         const deleteBy = await this.memberService.getMemberInfoPublic(session.id);
         const updateReason = `${reason} (Deleted by ${deleteBy.username})`;
-        await this.adminService.deleteBan(banId, updateReason);
+        await this.adminService.deleteBan(banId, updateReason, {
+          actorMemberId: session.id,
+          authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
+          request,
+        });
         response.status(200).json({message: 'Ban deleted successfully'});
       } catch (error) {
         console.log(error);
+        await this.auditFailed(
+          AUDIT_EVENTS.BAN_REMOVE, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+          {type: AUDIT_TARGETS.BAN, id: Number(request.body.banId)},
+        );
         response.status(400).json({error});
       }
     } else {
+      await this.auditDenied(AUDIT_EVENTS.BAN_REMOVE, session, request,
+        {type: AUDIT_TARGETS.BAN, id: Number(request.body.banId)});
       response.status(403).json({message: 'Access Denied'});
     }
   }
@@ -159,23 +251,38 @@ export class AdminController {
     const roleId = parseInt(role_id);
     const canManageSecurityRoles =
       await this.memberService.canManageSecurityRoles(session.id);
+    // Which of the two independent paths granted this, recorded rather than inferred.
+    // Baseline section 4 keeps the global role and the security-role manager's scoped
+    // right apart on purpose, and "on what basis was this allowed" is unanswerable later
+    // from the actor's id alone, because role holdings change.
+    const globalGrant = hasAccess(accessLevel, 'admin');
     const canManageRole =
-      hasAccess(accessLevel, 'admin') ||
+      globalGrant ||
       (canManageSecurityRoles &&
         await this.memberService.canSecurityManageRole(roleId));
+    const authority = globalGrant
+      ? AUDIT_AUTHORITIES.GLOBAL_ROLE
+      : AUDIT_AUTHORITIES.RESOURCE_SCOPED;
     if (canManageRole) {
       try {
         await this.adminService.fireRole(
           parseInt(member_id),
           roleId,
           place_id,
+          {actorMemberId: session.id, authority, request},
         );
         response.status(200).json({message: 'Role fired successfully'});
       } catch(e) {
         console.log(e);
+        await this.auditFailed(
+          AUDIT_EVENTS.ROLE_FIRE, session, request, authority,
+          {type: AUDIT_TARGETS.ROLE, id: roleId, memberId: parseInt(member_id)},
+        );
         response.status(500).json({error: 'Internal Server Error'});
       }
     } else {
+      await this.auditDenied(AUDIT_EVENTS.ROLE_FIRE, session, request,
+        {type: AUDIT_TARGETS.ROLE, id: roleId, memberId: parseInt(member_id)});
       response.status(403).json({error: 'Access Denied'});
     }
   }
@@ -238,6 +345,13 @@ export class AdminController {
         await this.memberService.canSecurityManageRole(roleId));
     if (canManageRole) {
       try {
+        // No `allowed` audit event here, deliberately. `AdminService.hireRole` does not
+        // await `addIdToAssignment`, so this handler answers 200 before the insert has
+        // resolved and there is no committed write for an audit row to commit WITH.
+        // Auditing it correctly means awaiting that promise, which is a change to the
+        // write contract and its own item -- see `docs/ADMIN_AUDIT_TRAIL.md`. Recording
+        // the success from here anyway would produce the one row this store must never
+        // hold: an `allowed` event for a mutation nobody checked.
         await this.adminService.hireRole(
           parseInt(member_id),
           roleId,
@@ -248,6 +362,8 @@ export class AdminController {
         response.status(500).json({error: 'Internal Server Error'});
       }
     } else {
+      await this.auditDenied(AUDIT_EVENTS.ROLE_HIRE, session, request,
+        {type: AUDIT_TARGETS.ROLE, id: roleId, memberId: parseInt(member_id)});
       response.status(403).json({error: 'Access Denied'});
     }
   }
@@ -475,10 +591,14 @@ export class AdminController {
     if (!session) return;
     const admin = await this.memberService.canAdmin(session.id);
     if (!admin) {
+      await this.auditDenied(AUDIT_EVENTS.AVATAR_APPROVE, session, request,
+        {type: AUDIT_TARGETS.AVATAR, id: Number(request.body?.id)});
       response.status(403).json({message: 'Access Denied'});
       return;
     }
     try {
+      // No `allowed` audit event here, deliberately: the call below is not awaited, so
+      // the 200 is sent before the write resolves. See the note in `hireRole`.
       this.avatarService.approve(
         parseInt(request.body.id.toString()),
       );
@@ -493,10 +613,14 @@ export class AdminController {
     if (!session) return;
     const admin = await this.memberService.canAdmin(session.id);
     if (!admin) {
+      await this.auditDenied(AUDIT_EVENTS.AVATAR_REJECT, session, request,
+        {type: AUDIT_TARGETS.AVATAR, id: Number(request.body?.id)});
       response.status(403).json({message: 'Access Denied'});
       return;
     }
     try {
+      // No `allowed` audit event here, deliberately: the call below is not awaited, so
+      // the 200 is sent before the write resolves. See the note in `hireRole`.
       this.avatarService.reject(
         parseInt(request.body.id.toString()),
       );
@@ -586,6 +710,8 @@ export class AdminController {
     if (!session) return;
     const admin = await this.memberService.getAccessLevel(session.id);
     if (!hasAccess(admin, 'admin', 'security')) {
+      await this.auditDenied(AUDIT_EVENTS.PLACE_UPDATE, session, request,
+        {type: AUDIT_TARGETS.PLACE, id: Number(request.body?.id)});
       response.status(403).json({message: 'Access Denied'});
       return;
     }
@@ -631,6 +757,8 @@ export class AdminController {
     }
 
     try {
+      // No `allowed` audit event here, deliberately: the call below is not awaited, so
+      // the 200 is sent before the write resolves. See the note in `hireRole`.
       this.placeService.updatePlaces(placeinfo);
       response.status(200).json({status: 'success'});
     } catch (error) {
@@ -674,6 +802,9 @@ export class AdminController {
       try {
         if(id && name && directory && filename && image && 
           price >= 0 && limit >= 0 && quantity >= 0 && status >= 0){
+          // No `allowed` audit event here, deliberately: the call below is not awaited,
+          // so the 200 is sent before the write resolves. See the note in `hireRole`.
+          // The CTBL-0032 directory and filename check above is untouched.
           this.adminService.updateObjects(
             id,
             name,
@@ -694,6 +825,8 @@ export class AdminController {
         response.status(400).json({error});
       }
     } else {
+      await this.auditDenied(AUDIT_EVENTS.OBJECT_UPDATE, session, request,
+        {type: AUDIT_TARGETS.OBJECT, id: Number(request.body?.id)});
       response.status(403).json({message: 'Access Denied'});
     }
   }
@@ -746,6 +879,25 @@ export class AdminController {
             }
           }
           await this.memberService.removeAccount(id, trx);
+          // Last, and inside the same transaction: the removal and its record commit
+          // together or neither does. The member row this names has just been deleted,
+          // which is exactly why `admin_audit_event` carries no foreign key to it -- see
+          // the migration. The username is kept because after the delete the id alone
+          // identifies nobody.
+          await this.adminAuditService.recordChange(trx, {
+            event: AUDIT_EVENTS.ACCOUNT_REMOVE,
+            actorMemberId: session.id,
+            authority: AUDIT_AUTHORITIES.GLOBAL_ROLE,
+            targetType: AUDIT_TARGETS.MEMBER,
+            targetId: Number(id),
+            targetMemberId: Number(id),
+            reason: request.body?.reason,
+            request,
+            metadata: {
+              username: member.username,
+              owned_places_removed: places.length,
+            },
+          });
         });
         response.status(200).json({ status: 'success' });
       } catch (error) {
@@ -753,9 +905,19 @@ export class AdminController {
         // server log, where an operator can read it; the client gets one flat refusal with
         // no database detail in it.
         console.error(`Account removal for member ${id} failed:`, error);
+        // The transaction rolled back, so any `allowed` row written inside it is gone with
+        // it. This records the attempt on the ordinary connection; it is evidence that an
+        // operator tried, never evidence that anything committed.
+        await this.auditFailed(
+          AUDIT_EVENTS.ACCOUNT_REMOVE, session, request, AUDIT_AUTHORITIES.GLOBAL_ROLE,
+          {type: AUDIT_TARGETS.MEMBER, id: Number(id), memberId: Number(id)},
+        );
         response.status(400).json({error: 'Account removal failed.'});
       }
     } else {
+      await this.auditDenied(AUDIT_EVENTS.ACCOUNT_REMOVE, session, request,
+        {type: AUDIT_TARGETS.MEMBER, id: Number(request.body?.id),
+          memberId: Number(request.body?.id)});
       response.status(403).json({message: 'Access Denied'});
     }
   }
@@ -784,4 +946,5 @@ export const adminController = new AdminController(
   inboxService,
   messageboardService,
   clubService,
+  Container.get(AdminAuditService),
 );

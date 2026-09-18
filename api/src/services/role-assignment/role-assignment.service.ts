@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { Service } from 'typedi';
 
 import { RoleAssignment } from '../../types/models';
@@ -48,15 +49,24 @@ export class RoleAssignmentService {
    * The old version was also fire-and-forget inside forEach callbacks, so the write
    * could land after the request completed. This awaits.
    */
-  public async reconcilePrimaryRole(memberId: number): Promise<void> {
+  public async reconcilePrimaryRole(
+    memberId: number,
+    /**
+     * The caller's transaction, when the reconciliation is part of a larger unit.
+     * `AdminService.fireRole` passes one, so the assignment delete, the primary-role
+     * fix-up and the audit event all commit or roll back together. Every pre-existing
+     * caller passes nothing and keeps the behaviour it has always had.
+     */
+    trx?: Knex.Transaction,
+  ): Promise<void> {
     if (!memberId) return;
-    const current = await this.memberRepository.getPrimaryRoleId(memberId);
+    const current = await this.memberRepository.getPrimaryRoleId(memberId, trx);
     if (current === null || current === undefined) return;
-    const assignments = await this.roleAssignmentRepository.getByMemberId(memberId);
+    const assignments = await this.roleAssignmentRepository.getByMemberId(memberId, trx);
     const stillHeld = assignments
       .some(assignment => Number(assignment.role_id) === Number(current));
     if (!stillHeld) {
-      await this.memberRepository.update(memberId, { primary_role_id: null });
+      await this.memberRepository.update(memberId, { primary_role_id: null }, false, trx);
     }
   }
   

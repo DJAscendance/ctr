@@ -45,8 +45,12 @@ describe('RoleAssignmentService', () => {
         memberRepository.getPrimaryRoleId.mockResolvedValue(BLOCK_LEADER);
         roleAssignmentRepository.getByMemberId.mockResolvedValue(assignments(HOOD_DEPUTY));
         await service.reconcilePrimaryRole(MEMBER_ID);
+        // `false, undefined` are the two optional trailing arguments: don't return the
+        // row, and run on the ordinary connection. Pre-existing callers pass no
+        // transaction, so reconciliation commits on its own exactly as it always has --
+        // only AdminService.fireRole supplies one.
         expect(memberRepository.update)
-          .toHaveBeenCalledWith(MEMBER_ID, { primary_role_id: null });
+          .toHaveBeenCalledWith(MEMBER_ID, { primary_role_id: null }, false, undefined);
       });
     });
 
@@ -142,7 +146,7 @@ describe('RoleAssignmentService', () => {
 
     it('reconciles the primary role of a removed deputy', async () => {
       await service.syncDeputies(PLACE, DEPUTY_ROLE, [A], []);
-      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(A);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(A, undefined);
     });
 
     /** 0 is the empty-slot sentinel the fixed eight-element arrays were filled with. */
@@ -230,7 +234,7 @@ describe('RoleAssignmentService', () => {
     it('skips falsy ids', async () => {
       await service.reconcilePrimaryRoles([0, MEMBER_A]);
       expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledTimes(1);
-      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(MEMBER_A);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(MEMBER_A, undefined);
     });
 
     it('continues past a member that throws', async () => {
@@ -288,7 +292,7 @@ describe('RoleAssignmentService', () => {
 
     it('reconciles the outgoing owner after the incoming one is written', async () => {
       await service.syncPlaceAccess({ ...base, oldOwnerId: OWNER, newOwnerId: NEW_OWNER });
-      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(OWNER);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(OWNER, undefined);
       const lastWrite = Math.max(
         ...roleAssignmentRepository.addIdToAssignment.mock.invocationCallOrder,
       );
@@ -310,7 +314,7 @@ describe('RoleAssignmentService', () => {
       });
       expect(roleAssignmentRepository.addIdToAssignment)
         .toHaveBeenCalledWith(PLACE, NEW_OWNER, OWNER_ROLE);
-      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(OWNER);
+      expect(memberRepository.getPrimaryRoleId).toHaveBeenCalledWith(OWNER, undefined);
     });
 
     /** One member on two axes at once must not be reconciled twice. */
